@@ -1,0 +1,10 @@
+node_modules
+data
+.env
+.git
+test
+*.sqlite*
+backups
+backup.env
+restore
+deploy

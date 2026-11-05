@@ -1,0 +1,490 @@
+// End-to-end: real bot + services, fake Telegram API. Every outgoing message is checked to
+// be HTML that Telegram would accept (only <b>/<code>, balanced, no stray "<" or "&").
+
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import type { Update } from "grammy/types";
+import { ALLOWED_UPDATES, createBot } from "../src/bot/index.ts";
+import { RateLimiter } from "../src/bot/ratelimit.ts";
+import type { Announcement } from "../src/announcements.ts";
+import { Products } from "../src/services/products.ts";
+import { catalogJson } from "./fixtures.ts";
+import type { Config } from "../src/config.ts";
+import { toCsv } from "../src/lib/csv.ts";
+import { legacyHash } from "../src/lib/ids.ts";
+import { setup, TEST_SECRET } from "./helpers.ts";
+
+const config: Config = {
+  botToken: "123:TEST",
+  appSecret: TEST_SECRET,
+  dbPath: ":memory:",
+  adminIds: [1],
+  mode: "polling",
+  port: 0,
+  inactivity: { deleteAfterDays: 730, warnDaysBefore: 30 },
+  backup: { everyMinutes: 60 },
+};
+
+interface Call {
+  method: string;
+  payload: Record<string, any>;
+}
+
+function assertTelegramHtml(text: string) {
+  const stack: string[] = [];
+  const stripped = text.replace(/<(\/?)(b|code)>/g, (_m, close: string, tag: string) => {
+    if (close) expect(stack.pop()).toBe(tag);
+    else stack.push(tag);
+    return "";
+  });
+  expect(stack).toEqual([]);
+  expect(stripped).not.toMatch(/[<>]/);
+  expect(stripped).not.toMatch(/&(?!(amp|lt|gt);)/);
+}
+
+function harness(limiter = new RateLimiter(10_000, 60_000), announcements: Announcement[] = [], products?: Products) {
+  const env = setup(undefined, announcements, products);
+  const bot = createBot(config, env.services, { limiter, feedbackGraceMs: 20 });
+  bot.botInfo = {
+    id: 42, is_bot: true, first_name: "Kili", username: "kili_test_bot",
+    can_join_groups: true, can_read_all_group_messages: false, supports_inline_queries: false,
+    can_connect_to_business: false, has_main_web_app: false,
+  } as typeof bot.botInfo;
+
+  const calls: Call[] = [];
+  let messageId = 100;
+  bot.api.config.use(async (_prev, method, payload) => {
+    const p = payload as Record<string, any>;
+    calls.push({ method, payload: p });
+    if (typeof p.text === "string" && p.parse_mode === "HTML") assertTelegramHtml(p.text);
+    const result: unknown =
+      method === "getFile" ? { file_id: p.file_id, file_unique_id: "u", file_path: `docs/${p.file_id}` }
+      : method.startsWith("send") || method === "editMessageText"
+        ? { message_id: ++messageId, date: 0, chat: { id: p.chat_id ?? 0, type: "private" }, text: p.text ?? "" }
+        : true;
+    return { ok: true, result } as any;
+  });
+
+  // Like Telegram: update types the bot didn't ask for (allowed_updates) are never delivered.
+  const realHandle = bot.handleUpdate.bind(bot);
+  bot.handleUpdate = async (update: Update) => {
+    const type = Object.keys(update).find((k) => k !== "update_id")!;
+    if (!(ALLOWED_UPDATES as readonly string[]).includes(type)) return;
+    return realHandle(update);
+  };
+
+  let updateId = 0;
+  const user = (id: number, username: string) => ({ id, is_bot: false, first_name: username, username });
+  const chatOf = (id: number, group?: string) =>
+    group ? { id, type: "supergroup" as const, title: group } : { id, type: "private" as const, first_name: "x" };
+
+  const send = async (from: number, text: string, group?: { id: number; title: string }) => {
+    const isCmd = text.startsWith("/");
+    const update = {
+      update_id: ++updateId,
+      message: {
+        message_id: ++messageId, date: 0, text,
+        from: user(from, `user${from}`),
+        chat: group ? chatOf(group.id, group.title) : chatOf(from),
+        entities: isCmd ? [{ type: "bot_command", offset: 0, length: text.split(" ")[0]!.length }] : undefined,
+      },
+    } as Update;
+    const before = calls.length;
+    await bot.handleUpdate(update);
+    return calls.slice(before);
+  };
+
+  const press = async (from: number, data: string) => {
+    const update = {
+      update_id: ++updateId,
+      callback_query: {
+        id: String(updateId), chat_instance: "c", data,
+        from: user(from, `user${from}`),
+        message: { message_id: 1, date: 0, chat: chatOf(from), text: "menu" },
+      },
+    } as Update;
+    const before = calls.length;
+    await bot.handleUpdate(update);
+    return calls.slice(before);
+  };
+
+  const sendDocument = async (from: number, fileId: string) => {
+    const update = {
+      update_id: ++updateId,
+      message: {
+        message_id: ++messageId, date: 0, from: user(from, `user${from}`), chat: chatOf(from),
+        document: { file_id: fileId, file_unique_id: fileId, file_name: fileId, file_size: 100 },
+      },
+    } as Update;
+    const before = calls.length;
+    await bot.handleUpdate(update);
+    return calls.slice(before);
+  };
+
+  const inlineQuery = async (from: number, query: string, chatType = "sender") => {
+    const before = calls.length;
+    await bot.handleUpdate({
+      update_id: ++updateId,
+      inline_query: { id: `iq${updateId}`, from: user(from, `user${from}`), query, offset: "", chat_type: chatType },
+    } as Update);
+    return calls.slice(before);
+  };
+
+  const chooseInline = async (from: number, resultId: string) => {
+    const before = calls.length;
+    await bot.handleUpdate({
+      update_id: ++updateId,
+      chosen_inline_result: { result_id: resultId, from: user(from, `user${from}`), query: "x" },
+    } as Update);
+    return calls.slice(before);
+  };
+
+  /** The message Telegram posts into the chat when an inline result is picked. */
+  const sendViaBot = async (from: number, text: string) => {
+    const before = calls.length;
+    await bot.handleUpdate({
+      update_id: ++updateId,
+      message: { message_id: ++messageId, date: 0, text, from: user(from, `user${from}`), chat: chatOf(from), via_bot: bot.botInfo },
+    } as Update);
+    return calls.slice(before);
+  };
+
+  return { ...env, bot, calls, send, press, sendDocument, inlineQuery, chooseInline, sendViaBot };
+}
+
+const textOf = (calls: Call[]) => calls.filter((c) => typeof c.payload.text === "string").map((c) => c.payload.text as string).join("\n---\n");
+const buttonsOf = (calls: Call[]) =>
+  calls.flatMap((c) => (c.payload.reply_markup?.inline_keyboard ?? []).flat()) as { text: string; callback_data: string }[];
+
+// Files served by the fake Telegram file endpoint.
+const files = new Map<string, string>();
+const realFetch = globalThis.fetch;
+beforeAll(() => {
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    const id = url.split("/docs/")[1];
+    if (url.startsWith("https://api.telegram.org/file/") && id && files.has(id)) return new Response(files.get(id));
+    throw new Error(`unexpected fetch ${url}`);
+  }) as typeof fetch;
+});
+afterAll(() => {
+  globalThis.fetch = realFetch;
+});
+
+describe("bot end-to-end", () => {
+  test("registration, drinking, menus, groups, export, delete", async () => {
+    const h = harness();
+    const A = 1001;
+
+    expect(textOf(await h.send(A, "/start"))).toContain("Luo tunnus");
+    expect(textOf(await h.send(A, "/juoma"))).toContain("Rekisteröidy");
+
+    // Registration flow
+    await h.press(A, "m:r");
+    expect(textOf(await h.send(A, "kymmenen"))).toContain("Syötä paino uudelleen");
+    expect(textOf(await h.send(A, "80"))).toContain("pituus");
+    const genderStep = await h.send(A, "180");
+    expect(buttonsOf(genderStep).map((b) => b.callback_data)).toContain("m:r:g:m");
+    expect(textOf(await h.press(A, "m:r:g:m"))).toContain("Käyttöehdot");
+    expect(textOf(await h.press(A, "m:r:t:y"))).toContain("Moikka user1001");
+    const uid = h.crypto.userKey(A);
+    expect(h.services.accounts.get(uid)).toMatchObject({ weight: 80, height: 180, gender: "mies" });
+    // Registration stores the Telegram id (encrypted) for inactivity warnings
+    const stored = h.db.query("SELECT tg_id_enc FROM users WHERE id = ?").get(uid) as { tg_id_enc: string };
+    expect(h.crypto.decrypt(stored.tg_id_enc)).toBe(String(A));
+    // The terms shown include the retention rule
+    expect(textOf(await h.send(A, "/terms"))).toContain("24 kuukauteen");
+
+    // Preset drink from the menu
+    const juo = await h.press(A, "m:j");
+    expect(buttonsOf(juo).map((b) => b.callback_data)).toContain("m:jc:miedot");
+    const drank = await h.press(A, "m:d:b50");
+    expect(textOf(drank)).toContain("Juoma tallennettu");
+    // Quick button for the latest drink appears
+    const quick = buttonsOf(drank).find((b) => b.callback_data.startsWith("m:jl:"));
+    expect(quick?.text).toContain("50cl");
+    await h.press(A, quick!.callback_data);
+    expect(h.services.drinks.since(uid, 0)).toHaveLength(2);
+
+    // Custom drink
+    await h.press(A, "m:jo");
+    expect(textOf(await h.send(A, "abc"))).toContain("Liian paljon tai vähän sanoja");
+    expect(textOf(await h.send(A, "33cl 5,1%"))).toContain("Oma juoma - 33cl 5.1%");
+    expect(textOf(await h.send(A, "4 40"))).toContain("Oma juoma - 4cl 40%"); // stays in flow
+
+    // Late logging
+    await h.press(A, "m:jk");
+    expect(textOf(await h.send(A, "30"))).toContain("Tunnit väärin");
+    await h.send(A, "2");
+    const entered = await h.send(A, "33 4.7\n4 40");
+    expect(textOf(entered)).toContain("2 juoma(a) syötetty");
+    expect(buttonsOf(entered).map((b) => b.callback_data)).toContain("m:jks");
+    expect(textOf(await h.press(A, "m:jks"))).toContain("2 juomaa jälkikellotettu");
+    expect(h.services.drinks.since(uid, 0)).toHaveLength(6);
+
+    // Navigating away cancels a flow: text is no longer treated as a drink
+    await h.press(A, "m:jo");
+    await h.press(A, "m:s");
+    expect(textOf(await h.send(A, "33 5"))).toContain("Mitä?");
+
+    // Undo (/laatta) asks for confirmation of the exact drink
+    const confirm = await h.send(A, "/laatta");
+    const yes = buttonsOf(confirm).find((b) => b.callback_data.startsWith("m:juy:"))!;
+    expect(textOf(await h.press(A, yes.callback_data))).toContain("Kumoaminen onnistui");
+    expect(h.services.drinks.since(uid, 0)).toHaveLength(5);
+    // Pressing the same confirmation twice doesn't undo a second drink
+    await h.press(A, yes.callback_data);
+    expect(h.services.drinks.since(uid, 0)).toHaveLength(5);
+
+    // Personal summaries and stats
+    expect(textOf(await h.send(A, "/promillet"))).toMatch(/Nyt:<\/b> \d/);
+    expect(textOf(await h.send(A, "/stats 7"))).toContain("Olet 7 päivän aikana");
+    expect(textOf(await h.press(A, "m:to"))).toContain("Oma juoma");
+    expect(textOf(await h.press(A, "m:tk:30"))).toContain("<b>30</b> päivän");
+
+    // Settings
+    await h.press(A, "m:amw");
+    expect(textOf(await h.send(A, "300"))).toContain("20kg ja 250kg");
+    expect(textOf(await h.send(A, "85"))).toContain("Paino muutettu");
+    expect(h.services.accounts.get(uid)!.weight).toBe(85);
+
+    // Groups (let the drinks absorb for a while first)
+    h.clock.now += 45 * 60_000;
+    const G = { id: -100777, title: "Kilta <3 & co" };
+    expect(textOf(await h.send(A, "/moro", G))).toContain("Kilta &lt;3 &amp; co");
+    expect(textOf(await h.send(A, "/moro"))).toContain("vain ryhmissä");
+    const listing = textOf(await h.send(2002, "/promillet@kili_test_bot", G));
+    expect(listing).toContain("user1001...");
+    expect(textOf(await h.send(A, "/annokset", G))).toMatch(/user1001\.\.\. [\d.]+kpl/);
+    expect(textOf(await h.send(A, "/stats2", G))).toContain("Top10 tilastot <b>annoksina</b>");
+
+    // Chart: a PNG photo in the group, and for yourself in private
+    const photo = (await h.send(A, "/kuvaaja", G)).find((c) => c.method === "sendPhoto");
+    expect(photo?.payload.caption).toContain("Kilta &lt;3 &amp; co");
+    expect(textOf(await h.send(2002, "/kuvaaja", { id: -999, title: "Tyhjä" }))).toContain("Ei piirrettävää");
+    expect((await h.send(A, "/kuvaaja")).some((c) => c.method === "sendPhoto")).toBe(true);
+    expect(textOf(await h.send(2002, "/moro", G))).toContain("Rekisteröidy");
+
+    // Export
+    const exported = await h.send(A, "/data");
+    expect(exported.filter((c) => c.method === "sendDocument")).toHaveLength(3);
+
+    // Admin only
+    expect(textOf(await h.send(2002, "/admin_stats"))).toContain("Ei käyttöoikeutta");
+
+    // Delete account
+    await h.press(A, "m:ad");
+    await h.press(A, "m:ad1");
+    expect(textOf(await h.press(A, "m:ad2"))).toContain("Kaikki tietosi on nyt poistettu");
+    expect(h.services.accounts.get(uid)).toBeNull();
+    expect(h.services.groups.memberStatuses(G.id)).toEqual([]);
+  });
+
+  test("importing the original bot's /data files, drinks.csv first", async () => {
+    const h = harness();
+    const B = 3003;
+    const old = legacyHash(B);
+    files.set("drinks-b", toCsv(["id", "userid", "alcohol", "description", "created"], [
+      { id: 1, userid: old, alcohol: 12241, description: "🍺 33cl 4.7%", created: new Date(h.clock.now - 3600_000) },
+      { id: 2, userid: old, alcohol: 12241, description: "🍺 33cl 4.7%", created: new Date("2023-01-01T20:00:00Z") },
+    ]));
+    files.set("user-b", toCsv(["userid", "nick", "weight", "gender", "height", "read_terms", "read_announcements", "created"], [
+      { userid: old, nick: "vanha", weight: 70, gender: "nainen", height: 165, read_terms: true, read_announcements: 3, created: new Date("2019-02-02T00:00:00Z") },
+    ]));
+    files.set("groups-b", toCsv(["userid", "groupid"], [{ userid: old, groupid: legacyHash(-100555) }]));
+    files.set("user-other", toCsv(["userid", "nick", "weight", "gender", "height"], [
+      { userid: legacyHash(1), nick: "x", weight: 70, gender: "mies", height: 170 },
+    ]));
+
+    expect(textOf(await h.sendDocument(B, "user-b"))).toContain("/tuo");
+    expect(textOf(await h.send(B, "/tuo"))).toContain("Käyttöehdot");
+    expect(textOf(await h.press(B, "m:i:y"))).toContain("Lähetä nyt tiedostot");
+
+    expect(textOf(await h.sendDocument(B, "user-other"))).toContain("ei ole sinun");
+    expect(textOf(await h.sendDocument(B, "drinks-b"))).toContain("tarvitsen ensin user.csv");
+    const afterUser = textOf(await h.sendDocument(B, "user-b"));
+    expect(afterUser).toContain("Tunnus luotu");
+    expect(afterUser).toContain("2 juomaa lisätty");
+    expect(textOf(await h.sendDocument(B, "groups-b"))).toContain("1 ryhmäjäsenyyttä");
+
+    const uid = h.crypto.userKey(B);
+    expect(h.services.accounts.get(uid)).toMatchObject({ weight: 70, gender: "nainen", name: "user3003" });
+
+    // The old group starts using the new bot: the imported member shows up without /moro
+    const listing = await h.send(9, "/promillet", { id: -100555, title: "Vanha ryhmä" });
+    expect(textOf(listing)).toContain("Toin 1 vanhan");
+    expect(textOf(listing)).toContain("user3003...");
+  });
+
+  test("flooding is rate limited per user", async () => {
+    const h = harness(new RateLimiter(5, 60_000));
+    for (let i = 0; i < 5; i++) expect(textOf(await h.send(7, "/help"))).toContain("Bläkkiskili");
+    expect(textOf(await h.send(7, "/help"))).toContain("Hidasta vähän");
+    expect(await h.send(7, "/help")).toEqual([]); // silently dropped
+    expect(textOf(await h.send(8, "/help"))).toContain("Bläkkiskili"); // other users unaffected
+  });
+
+  test("announcements: shown once in private to existing users, never in groups or to newcomers", async () => {
+    const publishedAt = "2026-11-06T21:00:00Z"; // the clock starts at 20:00Z
+    const h = harness(undefined, [{ publishedAt, text: "Uutta: <b>/kuvaaja</b> on täällä!" }]);
+    const register = async (id: number) => {
+      await h.press(id, "m:r");
+      await h.send(id, "80");
+      await h.send(id, "180");
+      await h.press(id, "m:r:g:m");
+      await h.press(id, "m:r:t:y");
+    };
+    await register(1); // registered before the announcement
+    expect(textOf(await h.send(1, "/help"))).not.toContain("Tiedote"); // not published yet
+
+    h.clock.now = Date.parse(publishedAt) + 60_000;
+    expect(textOf(await h.send(1, "/promillet", { id: -5, title: "G" }))).not.toContain("Tiedote"); // not in groups
+    const first = textOf(await h.send(1, "/help"));
+    expect(first).toContain("📣 <b>Tiedote 6.11.2026</b>");
+    expect(first).toContain("Uutta: <b>/kuvaaja</b> on täällä!");
+    expect(textOf(await h.send(1, "/help"))).not.toContain("Tiedote"); // only once
+
+    await register(2); // registered after it
+    expect(textOf(await h.send(2, "/help"))).not.toContain("Tiedote");
+  });
+
+  test("Alko product search: typed search in the menu, inline mode, and the inline-feedback guard", async () => {
+    const products = new Products();
+    products.load(catalogJson());
+    const h = harness(undefined, [], products);
+    const A = 4004;
+    const uid = h.crypto.userKey(A);
+
+    // Unregistered: inline search points to registration
+    const anon = (await h.inlineQuery(A, "karhu")).find((c) => c.method === "answerInlineQuery")!;
+    expect(anon.payload.results).toEqual([]);
+    expect(anon.payload.button).toEqual({ text: "Luo ensin tunnus", start_parameter: "tunnus" });
+    expect(textOf(await h.send(A, "/start tunnus"))).toContain("Aloita syöttämällä painosi");
+    await h.send(A, "80");
+    await h.send(A, "180");
+    await h.press(A, "m:r:g:m");
+    await h.press(A, "m:r:t:y");
+
+    // Juo menu has the search button (typed search, since inline mode is off for this bot)
+    const juo = await h.press(A, "m:j");
+    expect(buttonsOf(juo).find((b) => b.text === "🔎 Hae Alkosta")?.callback_data).toBe("m:jh");
+
+    await h.press(A, "m:jh");
+    const results = await h.send(A, "karhu");
+    const resultButtons = buttonsOf(results).map((b) => b.text);
+    expect(resultButtons).toContain("🍺 Karhu 5,3 · 33 cl"); // package words dropped
+    expect(textOf(await h.send(A, "xyzzy"))).toContain("Ei osumia"); // still in the search flow
+
+    // Product view: amounts only, plus a custom amount
+    await h.send(A, "karjala");
+    const karjala = await h.press(A, "m:p:700004");
+    expect(buttonsOf(karjala).map((b) => b.text)).toEqual(["50 cl · 2.6 annosta", "✏️ Muu määrä", "🔎 Hae lisää", "« Takaisin"]);
+    expect(textOf(await h.press(A, "m:ps:700004:c50"))).toContain("Juoma tallennettu: 🍺 Karjala (50 cl)");
+    expect(h.services.drinks.last(uid)).toMatchObject({ description: "🍺 Karjala (50 cl)", productId: "700004" });
+
+    // Wine: choose a glass, buttons show standard drinks
+    const wine = await h.press(A, "m:p:700010");
+    expect(textOf(wine)).toContain("Château Testi · 13 %");
+    expect(buttonsOf(wine).map((b) => b.text)).toEqual(expect.arrayContaining(["37.5 cl · 3.2 annosta", "75 cl · 6.4 annosta"]));
+    const glass = buttonsOf(wine).find((b) => b.text.startsWith("16 cl"))!;
+    expect(glass.text).toBe("16 cl · 1.4 annosta");
+    expect(textOf(await h.press(A, glass.callback_data))).toContain("Château Testi 2022 (16 cl)");
+    expect(h.services.drinks.last(uid)!.productId).toBe("700010");
+
+    // Quick-repeat buttons keep the product id
+    const quick = buttonsOf(await h.press(A, "m:j")).find((b) => b.text.includes("Château"))!;
+    await h.press(A, quick.callback_data);
+    expect(h.services.drinks.last(uid)!.productId).toBe("700010");
+
+    // Inline mode: results per serving, only in the private chat with the bot
+    const answer = (await h.inlineQuery(A, "jallu")).find((c) => c.method === "answerInlineQuery")!;
+    // One drink for all four Jaloviina *** packages (and one for Jaloviina *), one result per serving
+    expect(answer.payload.results.map((r: { id: string }) => r.id)).toEqual(["700022:2", "700022:4", "700022:6", "700025:2", "700025:4", "700025:6"]);
+    expect(answer.payload.results[1]).toMatchObject({ title: "🥃 Jaloviina ***", description: "4 cl · 38 % · 1.0 annosta" });
+    expect(answer.payload.is_personal).toBe(true);
+    const inGroup = (await h.inlineQuery(A, "jallu", "supergroup")).find((c) => c.method === "answerInlineQuery")!;
+    expect(inGroup.payload.results).toEqual([]);
+    expect(inGroup.payload.button.start_parameter).toBe("juo");
+    // Empty query: your recent products
+    const recentAnswer = (await h.inlineQuery(A, "")).find((c) => c.method === "answerInlineQuery")!;
+    expect(recentAnswer.payload.results[0].id).toStartWith("700010:");
+
+    // Picking a result logs it and confirms privately; the "via bot" message isn't typed input
+    h.clock.now += 60_000;
+    const picked = await h.chooseInline(A, "700022:4");
+    expect(textOf(picked)).toContain("Juoma tallennettu: 🥃 Jaloviina *** (4 cl)");
+    expect(picked[0]!.payload.chat_id).toBe(A);
+    expect(h.services.drinks.last(uid)).toMatchObject({ productId: "700022", alcoholMg: Math.round(0.38 * 789.24 * 0.04 * 1000) });
+    expect(await h.sendViaBot(A, "🥃 Jaloviina *** (4 cl)")).toEqual([]);
+    await Bun.sleep(40);
+    expect(textOf(h.calls.slice(-1))).not.toContain("inline-palaute");
+
+    // If BotFather inline feedback is off, no chosen_inline_result comes: tell the user once
+    await h.sendViaBot(A, "🍺 Karjala (50 cl)");
+    await Bun.sleep(40);
+    expect(textOf(h.calls.slice(-1))).toContain("inline-palaute on pois päältä");
+  });
+
+  test("typing a drink name in the private chat searches the catalogue", async () => {
+    const products = new Products();
+    products.load(catalogJson());
+    const h = harness(undefined, [], products);
+    const A = 5005;
+    expect(textOf(await h.send(A, "karhu"))).toContain("Mitä?"); // no account yet
+    await h.press(A, "m:r");
+    await h.send(A, "80");
+    await h.send(A, "180");
+    await h.press(A, "m:r:g:m");
+    await h.press(A, "m:r:t:y");
+
+    const plain = await h.send(A, "karhu");
+    expect(textOf(plain)).toContain("Osumat haulle <b>karhu</b>");
+    expect(buttonsOf(plain).some((b) => b.callback_data.startsWith("m:p:"))).toBe(true);
+    // The next message refines the search
+    expect(textOf(await h.send(A, "karjala"))).toContain("Osumat haulle <b>karjala</b>");
+    // "@bot query" sent as a message (instead of picking an inline result) works too
+    await h.press(A, "m:s");
+    expect(textOf(await h.send(A, "@kili_test_bot jallu"))).toContain("Osumat haulle <b>jallu</b>");
+    await h.press(A, "m:s");
+    expect(textOf(await h.send(A, "moi mitä kuuluu"))).toContain("Mitä?"); // no matches → not understood
+  });
+
+  test("custom amounts: Muu määrä in the menu, amount in a typed search, amount in an inline query", async () => {
+    const products = new Products();
+    products.load(catalogJson());
+    const h = harness(undefined, [], products);
+    const A = 6006;
+    const uid = h.crypto.userKey(A);
+    await h.press(A, "m:r");
+    await h.send(A, "80");
+    await h.send(A, "180");
+    await h.press(A, "m:r:g:m");
+    await h.press(A, "m:r:t:y");
+    const mg = (abv: number, litres: number) => Math.round((abv / 100) * 789.24 * litres * 1000);
+
+    // ✏️ Muu määrä
+    const prompt = await h.press(A, "m:pc:700022");
+    expect(textOf(prompt)).toContain("Kirjoita juomasi määrä");
+    expect(textOf(await h.send(A, "paljon"))).toContain("En ymmärtänyt määrää");
+    expect(textOf(await h.send(A, "1 l"))).toContain("liian suuri");
+    expect(textOf(await h.send(A, "3"))).toContain("Juoma tallennettu: 🥃 Jaloviina *** (3 cl)");
+    expect(h.services.drinks.last(uid)).toMatchObject({ alcoholMg: mg(38, 0.03), productId: "700022" });
+    expect(textOf(await h.send(A, "3"))).toContain("Mitä?"); // the flow ended
+
+    // Amount in a typed search: one tap logs exactly that
+    h.clock.now += 60_000;
+    await h.press(A, "m:jh");
+    const results = await h.send(A, "jallu 2,5 cl");
+    expect(textOf(results)).toContain("Osumat haulle <b>jallu (2.5 cl)</b>");
+    const hit = buttonsOf(results).find((b) => b.text === "🥃 Jaloviina *** · 2.5 cl")!;
+    expect(textOf(await h.press(A, hit.callback_data))).toContain("(2.5 cl)");
+    expect(h.services.drinks.last(uid)!.alcoholMg).toBe(mg(38, 0.025));
+    expect(textOf(await h.send(A, "jallu 2 l"))).toContain("liian suuri");
+
+    // Amount in an inline query
+    h.clock.now += 60_000;
+    const answer = (await h.inlineQuery(A, "karhu 4,6 40cl")).find((c) => c.method === "answerInlineQuery")!;
+    expect(answer.payload.results[0]).toMatchObject({ id: "700002:x40", title: "🍺 Karhu 4,6", description: "40 cl · 4.6 % · 1.2 annosta" });
+    expect(textOf(await h.chooseInline(A, "700002:x40"))).toContain("🍺 Karhu 4,6 (40 cl)");
+    expect(h.services.drinks.last(uid)!.alcoholMg).toBe(mg(4.6, 0.4));
+  });
+});

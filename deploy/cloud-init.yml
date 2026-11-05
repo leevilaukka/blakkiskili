@@ -1,0 +1,86 @@
+#cloud-config
+# Hardened base setup for a fresh Ubuntu 24.04 VPS (Hetzner, UpCloud and most providers
+# accept this as "user data" / "cloud-init" when creating the server).
+#
+# Before use: replace the SSH public keys below with the maintainers' own keys.
+# Afterwards, SSH in as `kili` and continue with deploy/RUNBOOK.md.
+
+users:
+  - name: kili
+    groups: [sudo, docker]
+    shell: /bin/bash
+    # Key-only login; sudo without a password because no password is ever set.
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    lock_passwd: true
+    ssh_authorized_keys:
+      - "ssh-ed25519 AAAA...REPLACE-ME maintainer1@laptop"
+      - "ssh-ed25519 AAAA...REPLACE-ME maintainer2@laptop"
+
+groups: [docker]
+
+disable_root: true
+ssh_pwauth: false
+
+package_update: true
+package_upgrade: true
+packages:
+  - docker.io
+  - docker-compose-v2
+  - ufw
+  - fail2ban
+  - unattended-upgrades
+  - sqlite3
+  - git
+
+write_files:
+  - path: /etc/ssh/sshd_config.d/99-kili-hardening.conf
+    permissions: "0644"
+    content: |
+      PermitRootLogin no
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PubkeyAuthentication yes
+      AllowUsers kili
+      MaxAuthTries 3
+      X11Forwarding no
+      AllowAgentForwarding no
+
+  # Security updates every day, reboot at 04:30 when a kernel update requires it.
+  # The bot comes back automatically (restart: unless-stopped, docker enabled at boot).
+  - path: /etc/apt/apt.conf.d/20auto-upgrades
+    permissions: "0644"
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+      APT::Periodic::AutocleanInterval "7";
+  - path: /etc/apt/apt.conf.d/52kili-unattended-upgrades
+    permissions: "0644"
+    content: |
+      Unattended-Upgrade::Automatic-Reboot "true";
+      Unattended-Upgrade::Automatic-Reboot-Time "04:30";
+      Unattended-Upgrade::Remove-Unused-Dependencies "true";
+
+  - path: /etc/fail2ban/jail.d/sshd.local
+    permissions: "0644"
+    content: |
+      [sshd]
+      enabled = true
+      maxretry = 5
+      bantime = 1h
+
+  # Docker log rotation for all containers, as a fallback to the compose settings.
+  - path: /etc/docker/daemon.json
+    permissions: "0644"
+    content: |
+      { "log-driver": "json-file", "log-opts": { "max-size": "10m", "max-file": "3" } }
+
+runcmd:
+  # Firewall: nothing inbound except SSH. The bot uses long polling and needs no open ports.
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow OpenSSH
+  - ufw --force enable
+  - timedatectl set-timezone Europe/Helsinki
+  - systemctl enable --now docker fail2ban unattended-upgrades
+  - systemctl restart ssh
+  - install -d -o kili -g kili -m 0700 /home/kili/blakkiskili

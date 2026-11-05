@@ -1,0 +1,47 @@
+# Production: `COMPOSE_PROFILES=backup` in .env enables the off-site backup service.
+# See deploy/RUNBOOK.md.
+
+x-hardening: &hardening
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 128
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  kili:
+    <<: *hardening
+    build: .
+    env_file: .env
+    environment:
+      DB_PATH: /app/data/kili.sqlite
+      BACKUP_DIR: /app/backups
+    volumes:
+      - ./data:/app/data
+      - ./backups:/app/backups
+    tmpfs: [/tmp]
+    mem_limit: 256m
+    # Only needed in webhook mode (put a TLS reverse proxy in front of it). Bind to localhost
+    # only: Docker-published ports bypass ufw.
+    # ports:
+    #   - "127.0.0.1:8080:8080"
+
+  backup:
+    <<: *hardening
+    image: restic/restic:0.19.1
+    profiles: [backup]
+    user: "1000:1000"
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    # Separate file: the backup container never sees BOT_TOKEN or APP_SECRET, and the bot
+    # never sees the backup credentials.
+    env_file: backup.env
+    environment:
+      RESTIC_CACHE_DIR: /tmp/restic-cache
+    volumes:
+      - ./backups:/backups:ro
+      - ./deploy/backup.sh:/backup.sh:ro
+    tmpfs: ["/tmp:uid=1000,gid=1000,mode=0700"]
+    mem_limit: 512m
