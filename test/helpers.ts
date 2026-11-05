@@ -3,15 +3,16 @@ import { createCrypto } from "../src/lib/ids.ts";
 import { createServices } from "../src/services/index.ts";
 import type { Announcement } from "../src/announcements.ts";
 import type { Products } from "../src/services/products.ts";
+import type { Barcodes } from "../src/services/barcodes.ts";
 
 export const TEST_SECRET = "test-secret-test-secret-test-secret-123";
 
 /** Services on a fresh in-memory database with a controllable clock. */
-export function setup(start = Date.parse("2026-11-06T20:00:00Z"), announcements: Announcement[] = [], products?: Products) {
+export function setup(start = Date.parse("2026-11-06T20:00:00Z"), announcements: Announcement[] = [], products?: Products, barcodes?: Barcodes) {
   const clock = { now: start };
   const db = openDatabase(":memory:");
   const crypto = createCrypto(TEST_SECRET);
-  const services = createServices({ db, crypto, now: () => clock.now }, { announcements, products });
+  const services = createServices({ db, crypto, now: () => clock.now }, { announcements, products, barcodes });
   return { db, crypto, services, clock };
 }
 

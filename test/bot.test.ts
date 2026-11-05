@@ -7,6 +7,8 @@ import { ALLOWED_UPDATES, createBot } from "../src/bot/index.ts";
 import { RateLimiter } from "../src/bot/ratelimit.ts";
 import type { Announcement } from "../src/announcements.ts";
 import { Products } from "../src/services/products.ts";
+import { Barcodes } from "../src/services/barcodes.ts";
+import type { BarcodeIO } from "../src/bot/barcode.ts";
 import { catalogJson } from "./fixtures.ts";
 import type { Config } from "../src/config.ts";
 import { toCsv } from "../src/lib/csv.ts";
@@ -47,9 +49,10 @@ function harness(
   announcements: Announcement[] = [],
   products?: Products,
   overrides: Partial<Config> = {},
+  barcodes?: { service: Barcodes; io: BarcodeIO },
 ) {
-  const env = setup(undefined, announcements, products);
-  const bot = createBot({ ...config, ...overrides }, env.services, { limiter, feedbackGraceMs: 20 });
+  const env = setup(undefined, announcements, products, barcodes?.service);
+  const bot = createBot({ ...config, ...overrides }, env.services, { limiter, feedbackGraceMs: 20, barcodeIO: barcodes?.io });
   bot.botInfo = {
     id: 42, is_bot: true, first_name: "Kili", username: "kili_test_bot",
     can_join_groups: true, can_read_all_group_messages: false, supports_inline_queries: false,
@@ -126,6 +129,22 @@ function harness(
     return calls.slice(before);
   };
 
+  const sendPhoto = async (from: number, fileId: string) => {
+    const update = {
+      update_id: ++updateId,
+      message: {
+        message_id: ++messageId, date: 0, from: user(from, `user${from}`), chat: chatOf(from),
+        photo: [
+          { file_id: `${fileId}-small`, file_unique_id: "s", width: 90, height: 90 },
+          { file_id: fileId, file_unique_id: fileId, width: 1280, height: 960 },
+        ],
+      },
+    } as Update;
+    const before = calls.length;
+    await bot.handleUpdate(update);
+    return calls.slice(before);
+  };
+
   const inlineQuery = async (from: number, query: string, chatType = "sender") => {
     const before = calls.length;
     await bot.handleUpdate({
@@ -158,7 +177,7 @@ function harness(
   const account = (telegramId: number) =>
     env.services.accounts.byIdentity(env.crypto.identityKey("telegram", telegramId))?.id ?? "none";
 
-  return { ...env, bot, calls, send, press, sendDocument, inlineQuery, chooseInline, sendViaBot, account };
+  return { ...env, bot, calls, send, press, sendDocument, sendPhoto, inlineQuery, chooseInline, sendViaBot, account };
 }
 
 const textOf = (calls: Call[]) => calls.filter((c) => typeof c.payload.text === "string").map((c) => c.payload.text as string).join("\n---\n");
@@ -573,5 +592,141 @@ describe("bot end-to-end", () => {
     await h.press(B, "m:r:t:y");
     const other = h.services.identities.createLinkCode(discordAccount.id).code;
     expect(textOf(await h.send(B, `/yhdista ${other}`))).toContain("on jo oma tunnus");
+  });
+});
+
+// ---------- Barcodes ----------
+
+const BEER_EAN = "4006381333931";
+const OTHER_EAN = "96385074";
+
+/** A tiny stand-in for Alkometriikka's backend: a link is confirmed once two voters agree. */
+function fakeBackend() {
+  const votes = new Map<string, Map<string, string>>(); // ean → voter → product
+  const requests: { method: string; path: string; voter?: string | null; auth?: string | null }[] = [];
+  const confirmed = (ean: string) => {
+    const counts = new Map<string, number>();
+    for (const p of votes.get(ean)?.values() ?? []) counts.set(p, (counts.get(p) ?? 0) + 1);
+    return [...counts].find(([, n]) => n >= 2)?.[0] ?? null;
+  };
+  const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input));
+    const headers = new Headers(init?.headers);
+    const method = init?.method ?? "GET";
+    requests.push({ method, path: url.pathname, voter: headers.get("x-voter"), auth: headers.get("authorization") });
+    if (url.pathname === "/v1/eans") {
+      const items = Object.fromEntries([...votes.keys()].flatMap((e) => (confirmed(e) ? [[e, confirmed(e)]] : [])));
+      return new Response(JSON.stringify({ count: Object.keys(items).length, items }), { headers: { etag: '"1"' } });
+    }
+    const ean = url.pathname.split("/").pop()!;
+    if (method === "POST") {
+      const { productId } = JSON.parse(String(init!.body));
+      if (productId === "999") return new Response("{}", { status: 404 });
+      const forEan = votes.get(ean) ?? new Map();
+      forEan.set(headers.get("x-voter")!, productId);
+      votes.set(ean, forEan);
+    }
+    const productId = confirmed(ean);
+    return new Response(JSON.stringify({ ean, status: productId ? "confirmed" : votes.has(ean) ? "pending" : "unknown", productId }));
+  }) as typeof fetch;
+  return { fetchFn, requests, votes };
+}
+
+function barcodeHarness(photos: Record<string, string | null> = {}) {
+  const products = new Products();
+  products.load(catalogJson());
+  const backend = fakeBackend();
+  const service = new Barcodes({ url: "https://api.test", apiKey: "bot-key", fetch: backend.fetchFn });
+  const io: BarcodeIO = {
+    download: async (_ctx, fileId) => new TextEncoder().encode(fileId),
+    decode: async (bytes) => photos[new TextDecoder().decode(bytes)] ?? null,
+  };
+  return { h: harness(undefined, [], products, {}, { service, io }), backend, service };
+}
+
+async function registerUser(h: ReturnType<typeof harness>, id: number) {
+  await h.press(id, "m:r");
+  await h.send(id, "80");
+  await h.send(id, "180");
+  await h.press(id, "m:r:g:m");
+  await h.press(id, "m:r:t:y");
+}
+
+describe("barcodes", () => {
+  test("an unknown barcode is linked by search, and two people agreeing confirms it", async () => {
+    const { h, backend } = barcodeHarness();
+    await registerUser(h, 6001);
+    await registerUser(h, 6002);
+
+    // Unknown: the bot asks for a product name
+    const unknown = await h.send(6001, BEER_EAN);
+    expect(textOf(unknown)).toContain("ei ole vielä linkitetty");
+    // Typing a name lists packages to link the barcode to
+    const picks = await h.send(6001, "karjala");
+    const pick = buttonsOf(picks).find((b) => b.callback_data === `m:el:${BEER_EAN}:700004`);
+    expect(pick).toBeDefined();
+
+    const linked = await h.press(6001, pick!.callback_data);
+    expect(textOf(linked)).toContain("otetaan käyttöön, kun joku toinenkin vahvistaa");
+    // the product is shown so the drink can still be logged
+    expect(buttonsOf(linked).some((b) => b.callback_data.startsWith("m:ps:700004"))).toBe(true);
+    // the backend got an opaque voter id, not a Telegram id
+    const post = backend.requests.find((r) => r.method === "POST")!;
+    expect(post.auth).toBe("Bearer bot-key");
+    expect(post.voter).toMatch(/^[0-9a-f]{48}$/);
+    expect(post.voter).not.toContain("6001");
+
+    // Still unconfirmed for another user, who agrees
+    await h.send(6002, BEER_EAN);
+    const second = await h.send(6002, "karjala");
+    const confirmed = await h.press(6002, buttonsOf(second).find((b) => b.callback_data.startsWith("m:el:"))!.callback_data);
+    expect(textOf(confirmed)).toContain("vahvistettu");
+
+    // Now anyone scanning it gets the product straight away
+    const hit = await h.send(6001, BEER_EAN);
+    expect(textOf(hit)).toContain("kuuluu tälle tuotteelle");
+    expect(textOf(hit)).toContain("Karjala");
+  });
+
+  test("a photo of a barcode is read and looked up, and linked when a product asked for it", async () => {
+    const { h, service } = barcodeHarness({ photoA: BEER_EAN, photoB: "036000291452", blank: null });
+    await registerUser(h, 6003);
+
+    expect(textOf(await h.sendPhoto(6003, "blank"))).toContain("En löytänyt kuvasta viivakoodia");
+    expect(textOf(await h.sendPhoto(6003, "photoA"))).toContain("ei ole vielä linkitetty");
+
+    // From a product: "Linkitä viivakoodi" then the photo (UPC-A is normalised to 13 digits)
+    const product = await h.press(6003, "m:p:700004");
+    expect(buttonsOf(product).some((b) => b.callback_data === "m:eb:700004")).toBe(true);
+    const prompt = await h.press(6003, "m:eb:700004");
+    expect(textOf(prompt)).toContain("Lähetä tuotteen");
+    expect(textOf(await h.sendPhoto(6003, "photoB"))).toContain("otetaan käyttöön");
+    expect(service.count).toBe(0); // one vote only: not confirmed
+
+    // The same by typing the digits
+    await h.press(6003, "m:eb:700004");
+    expect(textOf(await h.send(6003, "12345"))).toContain("En tunnistanut viivakoodia");
+    expect(textOf(await h.send(6003, OTHER_EAN))).toContain("otetaan käyttöön");
+  });
+
+  test("a product with several package sizes asks which one the barcode is on", async () => {
+    const { h } = barcodeHarness();
+    await registerUser(h, 6004);
+    const choose = await h.press(6004, "m:eb:700001");
+    expect(textOf(choose)).toContain("Valitse pakkaus");
+    const ids = buttonsOf(choose).filter((b) => b.callback_data.startsWith("m:ep:")).map((b) => b.callback_data);
+    expect(ids).toContain("m:ep:700001");
+    expect(ids.length).toBeGreaterThan(1);
+  });
+
+  test("barcodes are off without a backend, and linking is hidden without the key", async () => {
+    const products = new Products();
+    products.load(catalogJson());
+    const h = harness(undefined, [], products);
+    await registerUser(h, 6005);
+    expect(textOf(await h.send(6005, BEER_EAN))).toContain("Mitä?");
+    expect(textOf(await h.sendPhoto(6005, "x"))).toContain("eivät ole käytössä");
+    const product = await h.press(6005, "m:p:700004");
+    expect(buttonsOf(product).some((b) => b.callback_data.startsWith("m:eb:"))).toBe(false);
   });
 });
