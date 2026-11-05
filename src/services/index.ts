@@ -1,5 +1,6 @@
 // Domain services. Nothing in here knows about Telegram: callers pass already-derived keys
-// (HMACs) plus raw Telegram ids only where the legacy format requires them. This is the
+// (HMACs) plus raw platform user ids only where they are needed (legacy import and export,
+// identity keys and the encrypted contact for warning DMs; see identities.ts). This is the
 // seam for other front ends (e.g. an HTTP API for Alkometriikka).
 
 import type { Database } from "bun:sqlite";
@@ -14,6 +15,7 @@ import { Inactivity } from "./inactivity.ts";
 import { Announcements } from "./announcements.ts";
 import { ANNOUNCEMENTS, type Announcement } from "../announcements.ts";
 import { Products } from "./products.ts";
+import { Identities } from "./identities.ts";
 
 export interface Deps {
   db: Database;
@@ -28,16 +30,17 @@ export interface ServiceOptions {
 }
 
 export function createServices(deps: Deps, opts: ServiceOptions = {}) {
-  const accounts = new Accounts(deps);
+  const identities = new Identities(deps);
+  const accounts = new Accounts(deps, identities);
   const drinks = new Drinks(deps, accounts);
   const groups = new Groups(deps);
   const stats = new Stats(deps);
-  const importer = new Importer(deps, accounts);
+  const importer = new Importer(deps, accounts, identities);
   const pending = new Pending(deps);
-  const inactivity = new Inactivity(deps, accounts);
+  const inactivity = new Inactivity(deps, accounts, identities);
   const announcements = new Announcements(deps, opts.announcements ?? ANNOUNCEMENTS);
   const products = opts.products ?? new Products();
-  return { accounts, drinks, groups, stats, importer, pending, inactivity, announcements, products, deps };
+  return { identities, accounts, drinks, groups, stats, importer, pending, inactivity, announcements, products, deps };
 }
 
 export type Services = ReturnType<typeof createServices>;

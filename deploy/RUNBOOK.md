@@ -97,7 +97,7 @@ Delete `restore/` when done. It contains the whole database.
 **Suspected compromise** (unknown SSH login, strange processes, leaked `.env`):
 1. `docker compose down`. If the server itself is suspect, power it off from the provider console.
 2. Revoke the bot token in BotFather. Rotate the object storage key and `RESTIC_PASSWORD`.
-3. Work out what leaked. If the database or a backup leaked **together with** `APP_SECRET`, names and Telegram IDs can be decrypted.
+3. Work out what leaked. If the database or a backup leaked **together with** `APP_SECRET`, names and platform user IDs (Telegram, and any linked platform) can be decrypted.
 4. **GDPR:** a breach that risks people's rights must be reported to the Data Protection Ombudsman (tietosuoja.fi) **within 72 hours** of finding out, and users must be told when the risk is high. Write down what happened and when, even if you decide not to report.
 5. Rebuild on a fresh server from §1 and restore from a backup taken before the compromise.
 

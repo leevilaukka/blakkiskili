@@ -28,8 +28,17 @@ export async function runInactivityJob(
 
   const text = fmt(S.inactivity_warning, retentionParams(config));
   for (const target of services.inactivity.dueForWarning(policy)) {
+    // Only Telegram can deliver for now. An account whose logins are all on platforms without a
+    // running bot can never be warned, so it's handled like an undeliverable warning.
+    // When another platform gets a bot, try its contact here too.
+    const telegram = target.contacts.find((c) => c.platform === "telegram");
+    if (!telegram) {
+      services.inactivity.markWarned(target.userId);
+      result.undeliverable += 1;
+      continue;
+    }
     try {
-      await api.sendMessage(target.telegramId, text, { parse_mode: "HTML" });
+      await api.sendMessage(Number(telegram.address), text, { parse_mode: "HTML" });
       services.inactivity.markWarned(target.userId);
       result.warned += 1;
     } catch (err) {

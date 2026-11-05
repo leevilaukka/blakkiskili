@@ -9,9 +9,9 @@ const profile = { name: "testuser", weight: 80, height: 180, gender: "mies" as c
 describe("crypto", () => {
   test("ids are keyed hashes, names are encrypted and decrypt back", () => {
     const { crypto, db, services } = setup();
-    const uid = crypto.userKey(TG_ID);
+    const uid = crypto.identityKey("telegram", TG_ID);
     expect(uid).not.toBe(legacyHash(TG_ID));
-    expect(crypto.userKey(TG_ID)).toBe(uid);
+    expect(crypto.identityKey("telegram", TG_ID)).toBe(uid);
     expect(crypto.groupKey(TG_ID)).not.toBe(uid);
     services.accounts.upsert(uid, { ...profile, name: "Mörkö <b>" });
     const row = db.query("SELECT name_enc FROM users").get() as { name_enc: string };
@@ -21,7 +21,7 @@ describe("crypto", () => {
 
   test("full name is stored encrypted, null until set, and kept when only the nick is updated", () => {
     const { crypto, db, services } = setup();
-    const uid = crypto.userKey(TG_ID);
+    const uid = crypto.identityKey("telegram", TG_ID);
     services.accounts.upsert(uid, profile);
     expect(services.accounts.get(uid)!.fullName).toBeNull();
     services.accounts.updateName(uid, "nick", "Matti Meikäläinen");
@@ -35,7 +35,7 @@ describe("crypto", () => {
 describe("drinks", () => {
   test("add, last, undo", () => {
     const { crypto, services, clock } = setup();
-    const uid = crypto.userKey(TG_ID);
+    const uid = crypto.identityKey("telegram", TG_ID);
     services.accounts.upsert(uid, profile);
     services.drinks.add(uid, 12379, "beer");
     clock.now += 60_000;
@@ -47,7 +47,7 @@ describe("drinks", () => {
 
   test("identical drinks in the same millisecond are both kept", () => {
     const { crypto, services } = setup();
-    const uid = crypto.userKey(TG_ID);
+    const uid = crypto.identityKey("telegram", TG_ID);
     services.accounts.upsert(uid, profile);
     services.drinks.add(uid, 1000, "shot");
     services.drinks.add(uid, 1000, "shot");
@@ -56,7 +56,7 @@ describe("drinks", () => {
 
   test("late logging spreads drinks from `hours` ago to now", () => {
     const { crypto, services, clock } = setup();
-    const uid = crypto.userKey(TG_ID);
+    const uid = crypto.identityKey("telegram", TG_ID);
     services.accounts.upsert(uid, profile);
     services.drinks.addLate(uid, [{ description: "a", mg: 1 }, { description: "b", mg: 2 }, { description: "c", mg: 3 }], 2);
     const times = services.drinks.since(uid, 0).map((d) => (clock.now - d.createdAt) / HOUR_MS);
@@ -65,7 +65,7 @@ describe("drinks", () => {
 
   test("recentUnique skips repeats and late-logged drinks", () => {
     const { crypto, services, clock } = setup();
-    const uid = crypto.userKey(TG_ID);
+    const uid = crypto.identityKey("telegram", TG_ID);
     services.accounts.upsert(uid, profile);
     for (const d of ["beer", "wine", "beer", "Jälkikellotus 33cl 4.7%"]) {
       services.drinks.add(uid, 1000, d);
@@ -76,7 +76,7 @@ describe("drinks", () => {
 
   test("ebac reacts to drinks", () => {
     const { crypto, services, clock } = setup();
-    const uid = crypto.userKey(TG_ID);
+    const uid = crypto.identityKey("telegram", TG_ID);
     services.accounts.upsert(uid, profile);
     services.drinks.add(uid, 12379, "beer");
     clock.now += HOUR_MS;
@@ -87,8 +87,8 @@ describe("drinks", () => {
 describe("groups", () => {
   test("join, list, leave", () => {
     const { crypto, services, clock } = setup();
-    const a = crypto.userKey(1);
-    const b = crypto.userKey(2);
+    const a = crypto.identityKey("telegram", 1);
+    const b = crypto.identityKey("telegram", 2);
     services.accounts.upsert(a, { ...profile, name: "alice" });
     services.accounts.upsert(b, { ...profile, name: "bob" });
     services.groups.join(a, -100);
@@ -106,7 +106,7 @@ describe("groups", () => {
 
   test("deleting an account removes everything", () => {
     const { crypto, services, db } = setup();
-    const a = crypto.userKey(1);
+    const a = crypto.identityKey("telegram", 1);
     services.accounts.upsert(a, profile);
     services.groups.join(a, -100);
     services.drinks.add(a, 1000, "x");
@@ -121,8 +121,8 @@ describe("groups", () => {
 describe("stats", () => {
   test("group top list and totals", () => {
     const { crypto, services } = setup();
-    const a = crypto.userKey(1);
-    const b = crypto.userKey(2);
+    const a = crypto.identityKey("telegram", 1);
+    const b = crypto.identityKey("telegram", 2);
     services.accounts.upsert(a, { ...profile, name: "alice" });
     services.accounts.upsert(b, { ...profile, name: "bob" });
     services.groups.join(a, -100);

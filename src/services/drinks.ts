@@ -9,6 +9,7 @@ export interface Drink {
   description: string;
   createdAt: number;
   productId: string | null;
+  kcal: number | null;
 }
 
 interface DrinkRow {
@@ -17,6 +18,7 @@ interface DrinkRow {
   description: string;
   created_at: number;
   product_id: string | null;
+  kcal: number | null;
 }
 
 const toDrink = (r: DrinkRow): Drink => ({
@@ -25,7 +27,17 @@ const toDrink = (r: DrinkRow): Drink => ({
   description: r.description,
   createdAt: r.created_at,
   productId: r.product_id,
+  kcal: r.kcal,
 });
+
+/** Energy of a set of drinks: the known total, and how many drinks had no energy data. */
+export interface Energy {
+  kcal: number;
+  unknown: number;
+}
+
+/** A pause this long ends a drinking session ("this evening"). */
+export const SESSION_GAP_MS = 6 * HOUR_MS;
 
 /**
  * How far back drinks are considered for the current estimate. The original summed the
@@ -44,15 +56,21 @@ export class Drinks {
     private readonly accounts: Accounts,
   ) {}
 
-  add(userId: string, mg: number, description: string, opts: { at?: number; productId?: string | null } = {}): Drink {
+  add(
+    userId: string,
+    mg: number,
+    description: string,
+    opts: { at?: number; productId?: string | null; kcal?: number | null } = {},
+  ): Drink {
     const insert = this.deps.db.query(
-      `INSERT INTO drinks (user_id, alcohol_mg, description, created_at, product_id) VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO drinks (user_id, alcohol_mg, description, created_at, product_id, kcal) VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT DO NOTHING RETURNING *`,
     );
+    const kcal = opts.kcal === undefined || opts.kcal === null ? null : Math.max(0, Math.round(opts.kcal));
     // The same drink in the same millisecond (e.g. late-logging identical drinks over 0 h)
     // would hit the natural-key constraint; nudge it by a millisecond instead.
     for (let t = opts.at ?? this.deps.now(); ; t += 1) {
-      const row = insert.get(userId, mg, description, t, opts.productId ?? null) as DrinkRow | null;
+      const row = insert.get(userId, mg, description, t, opts.productId ?? null, kcal) as DrinkRow | null;
       if (row) return toDrink(row);
     }
   }
@@ -128,6 +146,27 @@ export class Drinks {
     ).map((r) => r.product_id);
   }
 
+  /**
+   * Energy of the current session: the latest drinks with no pause of `SESSION_GAP_MS` between
+   * them (or since the last one). Null when there is no session going on.
+   */
+  sessionEnergy(userId: string, now = this.deps.now()): Energy | null {
+    const recent = this.since(userId, now - EBAC_WINDOW_MS);
+    let edge = now;
+    const session: Drink[] = [];
+    for (let i = recent.length - 1; i >= 0; i -= 1) {
+      const d = recent[i]!;
+      if (edge - d.createdAt > SESSION_GAP_MS) break;
+      session.push(d);
+      edge = d.createdAt;
+    }
+    if (session.length === 0) return null;
+    return {
+      kcal: session.reduce((sum, d) => sum + (d.kcal ?? 0), 0),
+      unknown: session.filter((d) => d.kcal === null).length,
+    };
+  }
+
   ebacFor(profile: Profile, now = this.deps.now()): Ebac {
     return calculateEbac(profile, this.since(profile.id, now - EBAC_WINDOW_MS), now);
   }
@@ -143,10 +182,17 @@ export class Drinks {
     const since = days ? now - days * DAY_MS : 0;
     const row = this.deps.db
       .query(
-        "SELECT coalesce(sum(alcohol_mg), 0) AS mg, min(created_at) AS first, count(*) AS count FROM drinks WHERE user_id = ? AND created_at > ?",
+        `SELECT coalesce(sum(alcohol_mg), 0) AS mg, min(created_at) AS first, count(*) AS count,
+                coalesce(sum(kcal), 0) AS kcal, count(*) - count(kcal) AS unknown
+         FROM drinks WHERE user_id = ? AND created_at > ?`,
       )
-      .get(userId, since) as { mg: number; first: number | null; count: number };
+      .get(userId, since) as { mg: number; first: number | null; count: number; kcal: number; unknown: number };
     const dayCount = days ?? Math.max(1, Math.ceil((now - (row.first ?? now)) / DAY_MS));
-    return { grams: row.mg / 1000, count: row.count, dayCount: Math.max(1, dayCount) };
+    return {
+      grams: row.mg / 1000,
+      count: row.count,
+      dayCount: Math.max(1, dayCount),
+      energy: { kcal: row.kcal, unknown: row.unknown } satisfies Energy,
+    };
   }
 }

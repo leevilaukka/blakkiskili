@@ -1,7 +1,7 @@
 import type { Bot } from "grammy";
 import type { BotContext } from "./context.ts";
 import { contactExtras, isPrivate, termsHtml } from "./context.ts";
-import { importIntro, juoView, lateView, registerView, renderNode, shortPermilles, startView } from "./menu.ts";
+import { importIntro, juoView, lateView, registerView, renderNode, sessionEnergyText, shortPermilles, startView } from "./menu.ts";
 import { sendExport, sendHtml, sendView } from "./ui.ts";
 import { InputFile } from "grammy";
 import { buildPermilleChart, type ChartSeries } from "../lib/chart.ts";
@@ -12,6 +12,7 @@ import { KALJA033, KALJA05, type DrinkPreset } from "../lib/catalog.ts";
 import { dateTime, drinkList, escapeHtml, fmt, hoursMinutes, num, raw } from "../lib/format.ts";
 import { DAY_MS, parseIntStrict, roundTo, STANDARD_DRINK_GRAMS } from "../lib/units.ts";
 import type { Profile } from "../services/accounts.ts";
+import type { Config } from "../config.ts";
 
 type Scope = "private" | "group" | "all";
 
@@ -20,6 +21,8 @@ interface CommandDef {
   description: string;
   scope: Scope;
   needsUser: boolean;
+  /** Off-by-config commands behave as unknown and are left out of menus and /komennot. */
+  enabled?: (config: Config) => boolean;
   run: (ctx: BotContext, profile: Profile | null, args: string) => Promise<unknown>;
 }
 
@@ -32,8 +35,9 @@ const daysArg = (args: string) => {
 };
 
 async function drinkShortcut(ctx: BotContext, p: Profile, preset: DrinkPreset) {
-  ctx.kili.services.drinks.add(p.id, preset.mg, preset.name);
-  await sendHtml(ctx, `${escapeHtml(randomDrinkResponse())}\n\n${shortPermilles(ctx, p)}`);
+  ctx.kili.services.drinks.add(p.id, preset.mg, preset.name, { kcal: preset.kcal });
+  const energy = sessionEnergyText(ctx, p);
+  await sendHtml(ctx, `${escapeHtml(randomDrinkResponse())}\n\n${shortPermilles(ctx, p)}${energy ? "\n" + energy : ""}`);
 }
 
 /** Private /promillet and /annokset: the long personal summary. */
@@ -137,8 +141,8 @@ export const COMMANDS: CommandDef[] = [
     // Deep links from inline-mode buttons: /start juo, /start tunnus
     run: async (ctx, p, args) => {
       if (args === "juo" && p) return sendView(ctx, juoView(ctx, p));
-      if (args === "tunnus" && ctx.kili.userId) {
-        ctx.kili.services.pending.set(ctx.kili.userId, { kind: "register", step: "weight" });
+      if (args === "tunnus" && ctx.kili.identityId) {
+        ctx.kili.services.pending.set(ctx.kili.identityId, { kind: "register", step: "weight" });
         return sendView(ctx, registerView(S.register.on_select));
       }
       return sendView(ctx, startView(ctx));
@@ -173,21 +177,23 @@ export const COMMANDS: CommandDef[] = [
   { name: "kalja033", description: "pikanäppäin 0.33l 4.7% oluelle", scope: "private", needsUser: true, run: (ctx, p) => drinkShortcut(ctx, p!, KALJA033) },
   { name: "kalja05", description: "pikanäppäin 0.5l 4.7% oluelle", scope: "private", needsUser: true, run: (ctx, p) => drinkShortcut(ctx, p!, KALJA05) },
   { name: "jalkikellotus", description: "kellota unohtuneet juomat", scope: "private", needsUser: true, run: async (ctx, p) => {
-      ctx.kili.services.pending.set(p!.id, { kind: "late", drinks: [] });
+      ctx.kili.services.pending.set(ctx.kili.identityId!, { kind: "late", drinks: [] });
       await sendView(ctx, lateView(S.juo.late.on_select));
     } },
   { name: "laatta", description: "poista viimeisin juoma", scope: "private", needsUser: true, run: async (ctx) => sendView(ctx, await renderNode(ctx, "ju")) },
   { name: "tunnus", description: "luo tai päivitä tunnus", scope: "private", needsUser: false, run: async (ctx) => {
-      ctx.kili.services.pending.set(ctx.kili.userId!, { kind: "register", step: "weight" });
+      ctx.kili.services.pending.set(ctx.kili.identityId!, { kind: "register", step: "weight" });
       await sendView(ctx, registerView(S.register.on_select));
     } },
   { name: "tuo", description: "tuo tiedot vanhasta Bläkkisvuohesta", scope: "private", needsUser: false, run: (ctx) => sendView(ctx, importIntro(ctx)) },
   { name: "data", description: "lataa omat tietosi", scope: "private", needsUser: false, run: (ctx) => sendExport(ctx, ctx.from!.id) },
+  { name: "yhdista", description: "yhdistä tunnus toisesta palvelusta koodilla", scope: "private", needsUser: false,
+    enabled: (c) => c.accountLinking, run: (ctx, _p, args) => redeemLinkCode(ctx, args) },
   { name: "whoami", description: "näytä omat tietosi", scope: "private", needsUser: true, run: (ctx, p) =>
       sendHtml(ctx, fmt(S.commands.whoami, { name: p!.name, weight: p!.weight, height: p!.height, gender: p!.gender === "mies" ? S.male : S.female, created: dateTime(p!.createdAt) })) },
   { name: "help", description: "ohjeet", scope: "all", needsUser: false, run: (ctx) => sendHtml(ctx, S.commands.help) },
   { name: "komennot", description: "kaikki komennot", scope: "all", needsUser: false, run: (ctx) =>
-      sendHtml(ctx, "<b>Komennot</b>\n\n" + COMMANDS.filter((c) => !c.name.startsWith("admin")).map((c) => `/${c.name} - ${escapeHtml(c.description)}`).join("\n")) },
+      sendHtml(ctx, "<b>Komennot</b>\n\n" + COMMANDS.filter((c) => !c.name.startsWith("admin") && isEnabled(c, ctx.kili.config)).map((c) => `/${c.name} - ${escapeHtml(c.description)}`).join("\n")) },
   { name: "terms", description: "käyttöehdot", scope: "all", needsUser: false, run: (ctx) => sendHtml(ctx, termsHtml(ctx.kili.config)) },
   { name: "about", description: "tietoa botista", scope: "all", needsUser: false, run: (ctx) => sendHtml(ctx, fmt(S.about, contactExtras(ctx.kili.config))) },
   { name: "admin_stats", description: "botin tilastot (admin)", scope: "private", needsUser: false, run: async (ctx) => {
@@ -204,13 +210,14 @@ export const COMMANDS: CommandDef[] = [
 export function registerCommands(bot: Bot<BotContext>) {
   for (const def of COMMANDS) {
     bot.command(def.name, async (ctx) => {
+      if (!isEnabled(def, ctx.kili.config)) return ctx.chat?.type === "private" ? sendHtml(ctx, S.unknown_text) : undefined;
       const priv = isPrivate(ctx);
       if (def.scope === "private" && !priv) return sendHtml(ctx, S.use_only_in_private);
       if (def.scope === "group" && priv) return sendHtml(ctx, S.use_only_in_chats);
 
-      const { userId, services } = ctx.kili;
+      const { identityId, services } = ctx.kili;
       // A command abandons whatever typed-input flow was in progress.
-      if (priv && userId) services.pending.clear(userId);
+      if (priv && identityId) services.pending.clear(identityId);
 
       if (!priv && ctx.chat) {
         const adopted = services.groups.adoptLegacyMembers(ctx.chat.id);
@@ -225,10 +232,24 @@ export function registerCommands(bot: Bot<BotContext>) {
   }
 }
 
+const isEnabled = (def: CommandDef, config: Config) => def.enabled?.(config) ?? true;
+
+/** /yhdista KOODI: links this Telegram login to an account made on another platform. */
+async function redeemLinkCode(ctx: BotContext, args: string) {
+  const { services } = ctx.kili;
+  const t = S.commands.yhdista;
+  if (!args.trim() || !ctx.from) return sendHtml(ctx, t.usage);
+  const r = services.identities.redeemLinkCode(args, { platform: "telegram", platformUserId: ctx.from.id });
+  if (!r.ok) return sendHtml(ctx, t[r.reason]);
+  const profile = services.accounts.get(r.accountId)!;
+  ctx.kili.profile = profile;
+  return sendHtml(ctx, fmt(t.done, { name: profile.name }));
+}
+
 /** Commands shown in Telegram's "/" menu. */
-export function commandMenus() {
+export function commandMenus(config: Config) {
   const toMenu = (scopes: Scope[]) =>
-    COMMANDS.filter((c) => scopes.includes(c.scope) && !c.name.startsWith("admin")).map((c) => ({
+    COMMANDS.filter((c) => scopes.includes(c.scope) && !c.name.startsWith("admin") && isEnabled(c, config)).map((c) => ({
       command: c.name,
       description: c.description,
     }));

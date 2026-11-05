@@ -14,3 +14,6 @@ export function setup(start = Date.parse("2026-11-06T20:00:00Z"), announcements:
   const services = createServices({ db, crypto, now: () => clock.now }, { announcements, products });
   return { db, crypto, services, clock };
 }
+
+/** A Telegram login, as passed to accounts.register and identities. */
+export const tg = (id: number) => ({ platform: "telegram", platformUserId: id }) as const;

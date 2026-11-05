@@ -3,7 +3,7 @@ import { GrammyError, type Api } from "grammy";
 import { runInactivityJob } from "../src/bot/inactivity.ts";
 import type { Config } from "../src/config.ts";
 import { DAY_MS } from "../src/lib/units.ts";
-import { setup, TEST_SECRET } from "./helpers.ts";
+import { setup, TEST_SECRET, tg } from "./helpers.ts";
 
 const policy = { deleteAfterDays: 730, warnDaysBefore: 30 };
 const config = { inactivity: policy, appSecret: TEST_SECRET } as Config;
@@ -30,22 +30,22 @@ const noSleep = async () => {};
 describe("inactivity", () => {
   test("stores the Telegram id encrypted, and touch() keeps the account alive", () => {
     const { crypto, services, db, clock } = setup();
-    const uid = crypto.userKey(555);
-    services.accounts.upsert(uid, { ...profile, telegramId: 555 });
-    const row = db.query("SELECT tg_id_enc FROM users").get() as { tg_id_enc: string };
-    expect(row.tg_id_enc).not.toContain("555");
-    expect(crypto.decrypt(row.tg_id_enc)).toBe("555");
+    const uid = services.accounts.register(tg(555), profile).profile.id;
+    const row = db.query("SELECT contact_enc FROM identities").get() as { contact_enc: string };
+    expect(row.contact_enc).not.toContain("555");
+    expect(crypto.decrypt(row.contact_enc)).toBe("555");
 
     clock.now += 701 * DAY_MS;
-    expect(services.inactivity.dueForWarning(policy)).toEqual([{ userId: uid, telegramId: 555 }]);
-    services.accounts.touch(uid, 555);
+    expect(services.inactivity.dueForWarning(policy)).toEqual([
+      { userId: uid, contacts: [{ platform: "telegram", address: "555" }] },
+    ]);
+    services.accounts.touch(uid);
     expect(services.inactivity.dueForWarning(policy)).toEqual([]);
   });
 
   test("warns 30 days before, deletes only after both the deadline and the notice period", () => {
     const { crypto, services, clock } = setup();
-    const uid = crypto.userKey(1);
-    services.accounts.upsert(uid, { ...profile, telegramId: 1 });
+    const uid = services.accounts.register(tg(1), profile).profile.id;
 
     clock.now += 699 * DAY_MS;
     expect(services.inactivity.dueForWarning(policy)).toHaveLength(0);
@@ -63,8 +63,7 @@ describe("inactivity", () => {
 
   test("a warning that arrives late still gives the full notice period", () => {
     const { crypto, services, clock } = setup();
-    const uid = crypto.userKey(1);
-    services.accounts.upsert(uid, { ...profile, telegramId: 1 });
+    const uid = services.accounts.register(tg(1), profile).profile.id;
     clock.now += 800 * DAY_MS; // e.g. the bot was down for months
     services.inactivity.markWarned(uid);
     expect(services.inactivity.purge(policy)).toBe(0);
@@ -74,29 +73,27 @@ describe("inactivity", () => {
 
   test("using the bot after the warning cancels the deletion", () => {
     const { crypto, services, clock } = setup();
-    const uid = crypto.userKey(1);
-    services.accounts.upsert(uid, { ...profile, telegramId: 1 });
+    const uid = services.accounts.register(tg(1), profile).profile.id;
     clock.now += 701 * DAY_MS;
     services.inactivity.markWarned(uid);
     clock.now += 10 * DAY_MS;
-    services.accounts.touch(uid, 1);
+    services.accounts.touch(uid);
     clock.now += 40 * DAY_MS;
     expect(services.inactivity.purge(policy)).toBe(0);
     expect(services.accounts.get(uid)).not.toBeNull();
   });
 
-  test("accounts without a stored Telegram id are deleted once inactive", () => {
-    const { crypto, services, clock } = setup();
-    const uid = crypto.userKey(1);
-    services.accounts.upsert(uid, profile);
+  test("accounts without a stored contact are deleted once inactive", () => {
+    const { services, clock } = setup();
+    services.accounts.upsert("no-logins", profile);
     clock.now += 731 * DAY_MS;
     expect(services.inactivity.dueForWarning(policy)).toEqual([]);
     expect(services.inactivity.purge(policy)).toBe(1);
   });
 
   test("deleteAfterDays 0 keeps everything", () => {
-    const { crypto, services, clock } = setup();
-    services.accounts.upsert(crypto.userKey(1), { ...profile, telegramId: 1 });
+    const { services, clock } = setup();
+    services.accounts.register(tg(1), profile);
     clock.now += 5000 * DAY_MS;
     const off = { deleteAfterDays: 0, warnDaysBefore: 30 };
     expect(services.inactivity.dueForWarning(off)).toEqual([]);
@@ -106,8 +103,8 @@ describe("inactivity", () => {
 
 describe("inactivity job", () => {
   test("sends warnings, handles blocked users and retries transient failures", async () => {
-    const { crypto, services, clock } = setup();
-    for (const id of [1, 2, 3]) services.accounts.upsert(crypto.userKey(id), { ...profile, telegramId: id });
+    const { services, clock } = setup();
+    for (const id of [1, 2, 3]) services.accounts.register(tg(id), profile);
     clock.now += 701 * DAY_MS;
 
     const { api, sent } = fakeApi((chatId) => (chatId === 2 ? tgError(403) : chatId === 3 ? new Error("network") : null));

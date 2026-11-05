@@ -27,7 +27,7 @@ const services = createServices({ db, crypto: createCrypto(config.appSecret), no
 const bot = createBot(config, services);
 
 await bot.init();
-await publishCommandMenus(bot).catch((e) => console.warn("Could not set command menus:", e));
+await publishCommandMenus(bot, config).catch((e) => console.warn("Could not set command menus:", e));
 
 const alert = createAdminAlerts(bot.api, config);
 const jobs: Job[] = [];

@@ -52,8 +52,8 @@ export async function editView(ctx: BotContext, view: View) {
 
 /** /data: sends the user's data as CSV files (private chat only). */
 export async function sendExport(ctx: BotContext, telegramUserId: number): Promise<boolean> {
-  const { userId, services } = ctx.kili;
-  const files = userId ? services.accounts.exportCsv(userId, telegramUserId) : null;
+  const { profile, services } = ctx.kili;
+  const files = profile ? services.accounts.exportCsv(profile.id, telegramUserId) : null;
   if (!files) {
     await sendHtml(ctx, S.commands.data_none);
     return false;

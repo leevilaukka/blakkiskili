@@ -7,8 +7,11 @@ import { fmt, raw } from "../lib/format.ts";
 import { S } from "../strings.ts";
 
 export interface KiliFlavor {
-  /** HMAC of the sender's Telegram id; null for updates without a human sender. */
-  userId: string | null;
+  /**
+   * Key of the sender's Telegram login (services/identities.ts); null for updates without a
+   * human sender. Typed-input state (pending) is keyed by this, the account by profile.id.
+   */
+  identityId: string | null;
   profile: Profile | null;
   services: Services;
   config: Config;
@@ -47,10 +50,21 @@ export function termsHtml(config: Config): string {
   return fmt(S.terms, { retention: retentionText(config) });
 }
 
-/** Optional maintainer/source sentences appended to about/help texts. */
+/**
+ * Optional maintainer/source sentences appended to /about and help texts: {source} and {maintainer}.
+ */
 export function contactExtras(config: Config) {
+  const name = config.maintainer;
+  const handle = config.maintainerTelegram ? `@${config.maintainerTelegram}` : undefined;
+  const who = name && handle ? fmt("{name} ({handle})", { name, handle }) : fmt("{x}", { x: name ?? handle ?? "" });
   return {
     source: raw(config.sourceUrl ? fmt(" Lähdekoodi: {url}.", { url: config.sourceUrl }) : ""),
-    maintainer: raw(config.maintainer ? fmt("\n\nYlläpitäjä: {m}", { m: config.maintainer }) : ""),
+    maintainer: raw(
+      !who
+        ? ""
+        : handle
+          ? `\n\nYlläpitäjä: ${who}. Kysymykset, ideat ja bugiraportit voi lähettää suoraan Telegramissa.`
+          : `\n\nYlläpitäjä: ${who}.`,
+    ),
   };
 }

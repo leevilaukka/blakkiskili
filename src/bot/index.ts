@@ -33,10 +33,12 @@ export function createBot(config: Config, services: Services, opts: BotOptions =
   // Resolve the sender's account once per update, and keep their display name fresh.
   bot.use(async (ctx, next) => {
     const from = ctx.from && !ctx.from.is_bot ? ctx.from : undefined;
-    const userId = from ? services.deps.crypto.userKey(from.id) : null;
-    let profile = userId ? services.accounts.get(userId) : null;
-    if (from && profile) {
-      services.accounts.touch(profile.id, from.id);
+    const ref = from ? ({ platform: "telegram", platformUserId: from.id } as const) : null;
+    const identityId = ref ? services.identities.key(ref) : null;
+    let profile = identityId ? services.accounts.byIdentity(identityId) : null;
+    if (ref && from && profile) {
+      services.accounts.touch(profile.id);
+      services.identities.ensureContact(ref);
       const name = displayName(from);
       const full = fullName(from);
       if (name && (name !== profile.name || full !== profile.fullName)) {
@@ -44,7 +46,7 @@ export function createBot(config: Config, services: Services, opts: BotOptions =
         profile = { ...profile, name, fullName: full };
       }
     }
-    ctx.kili = { userId, profile, services, config };
+    ctx.kili = { identityId, profile, services, config };
     await next();
   });
 
@@ -93,8 +95,8 @@ export function createBot(config: Config, services: Services, opts: BotOptions =
   return bot;
 }
 
-export async function publishCommandMenus(bot: Bot<BotContext>) {
-  const menus = commandMenus();
+export async function publishCommandMenus(bot: Bot<BotContext>, config: Config) {
+  const menus = commandMenus(config);
   await bot.api.setMyCommands(menus.private, { scope: { type: "all_private_chats" } });
   await bot.api.setMyCommands(menus.group, { scope: { type: "all_group_chats" } });
 }
@@ -113,7 +115,7 @@ async function searchFromText(ctx: BotContext, text: string): Promise<boolean> {
   if (!query || query.startsWith("/") || query.length > 100) return false;
   if (services.products.search(splitAmount(query).query, 1).length === 0) return false;
   // Keep searching on: the next message refines the query.
-  services.pending.set(profile.id, { kind: "productSearch" });
+  services.pending.set(ctx.kili.identityId!, { kind: "productSearch" });
   await sendView(ctx, searchResultsView(ctx, profile, query));
   return true;
 }

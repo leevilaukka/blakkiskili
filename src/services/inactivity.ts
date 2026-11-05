@@ -4,6 +4,7 @@
 
 import { DAY_MS } from "../lib/units.ts";
 import type { Accounts } from "./accounts.ts";
+import type { Contact, Identities } from "./identities.ts";
 import type { Deps } from "./index.ts";
 
 export interface InactivityPolicy {
@@ -13,13 +14,18 @@ export interface InactivityPolicy {
 
 export interface WarningTarget {
   userId: string;
-  telegramId: number;
+  /** Where the warning can be sent, oldest login first. Never empty. */
+  contacts: Contact[];
 }
+
+// An account the owner can be messaged about: one of its logins has a stored contact.
+const HAS_CONTACT = "EXISTS (SELECT 1 FROM identities i WHERE i.account_id = users.id AND i.contact_enc IS NOT NULL)";
 
 export class Inactivity {
   constructor(
     private readonly deps: Deps,
     private readonly accounts: Accounts,
+    private readonly identities: Identities,
   ) {}
 
   /** Inactive users who should be warned now and haven't been yet. */
@@ -27,12 +33,9 @@ export class Inactivity {
     if (policy.deleteAfterDays <= 0) return [];
     const cutoff = this.deps.now() - (policy.deleteAfterDays - policy.warnDaysBefore) * DAY_MS;
     const rows = this.deps.db
-      .query(
-        `SELECT id, tg_id_enc FROM users
-         WHERE last_active_at < ? AND inactivity_warned_at IS NULL AND tg_id_enc IS NOT NULL`,
-      )
-      .all(cutoff) as { id: string; tg_id_enc: string }[];
-    return rows.map((r) => ({ userId: r.id, telegramId: Number(this.deps.crypto.decrypt(r.tg_id_enc)) }));
+      .query(`SELECT id FROM users WHERE last_active_at < ? AND inactivity_warned_at IS NULL AND ${HAS_CONTACT}`)
+      .all(cutoff) as { id: string }[];
+    return rows.map((r) => ({ userId: r.id, contacts: this.identities.contacts(r.id) }));
   }
 
   /** Call after the warning was delivered, or when it can never be (bot blocked, account gone). */
@@ -42,7 +45,7 @@ export class Inactivity {
 
   /**
    * Deletes accounts inactive for `deleteAfterDays` whose warning went out at least
-   * `warnDaysBefore` days ago. Accounts with no stored Telegram id can't be warned and are
+   * `warnDaysBefore` days ago. Accounts with no stored contact can't be warned and are
    * deleted once inactive. Returns the number of deleted accounts.
    */
   purge(policy: InactivityPolicy): number {
@@ -52,7 +55,7 @@ export class Inactivity {
       .query(
         `SELECT id FROM users
          WHERE last_active_at < ?
-           AND (tg_id_enc IS NULL OR (inactivity_warned_at IS NOT NULL AND inactivity_warned_at <= ?))`,
+           AND (NOT ${HAS_CONTACT} OR (inactivity_warned_at IS NOT NULL AND inactivity_warned_at <= ?))`,
       )
       .all(now - policy.deleteAfterDays * DAY_MS, now - policy.warnDaysBefore * DAY_MS) as { id: string }[];
     for (const r of rows) this.accounts.delete(r.id);

@@ -8,15 +8,16 @@
 import type { Bot } from "grammy";
 import type { InlineQueryResultArticle } from "grammy/types";
 import type { BotContext } from "./context.ts";
-import { logServing, shortPermilles } from "./menu.ts";
+import { drankText, logServing, shortPermilles } from "./menu.ts";
 import { btn } from "./ui.ts";
-import { S, randomDrinkResponse } from "../strings.ts";
-import { escapeHtml, fmt } from "../lib/format.ts";
+import { S } from "../strings.ts";
+import { escapeHtml } from "../lib/format.ts";
 import {
   customServing,
   emojiFor,
   resolveServing,
   servingDescription,
+  servingFacts,
   splitAmount,
   standardDrinksText,
   type CatalogDrink,
@@ -44,7 +45,8 @@ export function inlineResults(drinks: readonly CatalogDrink[], litres?: number):
         type: "article",
         id: `${d.id}:${s.key}`,
         title: `${emojiFor(d.product)} ${d.name}`,
-        description: `${s.label} · ${d.product.abv} % · ${standardDrinksText(s)}`,
+        // Second line: "130 kcal · Alkossa 2,19 €"
+        description: [`${s.label} · ${d.product.abv} % · ${standardDrinksText(s)}`, servingFacts(s)].filter(Boolean).join("\n"),
         input_message_content: { message_text: escapeHtml(servingDescription(d, s)), parse_mode: "HTML" },
       });
     }
@@ -92,8 +94,7 @@ export function registerInline(bot: Bot<BotContext>, opts: InlineOptions = {}) {
       return;
     }
     const description = logServing(ctx, profile, drink, serving);
-    const text =
-      fmt(S.juo.on_drink, { drink_response: randomDrinkResponse(), drink: description }) + "\n\n" + shortPermilles(ctx, profile);
+    const text = drankText(ctx, profile, description) + "\n\n" + shortPermilles(ctx, profile);
     await ctx.api.sendMessage(from.id, text, {
       parse_mode: "HTML",
       reply_markup: {

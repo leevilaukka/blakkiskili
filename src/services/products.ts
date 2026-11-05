@@ -60,6 +60,13 @@ function str(v: unknown): string | null {
   return typeof v === "string" && v.trim() !== "" ? v : null;
 }
 
+/** A finite number, or null for missing values (Number(null) would be 0). */
+function num(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 /** Parses and validates a data.json payload. Throws with a useful message if the format changed. */
 export function parseCatalog(json: unknown): { products: CatalogProduct[]; updatedAt: number | null } {
   const raw = json as RawCatalog;
@@ -84,7 +91,8 @@ export function parseCatalog(json: unknown): { products: CatalogProduct[]; updat
     const abv = Number(get(v, "Alkoholi-%"));
     const type = str(get(v, "Tyyppi"));
     if (!/^\d{1,10}$/.test(id) || !name || !(sizeL > 0) || !(abv >= 0) || !type) continue;
-    const price = Number(get(v, "Hinta"));
+    const price = num(get(v, "Hinta"));
+    const kcal100 = num(get(v, "Energia kcal/100 ml"));
     products.push({
       id,
       name,
@@ -96,7 +104,9 @@ export function parseCatalog(json: unknown): { products: CatalogProduct[]; updat
       packaging: str(get(v, "Pakkaustyyppi")),
       selection: str(get(v, "Valikoima")),
       status: str(get(v, "Tila")),
-      price: Number.isFinite(price) ? price : null,
+      price: price !== null && price > 0 ? price : null,
+      kcal100: kcal100 !== null && kcal100 >= 0 && kcal100 < 1000 ? kcal100 : null,
+      country: str(get(v, "Valmistusmaa")),
     });
   }
   if (products.length === 0) throw new Error("Alkometriikka data.json: no usable products");
@@ -176,6 +186,16 @@ export class Products {
     this.list = list;
     this.byId = byId;
     this.updatedAt = updatedAt;
+  }
+
+  /** The product's page on Alkometriikka (next to data.json), or undefined if search is off. */
+  pageUrl(productId: string): string | undefined {
+    if (!this.opts.url || !/^\d{1,10}$/.test(productId)) return undefined;
+    try {
+      return new URL(`tuotteet/${productId}/`, this.opts.url).href;
+    } catch {
+      return undefined;
+    }
   }
 
   /** The drink a product number belongs to (any package size of it). */

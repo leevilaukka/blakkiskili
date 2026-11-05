@@ -1,6 +1,6 @@
 // Identity hashing and field encryption.
 //
-// Telegram user and chat IDs are never stored raw. They are stored as HMAC-SHA256 under a key
+// Platform user ids (Telegram, later e.g. Discord) and chat ids are never stored raw. They are stored as HMAC-SHA256 under a key
 // derived from APP_SECRET, so a leaked database file alone can't be mapped back to Telegram
 // accounts by hashing candidate IDs (which is possible with the original bot's plain sha256).
 // Display names are encrypted with AES-256-GCM under a second derived key.
@@ -9,9 +9,17 @@
 
 import { createCipheriv, createDecipheriv, createHash, createHmac, hkdfSync, randomBytes } from "node:crypto";
 
+/** Chat platforms a kili account can be used from. */
+export const PLATFORMS = ["telegram", "discord"] as const;
+export type Platform = (typeof PLATFORMS)[number];
+export const isPlatform = (s: string): s is Platform => (PLATFORMS as readonly string[]).includes(s);
+
 export interface Crypto {
-  userKey(telegramUserId: number): string;
+  /** Key of one platform login (an identity). Discord ids exceed 2^53, so pass them as strings. */
+  identityKey(platform: Platform, platformUserId: string | number): string;
   groupKey(telegramChatId: number): string;
+  /** Lookup key for a one-time account-linking code. */
+  linkCodeKey(code: string): string;
   encrypt(plain: string): string;
   decrypt(token: string): string;
 }
@@ -25,12 +33,14 @@ export function createCrypto(appSecret: string): Crypto {
   const idKey = derive("id-hmac");
   const dataKey = derive("data-aes-gcm");
 
-  const hmac = (kind: string, id: number) =>
+  const hmac = (kind: string, id: string | number) =>
     createHmac("sha256", idKey).update(`${kind}:${id}`).digest("hex");
 
   return {
-    userKey: (id) => hmac("user", id),
+    // Telegram keeps the label it had before other platforms existed, so stored keys stay valid.
+    identityKey: (platform, id) => hmac(platform === "telegram" ? "user" : `${platform}-user`, id),
     groupKey: (id) => hmac("group", id),
+    linkCodeKey: (code) => hmac("link-code", code),
     encrypt(plain) {
       const iv = randomBytes(12);
       const cipher = createCipheriv("aes-256-gcm", dataKey, iv);

@@ -24,7 +24,11 @@ export const E = {
   info: "ℹ",
   goat: "🐐",
   inbox: "📥",
+  link: "🔗",
+  key: "🔑",
 } as const;
+
+export const PLATFORM_NAMES = { telegram: "Telegram", discord: "Discord" } as const;
 
 export const DRINK_RESPONSES = [
   "Bäää.",
@@ -74,7 +78,7 @@ export const S = {
   start: {
     title: "Bläkkiskili",
     on_select:
-      "Veressäsi on {grams} grammaa alkoholia, joka vastaa {standard_drinks} annosta. Olet selvinpäin {hours}h {minutes}min päästä.{drink_list}",
+      "Veressäsi on {grams} grammaa alkoholia, joka vastaa {standard_drinks} annosta. Olet selvinpäin {hours}h {minutes}min päästä.{energy}{drink_list}",
     drinks3h: "\n\n<b>Viimeisen kolmen tunnin tapahtumat:</b>\n{list}",
     on_select_nonuser:
       "Bläkkiskili auttaa sinua ja ystäviäsi seuraamaan rippauksesi (lue: promillejesi) tasoa. Luo ensimmäiseksi tunnus valitsemalla <b>Luo tunnus</b>. Tunnuksen luomisen jälkeen voit alkaa kellottamaan juomia sisään juomavalikosta. Annan sinulle arvioita rippauksesta promillejen muodossa. Minut voi myös lisätä ryhmään, jolloin kerron /promillet-komennolla kaikkien ryhmässä olevien rippitasot. Jokaisen ryhmäläisen täytyy kuitenkin sanoa ryhmässä /moro, jotta he pääsevät rippilistaukseen mukaan.\n\nKäytitkö vanhaa Bläkkisvuohea? Voit tuoda tietosi valitsemalla <b>Tuo vanhat tiedot</b>.",
@@ -86,7 +90,7 @@ export const S = {
     drinks1h: "<b>Viimeisen tunnin tapahtumat:</b>\n{list}\n\n",
     on_select:
       "Valitse juomasi alla olevista valikoista. Jos et löydä etsimääsi, klikkaa <b>Oma juoma</b>. Jos olet unohtanut lisätä juomia, voit lisätä ne takautuvasti valitsemalla <b>Jälkikellotus</b>. Jos lisäsit vahingossa väärän juoman, valitse <b>Kumoa</b>. Kaksi alinta nappia ovat pikavalinnat kahdelle viimeisimmälle juomalle.",
-    on_drink: "{drink_response}\n\nJuoma tallennettu: {drink}",
+    on_drink: "{drink_response}\n\nJuoma tallennettu: {drink}{energy}",
     miedot: { button: E.beers + " Miedot", title: "Miedot", on_select: "Valitse mieto." },
     viinit: { button: E.wine + " Viinit", title: "Viinit", on_select: "Valitse viini." },
     shotit: { button: E.shot + " Shotit", title: "Shotit", on_select: "Valitse shotti." },
@@ -138,6 +142,9 @@ export const S = {
     results: "Osumat haulle <b>{q}</b>. Voit myös kirjoittaa uuden haun.",
     none: "Ei osumia haulle <b>{q}</b>. Kokeile toista nimeä tai käytä <b>Oma juoma</b> -nappia.",
     product: "<b>{name}</b>\n{details}\n\nValitse määrä:",
+    product_link: "Lisätietoja Alkometriikassa",
+    price: "Alkossa {price} / {size}",
+    per_standard_drink: "{price} / annos",
     gone: "Tuotetta ei enää löydy valikoimasta. Hae uudelleen.",
     custom_button: "✏️ Muu määrä",
     custom_prompt:
@@ -151,6 +158,12 @@ export const S = {
     inline_unavailable: "Haku ei ole juuri nyt käytössä",
     feedback_off:
       "Juomaa ei tallennettu: botin inline-palaute on pois päältä. Käytä hakua Juo-valikosta.\n\n(Ylläpitäjälle: BotFather → /setinlinefeedback → Enabled.)",
+  },
+
+  energy: {
+    session: "Tämän illan juomissa on noin <b>{kcal}</b> kcal.{unknown}",
+    // Custom and late-logged drinks, and drinks imported from the old bot, have no energy data.
+    unknown: " Energiatieto puuttuu {count} juomalta.",
   },
 
   asetukset: {
@@ -176,6 +189,20 @@ export const S = {
       done: "Nimi päivitetty! Nimesi on nyt: <b>{name}</b>. Nimi päivittyy myös automaattisesti, kun käytät bottia.",
     },
     data: { button: E.inbox + " Lataa tietoni" },
+    linkit: {
+      button: E.link + " Yhdistetyt palvelut",
+      on_select:
+        "Voit käyttää samaa tunnusta useammasta palvelusta (esim. Telegram ja Discord). Tunnukseesi on yhdistetty:\n{list}\n\nYhdistä uusi palvelu luomalla koodi ja lähettämällä se toisen palvelun Bläkkiskili-botille.",
+      item: "- {platform}",
+      item_current: "- {platform} (tämä)",
+      create: E.key + " Luo yhdistämiskoodi",
+      code:
+        "Yhdistämiskoodisi on <code>{code}</code>\n\nLähetä toisen palvelun Bläkkiskili-botille viesti <code>/yhdista {code}</code>. Koodi toimii kerran ja vanhenee {minutes} minuutissa. Älä anna koodia muille: sillä pääsee tunnukseesi.",
+      unlink: "Irrota {platform}",
+      unlink_confirm:
+        "Irrotetaanko {platform} tunnuksestasi? Tietosi säilyvät, mutta et voi käyttää tunnusta sieltä ennen kuin yhdistät sen uudelleen.",
+      unlinked: "{platform} irrotettu.",
+    },
     poista: {
       button: E.trash + " Poista tunnus",
       on_select:
@@ -210,6 +237,7 @@ export const S = {
     kulutus: {
       button: "Kulutus",
       text: "Olet <b>{day_count}</b> päivän aikana tuhonnut <b>{grams}</b> grammaa alkoholia, joka vastaa <b>{standard_drinks}</b> annosta. Keskimäärin olet juonut <b>{avg}</b> annosta per päivä.",
+      energy: "\n\nJuomissa oli energiaa noin <b>{kcal}</b> kcal.{unknown}",
       hint: "\n\nJos haluat tietää lähiajan kulutuksesi, kirjoita tarkasteltavien päivien määrä numerona.",
       days: (n: number) => `${n} päivää`,
     },
@@ -274,7 +302,7 @@ export const S = {
       button: "Yksityisyys",
       title: "Help: Yksityisyys",
       text:
-        "<b>Mitä tietoja kerätään?</b>\n- Telegramiin määritelty nimimerkki ja koko nimi (etu- ja sukunimi, salattuna)\n- Tiiviste (HMAC) Telegram-tilisi tunnisteesta, sekä tunniste salattuna poistovaroituksen lähettämistä varten\n- Paino, pituus ja sukupuoli\n- Merkattujen juomien alkoholimäärät, nimet ja juomisajat\n- Tiivisteet liittymiesi ryhmien tunnisteista\n\nRyhmien viestejä, puhelinnumeroa tai muita tietoja ei tallenneta.\n\n<b>Voinko saada tai poistaa tietoni?</b>\nKyllä. /data lähettää kaikki tietosi CSV-tiedostoina, ja Asetukset → Poista tunnus poistaa kaiken sinuun liittyvän tiedon heti.{retention}\n\n<b>Varmuuskopiot</b>\nTietokannasta otetaan salattuja varmuuskopioita EU:ssa sijaitsevaan tallennustilaan. Poistetut tiedot häviävät myös varmuuskopioista viimeistään noin kolmen kuukauden kuluttua.{maintainer}",
+        "<b>Mitä tietoja kerätään?</b>\n- Telegramiin määritelty nimimerkki ja koko nimi (etu- ja sukunimi, salattuna)\n- Tiiviste (HMAC) Telegram-tilisi tunnisteesta (ja muiden tunnukseen yhdistämiesi palveluiden tunnisteista), sekä tunnisteet salattuna poistovaroituksen lähettämistä varten\n- Paino, pituus ja sukupuoli\n- Merkattujen juomien alkoholimäärät, nimet ja juomisajat, arvioitu energiamäärä (kun se tiedetään), sekä Alkon valikoimasta valituille juomille tuotenumero\n- Tiivisteet liittymiesi ryhmien tunnisteista\n\nRyhmien viestejä, puhelinnumeroa tai muita tietoja ei tallenneta.\n\n<b>Voinko saada tai poistaa tietoni?</b>\nKyllä. /data lähettää kaikki tietosi CSV-tiedostoina, ja Asetukset → Poista tunnus poistaa kaiken sinuun liittyvän tiedon heti.{retention}\n\n<b>Varmuuskopiot</b>\nTietokannasta otetaan salattuja varmuuskopioita EU:ssa sijaitsevaan tallennustilaan. Poistetut tiedot häviävät myös varmuuskopioista viimeistään noin kolmen kuukauden kuluttua.{maintainer}",
     },
   },
 
@@ -290,7 +318,7 @@ export const S = {
   announcement: "📣 <b>Tiedote {date}</b>\n{text}",
 
   about:
-    "Bläkkiskili is a Bun + TypeScript bot based on the original BläkkisVuohi by Joonas Ulmanen (@ultsi), https://gitlab.com/ultsi-projects/blakkisvuohi. It is not affiliated with or maintained by the original author. It's free software licensed under GPLv3.{source}{maintainer} Terms of Service: /terms",
+    "<b>Bläkkiskili</b> arvioi veren alkoholipitoisuutta juomiesi perusteella. Se perustuu Joonas Ulmasen (@ultsi) alkuperäiseen Bläkkisvuoheen (https://gitlab.com/ultsi-projects/blakkisvuohi), mutta ei ole alkuperäisen tekijän ylläpitämä. Bläkkiskili on vapaata ohjelmistoa GPLv3-lisenssillä.{source}{maintainer}\n\nKäyttöehdot: /terms",
 
   commands: {
     moro: "Rippaa rauhassa kera {chat_title} -kavereiden.",
@@ -313,6 +341,16 @@ export const S = {
       "Käyttäjä {name}\nPaino: {weight}kg\nPituus: {height}cm\nSukupuoli: {gender}\nKäyttäjä luotu: {created}",
     data_reply: "Tässä kaikki sinun käyttäjätunnukseesi liitetyt tiedot. Voit tuoda ne takaisin komennolla /tuo.",
     data_none: "Sinun käyttäjätunnuksella ei ole tallennettu yhtään tietoa.",
+    yhdista: {
+      usage:
+        "Tällä komennolla yhdistät tämän Telegram-tilin tunnukseen, jonka olet luonut toisessa palvelussa. Luo siellä yhdistämiskoodi asetuksista ja lähetä tänne <code>/yhdista KOODI</code>.",
+      done: "Yhdistetty! Voit nyt käyttää tunnustasi {name} myös täältä.",
+      invalid: "Koodi on väärä tai vanhentunut. Luo uusi koodi ja yritä uudelleen.",
+      already_linked: "Tämä Telegram-tili on jo yhdistetty tähän tunnukseen.",
+      has_account:
+        "Tällä Telegram-tilillä on jo oma tunnus, eikä tunnuksia voi yhdistää. Jos haluat käyttää toista tunnusta, lataa tietosi talteen komennolla /data ja poista tämän tilin tunnus asetuksista.",
+      platform_taken: "Tunnukseen on jo yhdistetty toinen Telegram-tili. Irrota se ensin tunnuksen asetuksista.",
+    },
     admin_stats:
       "Tilastoja:\nKäyttäjiä on yhteensä {users}kpl, joista 14pv sisällä aktiivisia {active14}, ja 7pv sisällä aktiivisia {active7}.\nRyhmiä on yhteensä {groups}kpl, joista 14pv sisällä aktiivisia {groups14}, ja 7pv sisällä aktiivisia {groups7}. Lisäksi kaikki käyttäjät ovat yhteensä tilastoineet {drinks} juomaa.\nTop10 tilastot:\n\n{list}",
     help:

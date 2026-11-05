@@ -22,6 +22,7 @@ const config: Config = {
   port: 0,
   inactivity: { deleteAfterDays: 730, warnDaysBefore: 30 },
   backup: { everyMinutes: 60 },
+  accountLinking: false,
 };
 
 interface Call {
@@ -41,9 +42,14 @@ function assertTelegramHtml(text: string) {
   expect(stripped).not.toMatch(/&(?!(amp|lt|gt);)/);
 }
 
-function harness(limiter = new RateLimiter(10_000, 60_000), announcements: Announcement[] = [], products?: Products) {
+function harness(
+  limiter = new RateLimiter(10_000, 60_000),
+  announcements: Announcement[] = [],
+  products?: Products,
+  overrides: Partial<Config> = {},
+) {
   const env = setup(undefined, announcements, products);
-  const bot = createBot(config, env.services, { limiter, feedbackGraceMs: 20 });
+  const bot = createBot({ ...config, ...overrides }, env.services, { limiter, feedbackGraceMs: 20 });
   bot.botInfo = {
     id: 42, is_bot: true, first_name: "Kili", username: "kili_test_bot",
     can_join_groups: true, can_read_all_group_messages: false, supports_inline_queries: false,
@@ -148,7 +154,11 @@ function harness(limiter = new RateLimiter(10_000, 60_000), announcements: Annou
     return calls.slice(before);
   };
 
-  return { ...env, bot, calls, send, press, sendDocument, inlineQuery, chooseInline, sendViaBot };
+  /** Account id of a Telegram user (accounts have random ids; logins point at them). */
+  const account = (telegramId: number) =>
+    env.services.accounts.byIdentity(env.crypto.identityKey("telegram", telegramId))?.id ?? "none";
+
+  return { ...env, bot, calls, send, press, sendDocument, inlineQuery, chooseInline, sendViaBot, account };
 }
 
 const textOf = (calls: Call[]) => calls.filter((c) => typeof c.payload.text === "string").map((c) => c.payload.text as string).join("\n---\n");
@@ -186,11 +196,10 @@ describe("bot end-to-end", () => {
     expect(buttonsOf(genderStep).map((b) => b.callback_data)).toContain("m:r:g:m");
     expect(textOf(await h.press(A, "m:r:g:m"))).toContain("Käyttöehdot");
     expect(textOf(await h.press(A, "m:r:t:y"))).toContain("Moikka user1001");
-    const uid = h.crypto.userKey(A);
+    const uid = h.account(A);
     expect(h.services.accounts.get(uid)).toMatchObject({ weight: 80, height: 180, gender: "mies" });
     // Registration stores the Telegram id (encrypted) for inactivity warnings
-    const stored = h.db.query("SELECT tg_id_enc FROM users WHERE id = ?").get(uid) as { tg_id_enc: string };
-    expect(h.crypto.decrypt(stored.tg_id_enc)).toBe(String(A));
+    expect(h.services.identities.contacts(uid)).toEqual([{ platform: "telegram", address: String(A) }]);
     // The terms shown include the retention rule
     expect(textOf(await h.send(A, "/terms"))).toContain("24 kuukauteen");
 
@@ -198,17 +207,19 @@ describe("bot end-to-end", () => {
     const juo = await h.press(A, "m:j");
     expect(buttonsOf(juo).map((b) => b.callback_data)).toContain("m:jc:miedot");
     const drank = await h.press(A, "m:d:b50");
-    expect(textOf(drank)).toContain("Juoma tallennettu");
+    // Presets have a typical energy (50 cl × 40 kcal / 100 ml)
+    expect(textOf(drank)).toContain("Juoma tallennettu: 🍺 50cl 4.7%\nTämän illan juomissa on noin <b>200</b> kcal.");
     // Quick button for the latest drink appears
     const quick = buttonsOf(drank).find((b) => b.callback_data.startsWith("m:jl:"));
     expect(quick?.text).toContain("50cl");
     await h.press(A, quick!.callback_data);
-    expect(h.services.drinks.since(uid, 0)).toHaveLength(2);
+    expect(h.services.drinks.since(uid, 0).map((d) => d.kcal)).toEqual([200, 200]);
 
     // Custom drink
     await h.press(A, "m:jo");
     expect(textOf(await h.send(A, "abc"))).toContain("Liian paljon tai vähän sanoja");
-    expect(textOf(await h.send(A, "33cl 5,1%"))).toContain("Oma juoma - 33cl 5.1%");
+    // Custom drinks have no energy data, and the total says so
+    expect(textOf(await h.send(A, "33cl 5,1%"))).toContain("Oma juoma - 33cl 5.1%\nTämän illan juomissa on noin <b>400</b> kcal. Energiatieto puuttuu 1 juomalta.");
     expect(textOf(await h.send(A, "4 40"))).toContain("Oma juoma - 4cl 40%"); // stays in flow
 
     // Late logging
@@ -239,7 +250,18 @@ describe("bot end-to-end", () => {
     expect(textOf(await h.send(A, "/promillet"))).toMatch(/Nyt:<\/b> \d/);
     expect(textOf(await h.send(A, "/stats 7"))).toContain("Olet 7 päivän aikana");
     expect(textOf(await h.press(A, "m:to"))).toContain("Oma juoma");
-    expect(textOf(await h.press(A, "m:tk:30"))).toContain("<b>30</b> päivän");
+    const kulutus = textOf(await h.press(A, "m:tk:30"));
+    expect(kulutus).toContain("<b>30</b> päivän");
+    // The undo above removed one of the beers: 200 kcal known, the custom and late drinks unknown
+    expect(kulutus).toContain("Juomissa oli energiaa noin <b>200</b> kcal. Energiatieto puuttuu 4 juomalta.");
+    expect(textOf(await h.press(A, "m:s"))).toContain("Tämän illan juomissa on noin <b>200</b> kcal.");
+    // /kalja033 counts too (200 + 132); a 6 h pause starts a new evening
+    expect(textOf(await h.send(A, "/kalja033"))).toContain("Tämän illan juomissa on noin <b>330</b> kcal.");
+    await h.send(A, "/laatta").then((c) => h.press(A, buttonsOf(c).find((b) => b.callback_data.startsWith("m:juy:"))!.callback_data));
+    h.clock.now += 7 * 3_600_000;
+    expect(textOf(await h.send(A, "/kalja033"))).toContain("Tämän illan juomissa on noin <b>130</b> kcal.");
+    expect(textOf(await h.send(A, "/laatta").then((c) => h.press(A, buttonsOf(c).find((b) => b.callback_data.startsWith("m:juy:"))!.callback_data)))).toContain("Kumoaminen onnistui");
+    h.clock.now -= 7 * 3_600_000;
 
     // Settings
     await h.press(A, "m:amw");
@@ -306,7 +328,7 @@ describe("bot end-to-end", () => {
     expect(afterUser).toContain("2 juomaa lisätty");
     expect(textOf(await h.sendDocument(B, "groups-b"))).toContain("1 ryhmäjäsenyyttä");
 
-    const uid = h.crypto.userKey(B);
+    const uid = h.account(B);
     expect(h.services.accounts.get(uid)).toMatchObject({ weight: 70, gender: "nainen", name: "user3003" });
 
     // The old group starts using the new bot: the imported member shows up without /moro
@@ -352,7 +374,6 @@ describe("bot end-to-end", () => {
     products.load(catalogJson());
     const h = harness(undefined, [], products);
     const A = 4004;
-    const uid = h.crypto.userKey(A);
 
     // Unregistered: inline search points to registration
     const anon = (await h.inlineQuery(A, "karhu")).find((c) => c.method === "answerInlineQuery")!;
@@ -363,6 +384,7 @@ describe("bot end-to-end", () => {
     await h.send(A, "180");
     await h.press(A, "m:r:g:m");
     await h.press(A, "m:r:t:y");
+    const uid = h.account(A);
 
     // Juo menu has the search button (typed search, since inline mode is off for this bot)
     const juo = await h.press(A, "m:j");
@@ -377,29 +399,36 @@ describe("bot end-to-end", () => {
     // Product view: amounts only, plus a custom amount
     await h.send(A, "karjala");
     const karjala = await h.press(A, "m:p:700004");
-    expect(buttonsOf(karjala).map((b) => b.text)).toEqual(["50 cl · 2.6 annosta", "✏️ Muu määrä", "🔎 Hae lisää", "« Takaisin"]);
-    expect(textOf(await h.press(A, "m:ps:700004:c50"))).toContain("Juoma tallennettu: 🍺 Karjala (50 cl)");
-    expect(h.services.drinks.last(uid)).toMatchObject({ description: "🍺 Karjala (50 cl)", productId: "700004" });
+    expect(buttonsOf(karjala).map((b) => b.text)).toEqual(["50 cl · 2.6 annosta · 350 kcal", "✏️ Muu määrä", "🔎 Hae lisää", "« Takaisin"]);
+    const karjalaSaved = textOf(await h.press(A, "m:ps:700004:c50"));
+    expect(karjalaSaved).toContain("Juoma tallennettu: 🍺 Karjala (50 cl)\nTämän illan juomissa on noin <b>350</b> kcal.");
+    expect(h.services.drinks.last(uid)).toMatchObject({ description: "🍺 Karjala (50 cl)", productId: "700004", kcal: 350 });
 
     // Wine: choose a glass, buttons show standard drinks
     const wine = await h.press(A, "m:p:700010");
-    expect(textOf(wine)).toContain("Château Testi · 13 %");
-    expect(buttonsOf(wine).map((b) => b.text)).toEqual(expect.arrayContaining(["37.5 cl · 3.2 annosta", "75 cl · 6.4 annosta"]));
+    // Maker, country, ABV; energy, the 75 cl bottle's price and the price of one standard drink
+    expect(textOf(wine)).toContain("Château Testi · Ranska · 13 %\n80 kcal / 100 ml · Alkossa 14,90 € / 75 cl · 2,32 € / annos");
+    expect(textOf(wine)).not.toContain("<a href"); // no Alkometriikka URL configured in this test
+    expect(buttonsOf(wine).map((b) => b.text)).toEqual(expect.arrayContaining(["37.5 cl · 3.2 annosta · 300 kcal", "75 cl · 6.4 annosta · 600 kcal"]));
     const glass = buttonsOf(wine).find((b) => b.text.startsWith("16 cl"))!;
-    expect(glass.text).toBe("16 cl · 1.4 annosta");
-    expect(textOf(await h.press(A, glass.callback_data))).toContain("Château Testi 2022 (16 cl)");
-    expect(h.services.drinks.last(uid)!.productId).toBe("700010");
+    expect(glass.text).toBe("16 cl · 1.4 annosta · 128 kcal");
+    // The evening's energy adds up across drinks (350 + 128, rounded to 10)
+    expect(textOf(await h.press(A, glass.callback_data))).toContain("Château Testi 2022 (16 cl)\nTämän illan juomissa on noin <b>480</b> kcal.");
+    expect(h.services.drinks.last(uid)).toMatchObject({ productId: "700010", kcal: 128 });
+    // A product without energy data shows no kcal
+    expect(buttonsOf(await h.press(A, "m:p:700013")).map((b) => b.text)[0]).toBe("12 cl · 1.3 annosta");
 
     // Quick-repeat buttons keep the product id
     const quick = buttonsOf(await h.press(A, "m:j")).find((b) => b.text.includes("Château"))!;
     await h.press(A, quick.callback_data);
-    expect(h.services.drinks.last(uid)!.productId).toBe("700010");
+    expect(h.services.drinks.last(uid)).toMatchObject({ productId: "700010", kcal: 128 });
 
     // Inline mode: results per serving, only in the private chat with the bot
     const answer = (await h.inlineQuery(A, "jallu")).find((c) => c.method === "answerInlineQuery")!;
     // One drink for all four Jaloviina *** packages (and one for Jaloviina *), one result per serving
     expect(answer.payload.results.map((r: { id: string }) => r.id)).toEqual(["700022:2", "700022:4", "700022:6", "700025:2", "700025:4", "700025:6"]);
-    expect(answer.payload.results[1]).toMatchObject({ title: "🥃 Jaloviina ***", description: "4 cl · 38 % · 1.0 annosta" });
+    // Second line: energy and the price of this amount (4 cl of the 70 cl bottle at 33,90 €)
+    expect(answer.payload.results[1]).toMatchObject({ title: "🥃 Jaloviina ***", description: "4 cl · 38 % · 1.0 annosta\n84 kcal · Alkossa 1,94 €" });
     expect(answer.payload.is_personal).toBe(true);
     const inGroup = (await h.inlineQuery(A, "jallu", "supergroup")).find((c) => c.method === "answerInlineQuery")!;
     expect(inGroup.payload.results).toEqual([]);
@@ -453,12 +482,12 @@ describe("bot end-to-end", () => {
     products.load(catalogJson());
     const h = harness(undefined, [], products);
     const A = 6006;
-    const uid = h.crypto.userKey(A);
     await h.press(A, "m:r");
     await h.send(A, "80");
     await h.send(A, "180");
     await h.press(A, "m:r:g:m");
     await h.press(A, "m:r:t:y");
+    const uid = h.account(A);
     const mg = (abv: number, litres: number) => Math.round((abv / 100) * 789.24 * litres * 1000);
 
     // ✏️ Muu määrä
@@ -483,8 +512,66 @@ describe("bot end-to-end", () => {
     // Amount in an inline query
     h.clock.now += 60_000;
     const answer = (await h.inlineQuery(A, "karhu 4,6 40cl")).find((c) => c.method === "answerInlineQuery")!;
-    expect(answer.payload.results[0]).toMatchObject({ id: "700002:x40", title: "🍺 Karhu 4,6", description: "40 cl · 4.6 % · 1.2 annosta" });
+    expect(answer.payload.results[0]).toMatchObject({
+      id: "700002:x40",
+      title: "🍺 Karhu 4,6",
+      description: "40 cl · 4.6 % · 1.2 annosta\n160 kcal · Alkossa 2,78 €",
+    });
     expect(textOf(await h.chooseInline(A, "700002:x40"))).toContain("🍺 Karhu 4,6 (40 cl)");
-    expect(h.services.drinks.last(uid)!.alcoholMg).toBe(mg(4.6, 0.4));
+    expect(h.services.drinks.last(uid)).toMatchObject({ alcoholMg: mg(4.6, 0.4), kcal: 160 });
+  });
+
+  test("account linking: hidden by default; /yhdista links an account made on another platform", async () => {
+    const off = harness();
+    await off.press(1, "m:r");
+    await off.send(1, "80");
+    await off.send(1, "180");
+    await off.press(1, "m:r:g:m");
+    await off.press(1, "m:r:t:y");
+    expect(buttonsOf(await off.press(1, "m:a")).map((b) => b.callback_data)).not.toContain("m:al");
+    expect(textOf(await off.send(1, "/yhdista ABCD-EFGH"))).toContain("Mitä?");
+    expect(textOf(await off.send(1, "/komennot"))).not.toContain("/yhdista");
+
+    const h = harness(undefined, [], undefined, { accountLinking: true });
+    const A = 7007;
+    // Someone registered on Discord (no bot yet: straight through the services) and made a code
+    const discordAccount = h.services.accounts.register(
+      { platform: "discord", platformUserId: "1234567890123456789" },
+      { name: "kili_fani", weight: 70, height: 170, gender: "nainen" },
+    ).profile;
+    h.services.drinks.add(discordAccount.id, 12000, "olut discordissa");
+    expect(textOf(await h.send(A, "/yhdista"))).toContain("/yhdista KOODI");
+    expect(textOf(await h.send(A, "/yhdista WRONG123"))).toContain("väärä tai vanhentunut");
+    const { code } = h.services.identities.createLinkCode(discordAccount.id);
+
+    expect(textOf(await h.send(A, `/yhdista ${code.slice(0, 4)}-${code.slice(4)}`))).toContain("Yhdistetty! Voit nyt käyttää tunnustasi kili_fani");
+    expect(h.account(A)).toBe(discordAccount.id);
+    // Same account from Telegram: the Discord drink is there, and Telegram drinks go to it
+    expect(textOf(await h.send(A, "/promillet"))).toContain("olut discordissa");
+    await h.press(A, "m:d:b50");
+    expect(h.services.drinks.since(discordAccount.id, 0)).toHaveLength(2);
+
+    // Settings → Yhdistetyt palvelut: lists both, offers to unlink only the other platform
+    expect(buttonsOf(await h.press(A, "m:a")).map((b) => b.callback_data)).toContain("m:al");
+    const links = await h.press(A, "m:al");
+    expect(textOf(links)).toContain("- Discord\n- Telegram (tämä)");
+    expect(buttonsOf(links).map((b) => b.callback_data)).toEqual(["m:alc", "m:alu:discord", "m:a"]);
+    expect(textOf(await h.press(A, "m:alc"))).toMatch(/<code>\/yhdista [A-Z2-9]{4}-[A-Z2-9]{4}<\/code>/);
+    // This login can't be unlinked from here, even with crafted callback data
+    await h.press(A, "m:aluy:telegram");
+    expect(h.services.identities.list(discordAccount.id)).toHaveLength(2);
+    expect(textOf(await h.press(A, "m:alu:discord"))).toContain("Irrotetaanko Discord");
+    expect(textOf(await h.press(A, "m:aluy:discord"))).toContain("Discord irrotettu.");
+    expect(h.services.identities.list(discordAccount.id).map((i) => i.platform)).toEqual(["telegram"]);
+
+    // A Telegram user with an account of their own can't join another account
+    const B = 8008;
+    await h.press(B, "m:r");
+    await h.send(B, "80");
+    await h.send(B, "180");
+    await h.press(B, "m:r:g:m");
+    await h.press(B, "m:r:t:y");
+    const other = h.services.identities.createLinkCode(discordAccount.id).code;
+    expect(textOf(await h.send(B, `/yhdista ${other}`))).toContain("on jo oma tunnus");
   });
 });

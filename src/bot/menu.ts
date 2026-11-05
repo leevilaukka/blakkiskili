@@ -5,10 +5,12 @@
 import type { BotContext } from "./context.ts";
 import { contactExtras, displayName, fullName, retentionText, termsHtml } from "./context.ts";
 import { back, btn, editView, sendExport, type View } from "./ui.ts";
-import { S, randomDrinkResponse } from "../strings.ts";
+import { PLATFORM_NAMES, S, randomDrinkResponse } from "../strings.ts";
+import { formatLinkCode, LINK_CODE_TTL_MS } from "../services/identities.ts";
+import { isPlatform } from "../lib/ids.ts";
 import { CATALOG, findPreset, type DrinkCategory } from "../lib/catalog.ts";
 import { dateTime, drinkList, fmt, hoursMinutes, num, raw } from "../lib/format.ts";
-import { alcoholMgFromClPercent, DAY_MS, HOUR_MS, roundTo, STANDARD_DRINK_GRAMS } from "../lib/units.ts";
+import { alcoholMgFromClPercent, DAY_MS, HOUR_MS, MINUTE_MS, roundTo, STANDARD_DRINK_GRAMS } from "../lib/units.ts";
 import type { Profile } from "../services/accounts.ts";
 import type { Gender } from "../lib/alcomath.ts";
 import type { InlineKeyboardButton } from "grammy/types";
@@ -16,6 +18,9 @@ import {
   cl,
   customServing,
   emojiFor,
+  euros,
+  packCount,
+  pricePerStandardDrink,
   resolveServing,
   servingDescription,
   splitAmount,
@@ -23,6 +28,7 @@ import {
   type CatalogDrink,
   type Serving,
 } from "../lib/servings.ts";
+import type { Energy } from "../services/drinks.ts";
 
 type Handler = (ctx: BotContext, arg: string | undefined) => View | Promise<View>;
 
@@ -37,6 +43,29 @@ function header(title: string, profile?: Profile | null, ctx?: BotContext): stri
     h += fmt(S.header_permilles, { permilles: num(e.permilles), permilles30Min: num(e.permilles30Min) });
   }
   return h;
+}
+
+/** "1 450": rounded to 10 kcal, since it's an estimate. */
+const kcalText = (kcal: number) => (Math.round(kcal / 10) * 10).toLocaleString("fi-FI");
+
+/** S.energy.unknown when some drinks have no energy data. */
+const unknownEnergy = (e: Energy) => raw(e.unknown > 0 ? fmt(S.energy.unknown, { count: e.unknown }) : "");
+
+/** "Tämän illan juomissa on noin 640 kcal." for the ongoing session, or "" (none, or no data). */
+export function sessionEnergyText(ctx: BotContext, profile: Profile): string {
+  const e = ctx.kili.services.drinks.sessionEnergy(profile.id);
+  if (!e || e.kcal <= 0) return "";
+  return fmt(S.energy.session, { kcal: kcalText(e.kcal), unknown: unknownEnergy(e) });
+}
+
+/** The "drink saved" confirmation, with the evening's energy. */
+export function drankText(ctx: BotContext, profile: Profile, description: string): string {
+  const energy = sessionEnergyText(ctx, profile);
+  return fmt(S.juo.on_drink, {
+    drink_response: randomDrinkResponse(),
+    drink: description,
+    energy: raw(energy ? "\n" + energy : ""),
+  });
 }
 
 export function shortPermilles(ctx: BotContext, profile: Profile): string {
@@ -62,6 +91,7 @@ export function startView(ctx: BotContext, notice = ""): View {
   const e = drinks.ebacFor(p);
   const recent = drinks.since(p.id, ctx.kili.services.deps.now() - 3 * HOUR_MS);
   const hm = hoursMinutes(e.burnHours);
+  const energy = sessionEnergyText(ctx, p);
   return {
     text:
       header(S.start.title, p, ctx) +
@@ -71,6 +101,7 @@ export function startView(ctx: BotContext, notice = ""): View {
         standard_drinks: num(e.grams / STANDARD_DRINK_GRAMS),
         hours: hm.hours,
         minutes: hm.minutes,
+        energy: raw(energy ? " " + energy : ""),
         drink_list: raw(recent.length ? fmt(S.start.drinks3h, { list: raw(drinkList(recent)) }) : ""),
       }),
     keyboard: [
@@ -120,7 +151,8 @@ function productButtonText(d: CatalogDrink, amount?: Serving): string {
   return `${emojiFor(d.product)} ${d.name} · ${one ? one.label : `${d.product.abv} %`}`;
 }
 
-export const servingButtonText = (s: Serving) => `${s.label} · ${standardDrinksText(s)}`;
+export const servingButtonText = (s: Serving) =>
+  [s.label, standardDrinksText(s), s.kcal === null ? null : `${s.kcal} kcal`].filter(Boolean).join(" · ");
 
 /**
  * Search results. With an amount at the end of the query ("jallu 3 cl") every result logs
@@ -143,7 +175,7 @@ export function searchResultsView(ctx: BotContext, profile: Profile, text: strin
 /** Logs a catalogue serving and returns the description that was stored. */
 export function logServing(ctx: BotContext, profile: Profile, drink: CatalogDrink, serving: Serving): string {
   const description = servingDescription(drink, serving);
-  ctx.kili.services.drinks.add(profile.id, serving.mg, description, { productId: serving.productId });
+  ctx.kili.services.drinks.add(profile.id, serving.mg, description, { productId: serving.productId, kcal: serving.kcal });
   return description;
 }
 
@@ -157,7 +189,9 @@ export function productView(ctx: BotContext, drinkId: string): View {
   const drink = ctx.kili.services.products.get(drinkId);
   if (!drink) return goneView();
   return {
-    text: header(S.search.title) + fmt(S.search.product, { name: `${emojiFor(drink.product)} ${drink.name}`, details: productDetails(drink) }),
+    text:
+      header(S.search.title) +
+      fmt(S.search.product, { name: `${emojiFor(drink.product)} ${drink.name}`, details: raw(productDetails(ctx, drink)) }),
     keyboard: [
       ...drink.servings.map((sv) => [btn(servingButtonText(sv), `ps:${drink.id}:${sv.key}`)]),
       [btn(S.search.custom_button, `pc:${drink.id}`)],
@@ -177,17 +211,34 @@ export function customAmountView(drink: CatalogDrink, error = ""): View {
   };
 }
 
-/** "Anora · 38 %" (package sizes don't matter: the user picks the amount). */
-function productDetails(d: CatalogDrink): string {
-  return [d.product.maker, `${d.product.abv} %`].filter(Boolean).join(" · ");
+/** "50 cl", "6 × 33 cl", "3 l" */
+function packageText(p: CatalogDrink["product"]): string {
+  const n = packCount(p.name);
+  if (n > 1) return `${n} × ${cl(p.sizeL / n)} cl`;
+  return p.sizeL >= 1 ? `${roundTo(p.sizeL, 2)} l` : `${cl(p.sizeL)} cl`;
+}
+
+/**
+ * Lines under the product name (HTML): maker, country and ABV; energy and the representative
+ * package's Alko price; a link to the product on Alkometriikka.
+ */
+function productDetails(ctx: BotContext, d: CatalogDrink): string {
+  const p = d.product;
+  const lines = [fmt("{x}", { x: [p.maker, p.country, `${p.abv} %`].filter(Boolean).join(" · ") })];
+  const perDrink = pricePerStandardDrink(p);
+  const facts = [
+    p.kcal100 === null ? null : `${p.kcal100} kcal / 100 ml`,
+    p.price === null ? null : fmt(S.search.price, { price: euros(p.price), size: packageText(p) }),
+    perDrink === null ? null : fmt(S.search.per_standard_drink, { price: euros(perDrink) }),
+  ].filter(Boolean);
+  if (facts.length) lines.push(facts.join(" · "));
+  const url = ctx.kili.services.products.pageUrl(p.id);
+  if (url) lines.push(fmt('<a href="{url}">{text}</a>', { url, text: S.search.product_link }));
+  return lines.join("\n");
 }
 
 function drankView(ctx: BotContext, profile: Profile, drinkName: string): View {
-  return juoView(
-    ctx,
-    profile,
-    fmt(S.juo.on_drink, { drink_response: randomDrinkResponse(), drink: drinkName }),
-  );
+  return juoView(ctx, profile, drankText(ctx, profile, drinkName));
 }
 
 function categoryView(category: DrinkCategory): View {
@@ -222,7 +273,11 @@ export function consumptionView(ctx: BotContext, profile: Profile, days?: number
       grams: num(c.grams, 1),
       standard_drinks: num(std, 1),
       avg: num(std / c.dayCount, 1),
-    }) + S.tilastoja.kulutus.hint;
+    }) +
+    (c.energy.kcal > 0
+      ? fmt(S.tilastoja.kulutus.energy, { kcal: kcalText(c.energy.kcal), unknown: unknownEnergy(c.energy) })
+      : "") +
+    S.tilastoja.kulutus.hint;
   const d = (n: number) => btn(S.tilastoja.kulutus.days(n), `tk:${n}`);
   return {
     text: header(S.tilastoja.title) + text,
@@ -254,19 +309,39 @@ function profileView(profile: Profile, notice = ""): View {
 }
 
 export function profileViewFor(ctx: BotContext, notice = ""): View {
-  const p = ctx.kili.userId ? ctx.kili.services.accounts.get(ctx.kili.userId) : null;
+  const p = ctx.kili.profile ? ctx.kili.services.accounts.get(ctx.kili.profile.id) : null;
   return p ? profileView(p, notice) : startView(ctx);
 }
 
-function settingsView(notice = ""): View {
+function settingsView(ctx: BotContext, notice = ""): View {
   return {
     text: header(S.asetukset.title) + (notice ? notice + "\n\n" : "") + S.asetukset.on_select,
     keyboard: [
       [btn(S.asetukset.muokkaa.button, "am")],
+      ...(ctx.kili.config.accountLinking ? [[btn(S.asetukset.linkit.button, "al")]] : []),
       [btn(S.asetukset.data.button, "ax")],
       [btn(S.asetukset.poista.button, "ad")],
       back("s"),
     ],
+  };
+}
+
+/** Platforms linked to the account; this one (Telegram) can't be unlinked from here. */
+function linksView(ctx: BotContext, p: Profile, notice = ""): View {
+  const ids = ctx.kili.services.identities.list(p.id);
+  const list = ids
+    .map((i) =>
+      fmt(i.id === ctx.kili.identityId ? S.asetukset.linkit.item_current : S.asetukset.linkit.item, {
+        platform: PLATFORM_NAMES[i.platform],
+      }),
+    )
+    .join("\n");
+  const unlink = ids
+    .filter((i) => i.id !== ctx.kili.identityId)
+    .map((i) => [btn(fmt(S.asetukset.linkit.unlink, { platform: PLATFORM_NAMES[i.platform] }), `alu:${i.platform}`)]);
+  return {
+    text: header(S.asetukset.title) + (notice ? notice + "\n\n" : "") + fmt(S.asetukset.linkit.on_select, { list: raw(list) }),
+    keyboard: [[btn(S.asetukset.linkit.create, "alc")], ...unlink, back("a")],
   };
 }
 
@@ -315,17 +390,17 @@ const NODES: Record<string, Handler> = {
   d: withProfile((ctx, p, arg) => {
     const preset = findPreset(arg ?? "");
     if (!preset) return juoView(ctx, p);
-    ctx.kili.services.drinks.add(p.id, preset.mg, preset.name);
+    ctx.kili.services.drinks.add(p.id, preset.mg, preset.name, { kcal: preset.kcal });
     return drankView(ctx, p, preset.name);
   }),
   jl: withProfile((ctx, p, arg) => {
     const source = ctx.kili.services.drinks.get(p.id, Number(arg));
     if (!source) return juoView(ctx, p);
-    ctx.kili.services.drinks.add(p.id, source.alcoholMg, source.description, { productId: source.productId });
+    ctx.kili.services.drinks.add(p.id, source.alcoholMg, source.description, { productId: source.productId, kcal: source.kcal });
     return drankView(ctx, p, source.description);
   }),
   jh: withProfile((ctx, p) => {
-    ctx.kili.services.pending.set(p.id, { kind: "productSearch" });
+    ctx.kili.services.pending.set(ctx.kili.identityId!, { kind: "productSearch" });
     return { text: header(S.search.title) + S.search.prompt, keyboard: [back("j")] };
   }),
   p: withProfile((ctx, p, arg) => productView(ctx, arg ?? "")),
@@ -340,21 +415,21 @@ const NODES: Record<string, Handler> = {
   pc: withProfile((ctx, p, arg) => {
     const drink = ctx.kili.services.products.get(arg ?? "");
     if (!drink) return goneView();
-    ctx.kili.services.pending.set(p.id, { kind: "productAmount", drinkId: drink.id });
+    ctx.kili.services.pending.set(ctx.kili.identityId!, { kind: "productAmount", drinkId: drink.id });
     return customAmountView(drink);
   }),
   jo: withProfile((ctx, p) => {
-    ctx.kili.services.pending.set(p.id, { kind: "customDrink" });
+    ctx.kili.services.pending.set(ctx.kili.identityId!, { kind: "customDrink" });
     return customDrinkView();
   }),
   jk: withProfile((ctx, p) => {
-    ctx.kili.services.pending.set(p.id, { kind: "late", drinks: [] });
+    ctx.kili.services.pending.set(ctx.kili.identityId!, { kind: "late", drinks: [] });
     return lateView(S.juo.late.on_select);
   }),
   jks: withProfile((ctx, p) => {
     const { pending, drinks } = ctx.kili.services;
-    const state = pending.get(p.id);
-    pending.clear(p.id);
+    const state = pending.get(ctx.kili.identityId!);
+    pending.clear(ctx.kili.identityId!);
     if (state?.kind !== "late" || state.hours === undefined || state.drinks.length === 0) {
       return lateView(S.juo.late.nothing_to_save);
     }
@@ -400,7 +475,7 @@ const NODES: Record<string, Handler> = {
     keyboard: [[btn(S.tilastoja.kulutus.button, "tk"), btn(S.tilastoja.otinko.button, "to")], back("s")],
   })),
   tk: withProfile((ctx, p, arg) => {
-    ctx.kili.services.pending.set(p.id, { kind: "consumptionDays" });
+    ctx.kili.services.pending.set(ctx.kili.identityId!, { kind: "consumptionDays" });
     const days = arg ? Number(arg) : undefined;
     return consumptionView(ctx, p, days && days > 0 ? days : undefined);
   }),
@@ -413,14 +488,14 @@ const NODES: Record<string, Handler> = {
   }),
 
   // Asetukset
-  a: withProfile(() => settingsView()),
+  a: withProfile((ctx) => settingsView(ctx)),
   am: withProfile((_ctx, p) => profileView(p)),
   amw: withProfile((ctx, p) => {
-    ctx.kili.services.pending.set(p.id, { kind: "editWeight" });
+    ctx.kili.services.pending.set(ctx.kili.identityId!, { kind: "editWeight" });
     return { text: header(S.asetukset.title) + fmt(S.asetukset.muokkaa.paino.on_select, { weight: p.weight }), keyboard: [back("am")] };
   }),
   amh: withProfile((ctx, p) => {
-    ctx.kili.services.pending.set(p.id, { kind: "editHeight" });
+    ctx.kili.services.pending.set(ctx.kili.identityId!, { kind: "editHeight" });
     return { text: header(S.asetukset.title) + fmt(S.asetukset.muokkaa.pituus.on_select, { height: p.height }), keyboard: [back("am")] };
   }),
   amg: withProfile((ctx, p, arg) => {
@@ -440,7 +515,34 @@ const NODES: Record<string, Handler> = {
   }),
   ax: withProfile(async (ctx) => {
     if (ctx.from) await sendExport(ctx, ctx.from.id);
-    return settingsView();
+    return settingsView(ctx);
+  }),
+  // Yhdistetyt palvelut
+  al: withProfile((ctx, p) => (ctx.kili.config.accountLinking ? linksView(ctx, p) : settingsView(ctx))),
+  alc: withProfile((ctx, p) => {
+    if (!ctx.kili.config.accountLinking) return settingsView(ctx);
+    const { code } = ctx.kili.services.identities.createLinkCode(p.id);
+    return {
+      text:
+        header(S.asetukset.title) +
+        fmt(S.asetukset.linkit.code, { code: formatLinkCode(code), minutes: LINK_CODE_TTL_MS / MINUTE_MS }),
+      keyboard: [back("al")],
+    };
+  }),
+  alu: withProfile((ctx, p, arg) => {
+    if (!ctx.kili.config.accountLinking || !arg || !isPlatform(arg)) return settingsView(ctx);
+    return {
+      text: header(S.asetukset.title) + fmt(S.asetukset.linkit.unlink_confirm, { platform: PLATFORM_NAMES[arg] }),
+      keyboard: [[btn(S.yes, `aluy:${arg}`), btn(S.no, "al")]],
+    };
+  }),
+  aluy: withProfile((ctx, p, arg) => {
+    if (!ctx.kili.config.accountLinking || !arg || !isPlatform(arg)) return settingsView(ctx);
+    // Never the login this message came from: that would lock the user out mid-conversation.
+    const current = ctx.kili.services.identities.list(p.id).find((i) => i.id === ctx.kili.identityId);
+    if (current?.platform === arg) return linksView(ctx, p);
+    const r = ctx.kili.services.identities.unlink(p.id, arg);
+    return linksView(ctx, p, r === "ok" ? fmt(S.asetukset.linkit.unlinked, { platform: PLATFORM_NAMES[arg] }) : "");
   }),
   ad: withProfile(() => ({
     text: header(S.asetukset.title) + S.asetukset.poista.on_select,
@@ -458,12 +560,12 @@ const NODES: Record<string, Handler> = {
 
   // Registration (also used to update body data)
   r: (ctx) => {
-    if (!ctx.kili.userId) return startView(ctx);
-    ctx.kili.services.pending.set(ctx.kili.userId, { kind: "register", step: "weight" });
+    if (!ctx.kili.identityId) return startView(ctx);
+    ctx.kili.services.pending.set(ctx.kili.identityId, { kind: "register", step: "weight" });
     return registerView(S.register.on_select);
   },
   "r:g": (ctx, arg) => {
-    const { userId, services } = ctx.kili;
+    const { identityId: userId, services } = ctx.kili;
     const state = userId ? services.pending.get(userId) : null;
     if (!userId || state?.kind !== "register" || state.step !== "gender" || (arg !== "m" && arg !== "f")) {
       return startView(ctx);
@@ -472,7 +574,7 @@ const NODES: Record<string, Handler> = {
     return registerTermsView(ctx);
   },
   "r:t": (ctx, arg) => {
-    const { userId, services } = ctx.kili;
+    const { identityId: userId, services } = ctx.kili;
     const state = userId ? services.pending.get(userId) : null;
     if (!userId || !ctx.from || state?.kind !== "register" || state.step !== "terms") return startView(ctx);
     services.pending.clear(userId);
@@ -480,22 +582,21 @@ const NODES: Record<string, Handler> = {
       return registerView(S.register.terms_rejected);
     }
     const name = displayName(ctx.from);
-    const { created } = services.accounts.upsert(userId, {
-      telegramId: ctx.from.id,
+    const { created, profile } = services.accounts.register({ platform: "telegram", platformUserId: ctx.from.id }, {
       name,
       fullName: fullName(ctx.from),
       weight: state.weight,
       height: state.height,
       gender: state.gender,
     });
-    ctx.kili.profile = services.accounts.get(userId);
+    ctx.kili.profile = profile;
     return startView(ctx, created ? fmt(S.register.created, { name }) : S.register.updated);
   },
 
   // Import from the original bot
   i: (ctx) => importIntro(ctx),
   "i:y": (ctx) => {
-    const { userId, services } = ctx.kili;
+    const { identityId: userId, services } = ctx.kili;
     if (!userId) return startView(ctx);
     services.pending.set(userId, { kind: "import", step: "files" });
     return { text: header(S.import.title) + S.import.send_files, keyboard: [back("s")] };
@@ -529,7 +630,7 @@ const NODES: Record<string, Handler> = {
 };
 
 export function importIntro(ctx: BotContext): View {
-  const { userId, services } = ctx.kili;
+  const { identityId: userId, services } = ctx.kili;
   if (userId) services.pending.set(userId, { kind: "import", step: "terms" });
   return {
     text: header(S.import.title) + fmt(S.import.intro, { terms: raw(termsHtml(ctx.kili.config)) }),
@@ -555,7 +656,7 @@ export async function renderNode(ctx: BotContext, data: string): Promise<View> {
 export async function handleMenuCallback(ctx: BotContext, data: string) {
   const { node, arg } = route(data);
   const handler = NODES[node] ?? NODES.s!;
-  const { userId, services } = ctx.kili;
+  const { identityId: userId, services } = ctx.kili;
   if (userId && !KEEPS_PENDING.has(node)) services.pending.clear(userId);
   await editView(ctx, await handler(ctx, arg));
 }

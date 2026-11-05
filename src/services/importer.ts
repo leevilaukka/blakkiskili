@@ -7,6 +7,7 @@ import { parseCsv, unescapeFormulaGuard, type CsvRow } from "../lib/csv.ts";
 import { legacyHash } from "../lib/ids.ts";
 import { SINGLE_DRINK_ALCOHOL_LIMIT_MG } from "../lib/units.ts";
 import type { Deps } from "./index.ts";
+import type { Identities, IdentityRef } from "./identities.ts";
 
 export type CsvKind = "user" | "drinks" | "groups";
 
@@ -34,6 +35,7 @@ export class Importer {
   constructor(
     private readonly deps: Deps,
     private readonly accounts: Accounts,
+    private readonly identities: Identities,
   ) {}
 
   /** Parses just enough to tell which file it is (to order processing). */
@@ -45,7 +47,8 @@ export class Importer {
     }
   }
 
-  import(text: string, telegramUserId: number, userId: string, fallbackName: string): ImportResult {
+  /** Imports into the account of the sender's Telegram login (user.csv creates it if needed). */
+  import(text: string, telegramUserId: number, fallbackName: string): ImportResult {
     let parsed: { columns: string[]; rows: CsvRow[] };
     try {
       parsed = parseCsv(text);
@@ -61,17 +64,14 @@ export class Importer {
       return { ok: false, reason: "not_yours" };
     }
 
-    switch (kind) {
-      case "user":
-        return this.importUser(parsed.rows[0]!, userId, telegramUserId, fallbackName);
-      case "drinks":
-        return this.importDrinks(parsed.rows, userId);
-      case "groups":
-        return this.importGroups(parsed.rows, userId);
-    }
+    const ref: IdentityRef = { platform: "telegram", platformUserId: telegramUserId };
+    if (kind === "user") return this.importUser(parsed.rows[0]!, ref, fallbackName);
+    const accountId = this.identities.accountOf(this.identities.key(ref));
+    if (!accountId) return { ok: false, reason: "no_account" };
+    return kind === "drinks" ? this.importDrinks(parsed.rows, accountId) : this.importGroups(parsed.rows, accountId);
   }
 
-  private importUser(row: CsvRow, userId: string, telegramUserId: number, fallbackName: string): ImportResult {
+  private importUser(row: CsvRow, ref: IdentityRef, fallbackName: string): ImportResult {
     const weight = Number(row.weight);
     const height = Number(row.height);
     const gender = (row.gender ?? "").trim().toLowerCase();
@@ -79,8 +79,7 @@ export class Importer {
       return { ok: false, reason: "invalid_profile" };
     }
     const created = parseTime(row.created);
-    const { created: isNew } = this.accounts.upsert(userId, {
-      telegramId: telegramUserId,
+    const { created: isNew } = this.accounts.register(ref, {
       // The current Telegram name wins over the exported one; it's what friends recognise.
       name: fallbackName || unescapeFormulaGuard(row.nick ?? "") || "?",
       weight,
@@ -92,9 +91,8 @@ export class Importer {
   }
 
   private importDrinks(rows: CsvRow[], userId: string): ImportResult {
-    if (!this.accounts.get(userId)) return { ok: false, reason: "no_account" };
     const insert = this.deps.db.query(
-      "INSERT OR IGNORE INTO drinks (user_id, alcohol_mg, description, created_at, product_id) VALUES (?, ?, ?, ?, ?)",
+      "INSERT OR IGNORE INTO drinks (user_id, alcohol_mg, description, created_at, product_id, kcal) VALUES (?, ?, ?, ?, ?, ?)",
     );
     let inserted = 0;
     let duplicates = 0;
@@ -111,7 +109,8 @@ export class Importer {
         const description = unescapeFormulaGuard(r.description ?? "").slice(0, 200);
         // Only exports from this bot have product_id; the original bot's don't.
         const productId = /^\d{1,10}$/.test(r.product_id ?? "") ? r.product_id! : null;
-        if (insert.run(userId, mg, description, at, productId).changes > 0) inserted += 1;
+        const kcal = /^\d{1,5}$/.test(r.kcal ?? "") ? Number(r.kcal) : null; // likewise kcal
+        if (insert.run(userId, mg, description, at, productId, kcal).changes > 0) inserted += 1;
         else duplicates += 1;
       }
     })();
@@ -119,7 +118,6 @@ export class Importer {
   }
 
   private importGroups(rows: CsvRow[], userId: string): ImportResult {
-    if (!this.accounts.get(userId)) return { ok: false, reason: "no_account" };
     const insert = this.deps.db.query(
       "INSERT OR IGNORE INTO legacy_group_memberships (user_id, legacy_group_id) VALUES (?, ?)",
     );

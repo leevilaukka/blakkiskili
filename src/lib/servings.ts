@@ -17,7 +17,9 @@ export interface CatalogProduct {
   packaging: string | null; // tölkki, lasipullo, hanapakkaus, ...
   selection: string | null; // vakiovalikoima, tilausvalikoima, ...
   status: string | null; // Aktiivinen, Poistuva, Uutuus, ...
-  price: number | null; // euros
+  price: number | null; // euros, whole package
+  kcal100: number | null; // energy per 100 ml (Alko's "Energia kcal/100 ml")
+  country: string | null; // Valmistusmaa
 }
 
 export interface Serving {
@@ -29,6 +31,8 @@ export interface Serving {
   standardDrinks: number;
   /** The concrete Alko product this serving comes from (stored on the logged drink). */
   productId: string;
+  kcal: number | null; // energy of this amount; null if Alko doesn't list it
+  priceEur: number | null; // this amount at the source package's Alko price
 }
 
 /** One searchable drink: every package size of the same product merged. */
@@ -70,12 +74,24 @@ export function emojiFor(p: Pick<CatalogProduct, "type" | "subtype">): string {
 }
 
 /** Servings one package offers. Empty for (nearly) non-alcoholic products. */
+/** A serving of `litres` of product `p`: alcohol, energy and price for that amount. */
+function serving(p: CatalogProduct, key: string, label: string, litres: number): Serving {
+  const mg = alcoholMg(p.abv / 100, litres);
+  return {
+    key,
+    label,
+    litres,
+    mg,
+    standardDrinks: mg / 1000 / STANDARD_DRINK_GRAMS,
+    productId: p.id,
+    kcal: p.kcal100 === null ? null : Math.round(p.kcal100 * litres * 10),
+    priceEur: p.price === null ? null : (p.price / p.sizeL) * litres,
+  };
+}
+
 export function servingsFor(p: CatalogProduct): Serving[] {
   if (!(p.abv >= 1)) return [];
-  const make = (key: string, label: string, litres: number): Serving => {
-    const mg = alcoholMg(p.abv / 100, litres);
-    return { key, label, litres, mg, standardDrinks: mg / 1000 / STANDARD_DRINK_GRAMS, productId: p.id };
-  };
+  const make = (key: string, label: string, litres: number) => serving(p, key, label, litres);
   const pours = (...cls: number[]) => cls.map((c) => make(String(c), `${c} cl`, c / 100));
   const whole = (unit: number) => make(`c${cl(unit)}`, `${cl(unit)} cl`, unit);
 
@@ -162,18 +178,9 @@ export function customServing(
 ): { serving: Serving } | { error: "invalid" | "too_much" } {
   if (!(litres >= 0.001 && litres <= 2)) return { error: "invalid" };
   const rounded = Math.round(litres * 10000) / 10000;
-  const mg = alcoholMg(drink.product.abv / 100, rounded);
-  if (isAlcoholAmountOutOfLimits(mg)) return { error: "too_much" };
-  return {
-    serving: {
-      key: `x${cl(rounded)}`,
-      label: `${cl(rounded)} cl`,
-      litres: rounded,
-      mg,
-      standardDrinks: mg / 1000 / STANDARD_DRINK_GRAMS,
-      productId: drink.id,
-    },
-  };
+  const s = serving(drink.product, `x${cl(rounded)}`, `${cl(rounded)} cl`, rounded);
+  if (isAlcoholAmountOutOfLimits(s.mg)) return { error: "too_much" };
+  return { serving: s };
 }
 
 /** A listed serving by key, or a custom one ("x3" = 3 cl). */
@@ -187,3 +194,20 @@ export function resolveServing(drink: CatalogDrink, key: string): Serving | unde
 
 /** "0.9 annosta" */
 export const standardDrinksText = (s: Serving) => `${s.standardDrinks.toFixed(1)} annosta`;
+
+/** "24,90 €" */
+export const euros = (n: number) => `${n.toFixed(2).replace(".", ",")} €`;
+
+/** "130 kcal · Alkossa 2,19 €", or whichever part is known; "" if neither. */
+export function servingFacts(s: Serving): string {
+  return [s.kcal === null ? null : `${s.kcal} kcal`, s.priceEur === null ? null : `Alkossa ${euros(s.priceEur)}`]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** Price of one standard drink (12 g of alcohol) at the product's Alko price, or null. */
+export function pricePerStandardDrink(p: CatalogProduct): number | null {
+  if (p.price === null || !(p.abv >= 1)) return null;
+  const litresPerStandardDrink = (STANDARD_DRINK_GRAMS * 1000) / alcoholMg(p.abv / 100, 1);
+  return (p.price / p.sizeL) * litresPerStandardDrink;
+}

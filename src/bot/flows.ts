@@ -5,9 +5,11 @@ import { displayName } from "./context.ts";
 import {
   consumptionView,
   customDrinkView,
+  drankText,
   genderKeyboard,
   juoView,
   lateView,
+  logServing,
   searchResultsView,
   customAmountView,
   profileViewFor,
@@ -15,7 +17,7 @@ import {
   registerView,
 } from "./menu.ts";
 import { back, sendHtml, sendView } from "./ui.ts";
-import { S, randomDrinkResponse } from "../strings.ts";
+import { S } from "../strings.ts";
 import { fmt, raw } from "../lib/format.ts";
 import {
   alcoholMgFromClPercent,
@@ -25,11 +27,11 @@ import {
 } from "../lib/units.ts";
 import { isValidHeight, isValidWeight } from "../services/accounts.ts";
 import type { ImportResult } from "../services/importer.ts";
-import { customServing, parseAmount, servingDescription } from "../lib/servings.ts";
+import { customServing, parseAmount } from "../lib/servings.ts";
 
 /** Handles a private text message. Returns false if no flow was waiting for it. */
 export async function handleFlowText(ctx: BotContext, text: string): Promise<boolean> {
-  const { userId, services, profile } = ctx.kili;
+  const { identityId: userId, services, profile } = ctx.kili;
   if (!userId) return false;
   const state = services.pending.get(userId);
   if (!state) return false;
@@ -69,7 +71,7 @@ export async function handleFlowText(ctx: BotContext, text: string): Promise<boo
       const name = fmt(S.juo.oma.description, { cl, vol });
       services.drinks.add(profile.id, mg, name);
       // Stay in the flow so another custom drink can be typed right away.
-      return reply(ctx, juoView(ctx, profile, fmt(S.juo.on_drink, { drink_response: randomDrinkResponse(), drink: name })));
+      return reply(ctx, juoView(ctx, profile, drankText(ctx, profile, name)));
     }
 
     case "late": {
@@ -144,9 +146,7 @@ export async function handleFlowText(ctx: BotContext, text: string): Promise<boo
         return reply(ctx, customAmountView(drink, error));
       }
       services.pending.clear(userId);
-      const description = servingDescription(drink, r.serving);
-      services.drinks.add(profile.id, r.serving.mg, description, { productId: r.serving.productId });
-      return reply(ctx, juoView(ctx, profile, fmt(S.juo.on_drink, { drink_response: randomDrinkResponse(), drink: description })));
+      return reply(ctx, juoView(ctx, profile, drankText(ctx, profile, logServing(ctx, profile, drink, r.serving))));
     }
 
     case "productSearch":
@@ -195,7 +195,7 @@ function resultText(r: ImportResult): string {
 /** Handles a document sent in private chat. */
 export async function handleImportDocument(ctx: BotContext) {
   const doc = ctx.message?.document;
-  const { userId, services } = ctx.kili;
+  const { identityId: userId, services } = ctx.kili;
   if (!doc || !userId || !ctx.from) return;
 
   const state = services.pending.get(userId);
@@ -210,7 +210,7 @@ export async function handleImportDocument(ctx: BotContext) {
 
   const text = await downloadText(ctx, doc.file_id);
   const kind = services.importer.peek(text);
-  if ((kind === "drinks" || kind === "groups") && !services.accounts.get(userId)) {
+  if ((kind === "drinks" || kind === "groups") && !services.accounts.byIdentity(userId)) {
     // user.csv may arrive after drinks.csv in the same batch: keep this one for later.
     services.pending.set(userId, { ...state, waitingDrinkFiles: [...(state.waitingDrinkFiles ?? []), doc.file_id] });
     await sendHtml(ctx, S.import.waiting_for_user);
@@ -218,16 +218,16 @@ export async function handleImportDocument(ctx: BotContext) {
   }
 
   const name = displayName(ctx.from);
-  const result = services.importer.import(text, ctx.from.id, userId, name);
+  const result = services.importer.import(text, ctx.from.id, name);
   await sendHtml(ctx, resultText(result));
 
   if (result.ok && result.kind === "user") {
-    ctx.kili.profile = services.accounts.get(userId);
+    ctx.kili.profile = services.accounts.byIdentity(userId);
     const waiting = services.pending.get(userId);
     if (waiting?.kind === "import" && waiting.waitingDrinkFiles?.length) {
       services.pending.set(userId, { kind: "import", step: "files" });
       for (const fileId of waiting.waitingDrinkFiles) {
-        const r = services.importer.import(await downloadText(ctx, fileId), ctx.from.id, userId, name);
+        const r = services.importer.import(await downloadText(ctx, fileId), ctx.from.id, name);
         await sendHtml(ctx, resultText(r));
       }
     }

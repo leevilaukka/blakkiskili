@@ -3,7 +3,18 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { normalize, parseCatalog, Products } from "../src/services/products.ts";
-import { cleanName, customServing, packCount, parseAmount, resolveServing, servingDescription, splitAmount, type CatalogDrink } from "../src/lib/servings.ts";
+import {
+  cleanName,
+  customServing,
+  packCount,
+  parseAmount,
+  pricePerStandardDrink,
+  resolveServing,
+  servingDescription,
+  servingFacts,
+  splitAmount,
+  type CatalogDrink,
+} from "../src/lib/servings.ts";
 import { catalogJson, PRODUCTS } from "./fixtures.ts";
 
 const loaded = () => {
@@ -101,6 +112,25 @@ describe("names and custom amounts", () => {
     expect(splitAmount("jallu 3 cl")).toEqual({ query: "jallu", litres: 0.03 });
     expect(splitAmount("karhu 4,6 33cl")).toEqual({ query: "karhu 4,6", litres: 0.33 });
     expect(splitAmount("karhu 4,6")).toEqual({ query: "karhu 4,6" }); // part of the name
+  });
+
+  test("servings carry energy and the price of that amount; product pages link to Alkometriikka", () => {
+    const can = drink("700001").servings.find((s) => s.key === "c33")!;
+    expect(can).toMatchObject({ kcal: 132, productId: "700002" });
+    expect(can.priceEur).toBeCloseTo(2.29);
+    const shot = resolveServing(drink("700022"), "4")!; // 4 cl from the 70 cl bottle at 33,90 €
+    expect(shot.kcal).toBe(84);
+    expect(servingFacts(shot)).toBe("84 kcal · Alkossa 1,94 €");
+    const noEnergy = drink("700013").servings[0]!;
+    expect(noEnergy.kcal).toBeNull();
+    expect(servingFacts(noEnergy)).toStartWith("Alkossa ");
+    // 12 g of alcohol from Jaloviina at 33,90 € / 70 cl
+    expect(pricePerStandardDrink(drink("700022").product)).toBeCloseTo((33.9 / 0.7) * (12 / (0.38 * 789.24)), 4);
+
+    expect(catalogue.pageUrl("700022")).toBeUndefined(); // search disabled: no URL
+    const online = new Products({ url: "https://alkometriikka.fi/data.json" });
+    expect(online.pageUrl("700022")).toBe("https://alkometriikka.fi/tuotteet/700022/");
+    expect(online.pageUrl("../x")).toBeUndefined();
   });
 
   test("custom servings: any sane amount within the single-drink limit", () => {

@@ -8,7 +8,7 @@ Bläkkiskili is a Bun + TypeScript bot based on the original [BläkkisVuohi](htt
 
 - `/start` menu (private chat):
   - **Juo:** presets, custom drink, late logging (*Jälkikellotus*), undo, quick buttons for the two latest drinks.
-  - **Tilastoja:** consumption over N days, last 72 h.
+  - **Tilastoja:** consumption (alcohol and energy) over N days, last 72 h.
   - **Asetukset:** edit profile, export data, delete the account.
   - **Help.**
 - Group commands: `/moro`, `/poistu`, `/promillet`, `/annokset`, `/stats [days]`, `/stats2 [days]`.
@@ -17,11 +17,13 @@ Bläkkiskili is a Bun + TypeScript bot based on the original [BläkkisVuohi](htt
   - **Inline mode** (`@blakkiskilibot karhu`) shows results as you type, and a tap logs the drink.
   - **Typed search** in the Juo menu is the fallback.
   - Every package size of a drink is one entry. Jaloviina's eight bottle sizes become one "2 / 4 / 6 cl" choice, and Karhu offers its 33 cl and 50 cl cans. You pick the amount you drank, not the package.
-  - The usual amounts are offered as plain amounts (33 cl, 16 cl, 75 cl, 4 cl), each button showing the standard drinks it equals.
+  - The usual amounts are offered as plain amounts (33 cl, 16 cl, 75 cl, 4 cl), each button showing the standard drinks and kcal it equals.
+  - Results show energy and the Alko price of that amount. The product view adds maker, country, kcal/100 ml, the package price, the price per standard drink and a link to the product on Alkometriikka.
   - ✏️ *Muu määrä* takes any amount (`3`, `3 cl`, `0,5 l`, `250 ml`). An amount at the end of a search (`jallu 3 cl`, `karhu 40cl`) gives one-tap results with exactly that amount, both inline and in the menu.
   - Nicknames such as *jallu*, *kossu* and *lonkka* work.
   - Search only works in the private chat, so drinks are never posted to groups.
 - Shortcuts kept from the old bot: `/juoma`, `/kalja033`, `/kalja05`, `/jalkikellotus`, `/laatta`, `/tunnus`, `/whoami`.
+- **Energy (kcal):** each drink stores an energy estimate when it's logged. Catalogue drinks use Alko's *Energia kcal/100 ml*, and presets use a typical value (the median of comparable Alko products, see [`src/lib/catalog.ts`](src/lib/catalog.ts)). Custom and late-logged drinks, and drinks imported from the old bot, have none. The drink confirmation and the start screen show the current evening's total (drinks with no pause of 6 h or more), Kulutus shows the total for the period, and both say how many drinks had no data.
 - `/data` exports everything as CSV. `/tuo` imports CSVs from the old bot or from this one.
 - `/admin_stats` for the IDs listed in `ADMIN_IDS`.
 
@@ -78,16 +80,29 @@ Without inline mode, the 🔎 button in the Juo menu falls back to typed search 
 
 Data minimisation was the reason the original bot was shut down, so:
 
-- Telegram user and chat IDs are stored only as HMAC-SHA256 under a key derived from `APP_SECRET`. The old bot used unsalted sha256, which can be reversed by brute force.
+- Platform user IDs (Telegram, and others once linked) and chat IDs are stored only as HMAC-SHA256 under a key derived from `APP_SECRET`. The old bot used unsalted sha256, which can be reversed by brute force.
 - Display names are encrypted with AES-256-GCM.
-- What is stored: name (@username or full name) and the full Telegram name (used in charts), weight, height, gender, drinks (amount, description, time) and group memberships. No message contents: the bot only receives commands in groups (privacy mode).
+- What is stored: name (@username or full name) and the full Telegram name (used in charts), weight, height, gender, drinks (amount, description, time, estimated energy, and for catalogue drinks the Alko product number) and group memberships. No message contents: the bot only receives commands in groups (privacy mode).
 - Deleting the account (*Asetukset → Poista tunnus*) removes everything immediately.
-- **Inactive accounts are deleted** after `INACTIVE_DELETE_DAYS` (default 730, about 24 months). The user gets a private warning `INACTIVE_WARN_DAYS` (default 30) days before, and any use of the bot cancels it. For the warning, the Telegram ID is also stored encrypted with AES-256-GCM, like names. A job runs every 6 hours.
+- **Inactive accounts are deleted** after `INACTIVE_DELETE_DAYS` (default 730, about 24 months). The user gets a private warning `INACTIVE_WARN_DAYS` (default 30) days before, and any use of the bot cancels it. For the warning, each login's platform user ID is also stored encrypted with AES-256-GCM, like names. Only Telegram can deliver it for now; an account whose logins are all on platforms without a bot is treated as warned and deleted after the notice period. A job runs every 6 hours.
   - The notice period is always respected, even if warnings go out late.
   - Users who blocked the bot count as warned and are deleted after the notice period.
   - Network errors are retried on the next run.
   - The terms and privacy texts state the rule automatically. `0` keeps accounts forever and removes the sentence.
-- Typed-input state lives in a `pending` table and expires after 24 h.
+- Typed-input state lives in a `pending` table, per login, and expires after 24 h.
+
+## Several platforms, one account
+
+An account (`users`) is the person: body data, drinks, groups. Each platform login is a row in `identities` (HMAC of the platform user ID → account), at most one per platform. Accounts made before this have their Telegram HMAC as their id. New ones get a random id, so an account doesn't depend on any one login.
+
+Linking (off unless `ACCOUNT_LINKING=1`): *Asetukset → Yhdistetyt palvelut → Luo yhdistämiskoodi* gives a one-time code (10 min, stored as an HMAC). Sending `/yhdista KOODI` on the other platform adds that login to the account. Accounts are never merged. A login that already has an account, or a second login on a platform the account already uses, is refused. The login you're using can't be unlinked (delete the account instead).
+
+To add a platform, e.g. Discord:
+
+- Add it to `PLATFORMS` in `src/lib/ids.ts` (Discord is already there) and `PLATFORM_NAMES` in `src/strings.ts`.
+- Write a front end next to `src/bot/` that resolves `services.identities.key({ platform, platformUserId })` → `accounts.byIdentity()`, keys typed input by the identity id, calls `accounts.register()` for sign-up and `identities.redeemLinkCode()` for `/yhdista`.
+- Give `runInactivityJob` a sender for the platform's contacts.
+- Groups (`groups.ts`) and `/data`/`/tuo` are still Telegram-shaped: group keys are Telegram chat IDs, and the CSV `userid` is the legacy sha256 of the Telegram ID.
 - **Backups:**
   - Every hour the bot writes a consistent snapshot of the database (`VACUUM INTO`, integrity-checked, mode 600).
   - The `backup` service uses restic to ship it off-site, encrypted client-side, keeping 7 daily, 4 weekly and 3 monthly snapshots.
@@ -103,7 +118,7 @@ src/index.ts          entry point: config, DB, bot, polling/webhook
 src/config.ts         environment variables
 src/db/index.ts       SQLite schema + migrations (PRAGMA user_version)
 src/lib/              pure code: alcomath (BAC), units, drink catalog, CSV, ids/crypto, formatting
-src/services/         domain logic, no Telegram dependency (accounts, drinks, groups, stats, importer, pending)
+src/services/         domain logic, no Telegram dependency (identities, accounts, drinks, groups, stats, importer, pending)
 src/bot/              Telegram layer (grammY): menu router, typed-input flows, commands
 src/strings.ts        all user-facing texts (Finnish, Telegram HTML)
 test/                 bun test, including an end-to-end test against a fake Telegram API

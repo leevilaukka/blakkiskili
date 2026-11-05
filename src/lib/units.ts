@@ -1,7 +1,8 @@
 // Alcohol unit helpers and limits, ported from the original app/constants.js.
 
 export const ETHANOL_GRAMS_PER_LITRE = 789.24;
-export const HOUR_MS = 3600 * 1000;
+export const MINUTE_MS = 60 * 1000;
+export const HOUR_MS = 60 * MINUTE_MS;
 export const DAY_MS = 24 * HOUR_MS;
 export const METABOLISM_RATE = 0.17; // permilles per hour
 export const STANDARD_DRINK_GRAMS = 12.0; // Finnish standard drink

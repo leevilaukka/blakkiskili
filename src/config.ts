@@ -7,17 +7,29 @@ export interface Config {
   webhookUrl?: string;
   webhookSecret?: string;
   port: number;
-  maintainer?: string; // e.g. "@handle", shown in /about and help
+  maintainer?: string; // name shown in /about and help, e.g. "leevilaukka"
+  maintainerTelegram?: string; // Telegram username without "@", shown next to the name
   sourceUrl?: string; // link to this bot's source code, shown in /about
   inactivity: { deleteAfterDays: number; warnDaysBefore: number }; // deleteAfterDays 0 = keep forever
   backup: { dir?: string; everyMinutes: number }; // no dir = snapshots disabled
   productsUrl?: string; // Alkometriikka data.json; undefined = product search disabled
+  accountLinking: boolean; // show "Yhdistetyt palvelut" and /yhdista (useful once another platform has a bot)
 }
 
 function required(name: string): string {
   const v = process.env[name];
   if (!v) throw new Error(`Missing required environment variable ${name} (see .env.example)`);
   return v;
+}
+
+/** "@handle" or "handle" → "handle"; validated against Telegram's username rules. */
+function telegramHandle(raw: string | undefined): string | undefined {
+  const handle = raw?.trim().replace(/^@/, "");
+  if (!handle) return undefined;
+  if (!/^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(handle)) {
+    throw new Error("MAINTAINER_TELEGRAM must be a Telegram username (5–32 letters, digits or _)");
+  }
+  return handle;
 }
 
 function intEnv(name: string, fallback: number): number {
@@ -44,6 +56,7 @@ export function loadConfig(): Config {
     webhookSecret: process.env.WEBHOOK_SECRET || undefined,
     port: Number(process.env.PORT ?? 8080),
     maintainer: process.env.MAINTAINER || undefined,
+    maintainerTelegram: telegramHandle(process.env.MAINTAINER_TELEGRAM),
     sourceUrl: process.env.SOURCE_URL || undefined,
     inactivity: {
       deleteAfterDays: intEnv("INACTIVE_DELETE_DAYS", 730),
@@ -54,6 +67,7 @@ export function loadConfig(): Config {
       process.env.ALKOMETRIIKKA_URL === undefined
         ? "https://alkometriikka.fi/data.json"
         : process.env.ALKOMETRIIKKA_URL || undefined,
+    accountLinking: ["1", "true", "yes"].includes((process.env.ACCOUNT_LINKING ?? "").trim().toLowerCase()),
     backup: {
       dir: process.env.BACKUP_DIR || undefined,
       everyMinutes: Math.max(1, intEnv("BACKUP_EVERY_MINUTES", 60)),

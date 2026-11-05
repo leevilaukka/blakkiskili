@@ -77,6 +77,37 @@ const MIGRATIONS: string[] = [
   -- custom drinks.
   ALTER TABLE drinks ADD COLUMN product_id TEXT;
   `,
+
+  /* 5: energy */ `
+  -- Estimated energy of the drink (kcal), set when it is logged: from Alko's data for catalogue
+  -- drinks, a typical value for presets. NULL when unknown (custom drinks, old imports).
+  ALTER TABLE drinks ADD COLUMN kcal INTEGER CHECK (kcal >= 0);
+  `,
+
+  /* 6: platform identities */ `
+  -- One account can be used from several chat platforms. users.id is now an opaque account id:
+  -- existing accounts keep theirs (the Telegram HMAC), new ones get a random id. Each platform
+  -- login is an identity pointing at its account, at most one per platform.
+  CREATE TABLE identities (
+    id          TEXT PRIMARY KEY,                -- HMAC of the platform user id (Crypto.identityKey)
+    account_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    platform    TEXT NOT NULL,                   -- 'telegram', 'discord', ...
+    contact_enc TEXT,                            -- AES-GCM encrypted platform user id, only for warning DMs
+    created_at  INTEGER NOT NULL,                -- epoch ms
+    UNIQUE (account_id, platform)
+  ) STRICT;
+  INSERT INTO identities (id, account_id, platform, contact_enc, created_at)
+    SELECT id, id, 'telegram', tg_id_enc, created_at FROM users;
+  ALTER TABLE users DROP COLUMN tg_id_enc;
+
+  -- One-time codes for linking another platform to an account. pending.user_id is an
+  -- identity id from now on (typed input belongs to one conversation).
+  CREATE TABLE link_codes (
+    code_hash  TEXT PRIMARY KEY,                 -- HMAC of the code (Crypto.linkCodeKey)
+    account_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL                  -- epoch ms
+  ) STRICT;
+  `,
 ];
 
 export function openDatabase(path: string): Database {
@@ -88,9 +119,10 @@ export function openDatabase(path: string): Database {
   return db;
 }
 
-export function migrate(db: Database): void {
+/** Runs the pending migrations, up to `target` (tests use it to build an old schema). */
+export function migrate(db: Database, target = MIGRATIONS.length): void {
   const { user_version: current } = db.query("PRAGMA user_version").get() as { user_version: number };
-  for (let v = current; v < MIGRATIONS.length; v += 1) {
+  for (let v = current; v < target; v += 1) {
     db.transaction(() => {
       db.run(MIGRATIONS[v]!);
       db.run(`PRAGMA user_version = ${v + 1}`);
