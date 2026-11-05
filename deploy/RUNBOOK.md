@@ -29,9 +29,20 @@ Never put `APP_SECRET` in the same place as the backups. Backups are only safe b
    - a `kili` user with key-only SSH, and root login disabled,
    - a firewall that allows only SSH inbound,
    - automatic security updates with reboots at 04:30,
-   - fail2ban and Docker.
-3. If the provider has a cloud firewall, allow only TCP 22 inbound there too. Optionally allow it only from your Tailscale/WireGuard network.
-4. Check: `ssh kili@<ip>` works, while `ssh root@<ip>` and password login are refused, and `sudo ufw status` shows only OpenSSH.
+   - fail2ban, Docker and Tailscale (installed, not yet joined).
+3. If the provider has a cloud firewall, allow only TCP 22 and UDP 41641 inbound there too.
+4. Check: `ssh kili@<ip>` works, while `ssh root@<ip>` and password login are refused, and `sudo ufw status` shows only OpenSSH and 41641/udp.
+5. Join the tailnet with Tailscale SSH: `sudo tailscale up --ssh --hostname blakkiskili`, then open the printed link as a tailnet admin. Then:
+   - `sudo tailscale set --auto-update` (unattended-upgrades only covers Ubuntu's own packages),
+   - restrict Tailscale SSH to the maintainers and the `kili` user. Tailscale SSH bypasses sshd, so `AllowUsers kili` and the root login ban don't apply to it, and the default policy lets you in as `root`. In the tailnet policy file, add
+     ```jsonc
+     "tagOwners": { "tag:blakkiskili": ["autogroup:admin"] },
+     // in "ssh": tagged machines aren't covered by the default autogroup:self rule
+     { "action": "accept", "src": ["autogroup:admin"], "dst": ["tag:blakkiskili"], "users": ["kili"] },
+     ```
+     then on the machine in the admin console choose *Edit ACL tags* → `tag:blakkiskili`. A tagged machine has no key expiry, so it doesn't drop off the tailnet after 180 days. Without a tag, use *Disable key expiry* instead.
+   - Check: `ssh kili@blakkiskili` from a tailnet device works, and `ssh root@blakkiskili` is refused.
+6. Optional, once Tailscale SSH works for every maintainer: close public SSH with `sudo ufw delete allow OpenSSH`. Recovery is then through the provider's web console, which needs a password, so first set one for `kili` (`sudo passwd kili`) and store it in the vault. sshd still refuses passwords, so this only enables console login.
 
 ## 2. Off-site backup storage
 

@@ -79,7 +79,15 @@ runcmd:
   - ufw default deny incoming
   - ufw default allow outgoing
   - ufw allow OpenSSH
+  # Tailscale's WireGuard port: lets peers connect directly instead of through a DERP relay.
+  - ufw allow 41641/udp
   - ufw --force enable
+  # Tailscale from its official apt repo. Joining the tailnet is a manual step (RUNBOOK §1):
+  # an auth key here would stay readable from the metadata service for the server's lifetime.
+  - curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg -o /usr/share/keyrings/tailscale-archive-keyring.gpg
+  - curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list -o /etc/apt/sources.list.d/tailscale.list
+  - apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y tailscale
+  - systemctl enable --now tailscaled
   - timedatectl set-timezone Europe/Helsinki
   - systemctl enable --now docker fail2ban unattended-upgrades
   - systemctl restart ssh
