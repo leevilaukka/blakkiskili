@@ -86,7 +86,7 @@ Delete `restore/` when done. It contains the whole database.
 
 ## 5. Routine
 
-- **Updates:** `git pull && docker compose up -d --build`. The OS patches itself.
+- **Updates:** `git pull && docker compose up -d --build`, or without building on the server: `git pull && docker compose pull kili && docker compose up -d` (CI publishes `ghcr.io/leevilaukka/blakkiskili`; make the package public or `docker login ghcr.io` with a `read:packages` token first). The OS patches itself.
 - **Telling users about an update:** add an entry to `src/announcements.ts` before deploying. Users see it once, privately, on their next interaction.
 - **Dependencies:** run `bun audit` and `bun outdated` now and then, and before deploys.
 - **Who has access:** check `~/.ssh/authorized_keys` and the vault members when maintainers change, and remove people who have left.
