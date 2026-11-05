@@ -153,17 +153,86 @@ const goneView = (): View => ({
 });
 
 /** A product: one button per usual serving, plus a custom amount. */
-export function productView(ctx: BotContext, drinkId: string): View {
-  const drink = ctx.kili.services.products.get(drinkId);
+export function productView(ctx: BotContext, drinkId: string, notice = ""): View {
+  const { products, barcodes } = ctx.kili.services;
+  const drink = products.get(drinkId);
   if (!drink) return goneView();
   return {
-    text: header(S.search.title) + fmt(S.search.product, { name: `${emojiFor(drink.product)} ${drink.name}`, details: productDetails(drink) }),
+    text:
+      header(S.search.title) +
+      (notice ? notice + "\n\n" : "") +
+      fmt(S.search.product, { name: `${emojiFor(drink.product)} ${drink.name}`, details: productDetails(drink) }),
     keyboard: [
       ...drink.servings.map((sv) => [btn(servingButtonText(sv), `ps:${drink.id}:${sv.key}`)]),
       [btn(S.search.custom_button, `pc:${drink.id}`)],
+      ...(barcodes.canLink ? [[btn(S.barcode.button, `eb:${drink.id}`)]] : []),
       [btn(S.search.more, "jh")],
       back("j"),
     ],
+  };
+}
+
+// ---------- Barcodes ----------
+
+const packageLabel = (p: { name: string; sizeL: number }) => `${p.name} · ${cl(p.sizeL)} cl`;
+
+/** What a scanned or typed barcode leads to: its product, or a prompt to link it. */
+export async function barcodeView(ctx: BotContext, profile: Profile, input: string): Promise<View> {
+  const { barcodes, products, pending } = ctx.kili.services;
+  const hit = await barcodes.resolve(input);
+  if (!hit) return { text: header(S.barcode.title) + S.barcode.invalid, keyboard: [back("j")] };
+  const ean = hit.ean;
+  if (hit.productId) {
+    return products.get(hit.productId)
+      ? productView(ctx, hit.productId, fmt(S.barcode.found, { ean }))
+      : { text: header(S.barcode.title) + fmt(S.barcode.gone, { ean }), keyboard: [back("j")] };
+  }
+  if (!barcodes.canLink) return { text: header(S.barcode.title) + fmt(S.barcode.unknown_readonly, { ean }), keyboard: [back("j")] };
+  pending.set(profile.id, { kind: "eanLink", ean });
+  return { text: header(S.barcode.title) + fmt(S.barcode.unknown, { ean }), keyboard: [back("j")] };
+}
+
+/** Search results where picking a package links `ean` to it. */
+export function barcodePickView(ctx: BotContext, profile: Profile, ean: string, text: string): View {
+  const { products, drinks } = ctx.kili.services;
+  const { query } = splitAmount(text);
+  const rows = products
+    .search(query, 5, drinks.recentProductIds(profile.id, 10))
+    .flatMap((d) => d.variants.map((v) => [btn(`${emojiFor(v)} ${packageLabel(v)}`.slice(0, 60), `el:${ean}:${v.id}`)]))
+    .slice(0, 10);
+  const body = rows.length ? fmt(S.barcode.pick, { ean }) : fmt(S.barcode.none, { q: query });
+  return { text: header(S.barcode.title) + body, keyboard: [...rows, back("j")] };
+}
+
+/** Votes that `ean` is `productId` and shows the product, so the drink can still be logged. */
+export async function linkBarcode(ctx: BotContext, ean: string, productId: string): Promise<View> {
+  const { barcodes, products, deps } = ctx.kili.services;
+  const drink = products.get(productId);
+  if (!drink || !ctx.from) return goneView();
+  const result = await barcodes.link(ean, productId, deps.crypto.voterKey(ctx.from.id));
+  if (!result.ok) {
+    const text =
+      result.reason === "invalid"
+        ? S.barcode.invalid
+        : result.reason === "rate-limited"
+          ? S.barcode.rate_limited
+          : result.reason === "unknown-product"
+            ? S.search.gone
+            : S.barcode.unavailable;
+    return { text: header(S.barcode.title) + text, keyboard: [[btn(S.search.more, "jh")], back("j")] };
+  }
+  const notice = fmt(result.status === "confirmed" ? S.barcode.linked_confirmed : S.barcode.linked_pending, { ean });
+  return productView(ctx, drink.id, notice);
+}
+
+function barcodePromptView(ctx: BotContext, profileId: string, productId: string): View {
+  const { products, pending } = ctx.kili.services;
+  const variant = products.get(productId)?.variants.find((v) => v.id === productId);
+  if (!variant) return goneView();
+  pending.set(profileId, { kind: "eanFor", productId });
+  return {
+    text: header(S.barcode.title) + fmt(S.barcode.prompt, { name: packageLabel(variant) }),
+    keyboard: [back(`p:${productId}`)],
   };
 }
 
@@ -336,6 +405,21 @@ const NODES: Record<string, Handler> = {
     if (!drink || !serving) return goneView();
     return drankView(ctx, p, logServing(ctx, p, drink, serving));
   }),
+  // 🏷 Barcodes: link a scanned barcode to a package, or ask for a product's barcode
+  el: withProfile((ctx, _p, arg) => {
+    const [ean, productId] = (arg ?? "").split(":");
+    return linkBarcode(ctx, ean ?? "", productId ?? "");
+  }),
+  eb: withProfile((ctx, p, arg) => {
+    const drink = ctx.kili.services.products.get(arg ?? "");
+    if (!drink) return goneView();
+    if (drink.variants.length === 1) return barcodePromptView(ctx, p.id, drink.variants[0]!.id);
+    return {
+      text: header(S.barcode.title) + S.barcode.choose_package,
+      keyboard: [...drink.variants.map((v) => [btn(packageLabel(v).slice(0, 60), `ep:${v.id}`)]), back(`p:${drink.id}`)],
+    };
+  }),
+  ep: withProfile((ctx, p, arg) => barcodePromptView(ctx, p.id, arg ?? "")),
   // ✏️ Muu määrä: the next message is the amount
   pc: withProfile((ctx, p, arg) => {
     const drink = ctx.kili.services.products.get(arg ?? "");

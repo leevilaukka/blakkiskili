@@ -9,6 +9,9 @@ import {
   juoView,
   lateView,
   searchResultsView,
+  barcodePickView,
+  barcodeView,
+  linkBarcode,
   customAmountView,
   profileViewFor,
   registerTermsView,
@@ -26,6 +29,7 @@ import {
 import { isValidHeight, isValidWeight } from "../services/accounts.ts";
 import type { ImportResult } from "../services/importer.ts";
 import { customServing, parseAmount, servingDescription } from "../lib/servings.ts";
+import { normalizeEan } from "../lib/ean.ts";
 
 /** Handles a private text message. Returns false if no flow was waiting for it. */
 export async function handleFlowText(ctx: BotContext, text: string): Promise<boolean> {
@@ -153,6 +157,21 @@ export async function handleFlowText(ctx: BotContext, text: string): Promise<boo
       if (!profile) return false;
       // Stay in the flow: the user can refine the search by typing again.
       return reply(ctx, searchResultsView(ctx, profile, text.trim().slice(0, 100)));
+
+    case "eanFor": {
+      if (!profile) return false;
+      const ean = normalizeEan(text);
+      if (!ean) return reply(ctx, { text: S.barcode.invalid, keyboard: [back("j")] });
+      services.pending.clear(userId);
+      return reply(ctx, await linkBarcode(ctx, ean, state.productId));
+    }
+
+    case "eanLink": {
+      if (!profile) return false;
+      // A new barcode (typed digits) replaces the one being linked; anything else is a product search.
+      if (normalizeEan(text)) return reply(ctx, await barcodeView(ctx, profile, text));
+      return reply(ctx, barcodePickView(ctx, profile, state.ean, text.trim().slice(0, 100)));
+    }
 
     case "import":
       if (state.step === "files") {

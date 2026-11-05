@@ -8,6 +8,7 @@ import { handleFlowText, handleImportDocument } from "./flows.ts";
 import { CB_MENU, sendHtml, sendView } from "./ui.ts";
 import { RateLimiter, rateLimit } from "./ratelimit.ts";
 import { registerInline, type InlineOptions } from "./inline.ts";
+import { barcodeFromText, defaultBarcodeIO, handleBarcodePhoto, type BarcodeIO } from "./barcode.ts";
 import { S } from "../strings.ts";
 import { splitAmount } from "../lib/servings.ts";
 import { fmt, longDate, raw } from "../lib/format.ts";
@@ -21,6 +22,8 @@ export const ALLOWED_UPDATES = ["message", "callback_query", "inline_query", "ch
 export interface BotOptions extends InlineOptions {
   /** Default: 30 updates per minute per user, far above normal use. */
   limiter?: RateLimiter;
+  /** Downloading and decoding barcode photos; replaced in tests. */
+  barcodeIO?: BarcodeIO;
 }
 
 export function createBot(config: Config, services: Services, opts: BotOptions = {}): Bot<BotContext> {
@@ -75,9 +78,12 @@ export function createBot(config: Config, services: Services, opts: BotOptions =
   });
 
   const priv = bot.chatType("private");
+  const barcodeIO = opts.barcodeIO ?? defaultBarcodeIO();
   priv.on("message:document", (ctx) => handleImportDocument(ctx));
+  priv.on("message:photo", (ctx) => handleBarcodePhoto(ctx, barcodeIO));
   priv.on("message:text", async (ctx) => {
     if (await handleFlowText(ctx, ctx.message.text)) return;
+    if (await barcodeFromText(ctx, ctx.message.text)) return;
     if (await searchFromText(ctx, ctx.message.text)) return;
     await sendHtml(ctx, S.unknown_text);
   });

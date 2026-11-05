@@ -21,6 +21,7 @@ Bläkkiskili is a Bun + TypeScript bot based on the original [BläkkisVuohi](htt
   - ✏️ *Muu määrä* takes any amount (`3`, `3 cl`, `0,5 l`, `250 ml`). An amount at the end of a search (`jallu 3 cl`, `karhu 40cl`) gives one-tap results with exactly that amount, both inline and in the menu.
   - Nicknames such as *jallu*, *kossu* and *lonkka* work.
   - Search only works in the private chat, so drinks are never posted to groups.
+- **Barcodes**: send a barcode number or a photo of one and the bot opens the product. Barcodes aren't in Alko's API, so people link them: when a barcode is unknown the bot asks for the product name, and a product's page has a *Linkitä viivakoodi* button. Links are stored by Alkometriikka's backend (`ALKOMETRIIKKA_API_URL`, `ALKOMETRIIKKA_API_KEY`) and count once two people agree. The bot sends only an opaque voter id, derived with a key of its own, never a Telegram id. Photos are decoded locally with zxing-wasm and not stored.
 - Shortcuts kept from the old bot: `/juoma`, `/kalja033`, `/kalja05`, `/jalkikellotus`, `/laatta`, `/tunnus`, `/whoami`.
 - `/data` exports everything as CSV. `/tuo` imports CSVs from the old bot or from this one.
 - `/admin_stats` for the IDs listed in `ADMIN_IDS`.

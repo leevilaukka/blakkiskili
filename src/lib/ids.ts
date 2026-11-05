@@ -12,6 +12,8 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, hkdfSync, ran
 export interface Crypto {
   userKey(telegramUserId: number): string;
   groupKey(telegramChatId: number): string;
+  /** Opaque voter id sent to Alkometriikka when linking barcodes; unrelated to userKey. */
+  voterKey(telegramUserId: number): string;
   encrypt(plain: string): string;
   decrypt(token: string): string;
 }
@@ -31,6 +33,7 @@ export function createCrypto(appSecret: string): Crypto {
   return {
     userKey: (id) => hmac("user", id),
     groupKey: (id) => hmac("group", id),
+    voterKey: (id) => hmac("ean-voter", id).slice(0, 48),
     encrypt(plain) {
       const iv = randomBytes(12);
       const cipher = createCipheriv("aes-256-gcm", dataKey, iv);

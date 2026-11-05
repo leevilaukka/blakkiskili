@@ -14,6 +14,7 @@ import { Inactivity } from "./inactivity.ts";
 import { Announcements } from "./announcements.ts";
 import { ANNOUNCEMENTS, type Announcement } from "../announcements.ts";
 import { Products } from "./products.ts";
+import { Barcodes } from "./barcodes.ts";
 
 export interface Deps {
   db: Database;
@@ -25,6 +26,8 @@ export interface ServiceOptions {
   announcements?: readonly Announcement[];
   /** Alko catalogue from Alkometriikka; an empty (disabled) catalogue by default. */
   products?: Products;
+  /** Barcode links from Alkometriikka; disabled by default. */
+  barcodes?: Barcodes;
 }
 
 export function createServices(deps: Deps, opts: ServiceOptions = {}) {
@@ -37,7 +40,8 @@ export function createServices(deps: Deps, opts: ServiceOptions = {}) {
   const inactivity = new Inactivity(deps, accounts);
   const announcements = new Announcements(deps, opts.announcements ?? ANNOUNCEMENTS);
   const products = opts.products ?? new Products();
-  return { accounts, drinks, groups, stats, importer, pending, inactivity, announcements, products, deps };
+  const barcodes = opts.barcodes ?? new Barcodes();
+  return { accounts, drinks, groups, stats, importer, pending, inactivity, announcements, products, barcodes, deps };
 }
 
 export type Services = ReturnType<typeof createServices>;

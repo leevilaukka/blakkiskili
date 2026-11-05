@@ -12,6 +12,8 @@ export interface Config {
   inactivity: { deleteAfterDays: number; warnDaysBefore: number }; // deleteAfterDays 0 = keep forever
   backup: { dir?: string; everyMinutes: number }; // no dir = snapshots disabled
   productsUrl?: string; // Alkometriikka data.json; undefined = product search disabled
+  barcodesUrl?: string; // Alkometriikka backend; undefined = barcode links disabled
+  barcodesKey?: string; // lets the bot link barcodes; without it barcodes are lookup-only
 }
 
 function required(name: string): string {
@@ -54,6 +56,8 @@ export function loadConfig(): Config {
       process.env.ALKOMETRIIKKA_URL === undefined
         ? "https://alkometriikka.fi/data.json"
         : process.env.ALKOMETRIIKKA_URL || undefined,
+    barcodesUrl: process.env.ALKOMETRIIKKA_API_URL || undefined,
+    barcodesKey: process.env.ALKOMETRIIKKA_API_KEY || undefined,
     backup: {
       dir: process.env.BACKUP_DIR || undefined,
       everyMinutes: Math.max(1, intEnv("BACKUP_EVERY_MINUTES", 60)),
