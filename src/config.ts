@@ -14,6 +14,8 @@ export interface Config {
   backup: { dir?: string; everyMinutes: number }; // no dir = snapshots disabled
   productsUrl?: string; // Alkometriikka data.json; undefined = product search disabled
   accountLinking: boolean; // show "Yhdistetyt palvelut" and /yhdista (useful once another platform has a bot)
+  barcodesUrl?: string; // Alkometriikka backend; undefined = barcode links disabled
+  barcodesKey?: string; // lets the bot link barcodes; without it barcodes are lookup-only
 }
 
 function required(name: string): string {
@@ -68,6 +70,8 @@ export function loadConfig(): Config {
         ? "https://alkometriikka.fi/data.json"
         : process.env.ALKOMETRIIKKA_URL || undefined,
     accountLinking: ["1", "true", "yes"].includes((process.env.ACCOUNT_LINKING ?? "").trim().toLowerCase()),
+    barcodesUrl: process.env.ALKOMETRIIKKA_API_URL || undefined,
+    barcodesKey: process.env.ALKOMETRIIKKA_API_KEY || undefined,
     backup: {
       dir: process.env.BACKUP_DIR || undefined,
       everyMinutes: Math.max(1, intEnv("BACKUP_EVERY_MINUTES", 60)),

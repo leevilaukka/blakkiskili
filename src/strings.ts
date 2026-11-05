@@ -166,6 +166,28 @@ export const S = {
     unknown: " Energiatieto puuttuu {count} juomalta.",
   },
 
+  barcode: {
+    title: "Viivakoodi",
+    button: "🏷 Linkitä viivakoodi",
+    found: "Viivakoodi <code>{ean}</code> kuuluu tälle tuotteelle.",
+    gone: "Viivakoodi <code>{ean}</code> on linkitetty tuotteeseen, jota ei enää löydy valikoimasta.",
+    unknown:
+      "Viivakoodia <code>{ean}</code> ei ole vielä linkitetty tuotteeseen. Kirjoita tuotteen nimi, niin etsin sen. Linkitys auttaa muitakin: se otetaan käyttöön, kun joku toinenkin vahvistaa saman.",
+    unknown_readonly: "Viivakoodia <code>{ean}</code> ei ole vielä linkitetty mihinkään tuotteeseen.",
+    pick: "Valitse tuote, jolle viivakoodi <code>{ean}</code> kuuluu. Voit kirjoittaa uuden haun.",
+    none: "Ei osumia haulle <b>{q}</b>. Kokeile toista nimeä.",
+    choose_package: "Valitse pakkaus, jonka viivakoodin haluat linkittää:",
+    prompt: "Lähetä tuotteen <b>{name}</b> viivakoodi numeroina (8 tai 13 numeroa) tai kuvana viivakoodista.",
+    invalid: "En tunnistanut viivakoodia. Lähetä numerot tai selkeä kuva viivakoodista.",
+    no_code_in_photo: "En löytänyt kuvasta viivakoodia. Yritä uudelleen lähempää ja tasaisessa valossa, tai kirjoita numerot.",
+    photo_failed: "Kuvan lukeminen epäonnistui. Kirjoita viivakoodin numerot.",
+    off: "Viivakoodit eivät ole käytössä.",
+    linked_confirmed: "Kiitos! Viivakoodi <code>{ean}</code> on nyt vahvistettu tälle tuotteelle.",
+    linked_pending: "Kiitos! Viivakoodi <code>{ean}</code> otetaan käyttöön, kun joku toinenkin vahvistaa saman linkityksen.",
+    rate_limited: "Olet linkittänyt viivakoodeja paljon. Kokeile myöhemmin uudelleen.",
+    unavailable: "Linkitys ei onnistunut juuri nyt. Kokeile myöhemmin uudelleen.",
+  },
+
   asetukset: {
     button: E.gear + " Asetukset",
     title: "Asetukset",
@@ -302,7 +324,7 @@ export const S = {
       button: "Yksityisyys",
       title: "Help: Yksityisyys",
       text:
-        "<b>Mitä tietoja kerätään?</b>\n- Telegramiin määritelty nimimerkki ja koko nimi (etu- ja sukunimi, salattuna)\n- Tiiviste (HMAC) Telegram-tilisi tunnisteesta (ja muiden tunnukseen yhdistämiesi palveluiden tunnisteista), sekä tunnisteet salattuna poistovaroituksen lähettämistä varten\n- Paino, pituus ja sukupuoli\n- Merkattujen juomien alkoholimäärät, nimet ja juomisajat, arvioitu energiamäärä (kun se tiedetään), sekä Alkon valikoimasta valituille juomille tuotenumero\n- Tiivisteet liittymiesi ryhmien tunnisteista\n\nRyhmien viestejä, puhelinnumeroa tai muita tietoja ei tallenneta.\n\n<b>Voinko saada tai poistaa tietoni?</b>\nKyllä. /data lähettää kaikki tietosi CSV-tiedostoina, ja Asetukset → Poista tunnus poistaa kaiken sinuun liittyvän tiedon heti.{retention}\n\n<b>Varmuuskopiot</b>\nTietokannasta otetaan salattuja varmuuskopioita EU:ssa sijaitsevaan tallennustilaan. Poistetut tiedot häviävät myös varmuuskopioista viimeistään noin kolmen kuukauden kuluttua.{maintainer}",
+        "<b>Mitä tietoja kerätään?</b>\n- Telegramiin määritelty nimimerkki ja koko nimi (etu- ja sukunimi, salattuna)\n- Tiiviste (HMAC) Telegram-tilisi tunnisteesta (ja muiden tunnukseen yhdistämiesi palveluiden tunnisteista), sekä tunnisteet salattuna poistovaroituksen lähettämistä varten\n- Paino, pituus ja sukupuoli\n- Merkattujen juomien alkoholimäärät, nimet ja juomisajat, arvioitu energiamäärä (kun se tiedetään), sekä Alkon valikoimasta valituille juomille tuotenumero\n- Jos linkität viivakoodin tuotteeseen, ehdotus lähetetään Alkometriikalle nimettömällä tunnisteella, jota ei voi yhdistää tunnukseesi\n- Tiivisteet liittymiesi ryhmien tunnisteista\n\nRyhmien viestejä, puhelinnumeroa tai muita tietoja ei tallenneta.\n\n<b>Voinko saada tai poistaa tietoni?</b>\nKyllä. /data lähettää kaikki tietosi CSV-tiedostoina, ja Asetukset → Poista tunnus poistaa kaiken sinuun liittyvän tiedon heti.{retention}\n\n<b>Varmuuskopiot</b>\nTietokannasta otetaan salattuja varmuuskopioita EU:ssa sijaitsevaan tallennustilaan. Poistetut tiedot häviävät myös varmuuskopioista viimeistään noin kolmen kuukauden kuluttua.{maintainer}",
     },
   },
 

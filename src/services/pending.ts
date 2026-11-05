@@ -14,6 +14,8 @@ export type PendingState =
   | { kind: "consumptionDays" }
   | { kind: "productSearch" }
   | { kind: "productAmount"; drinkId: string }
+  | { kind: "eanFor"; productId: string } // waiting for the barcode of this product
+  | { kind: "eanLink"; ean: string } // waiting for a product name to link this barcode to
   | { kind: "import"; step: "terms" | "files"; waitingDrinkFiles?: string[] };
 
 const TTL_MS = DAY_MS;

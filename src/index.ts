@@ -11,6 +11,7 @@ import { createAdminAlerts } from "./bot/admin.ts";
 import { writeSnapshot } from "./ops/backup.ts";
 import { startJobs, type Job } from "./ops/scheduler.ts";
 import { Products } from "./services/products.ts";
+import { Barcodes } from "./services/barcodes.ts";
 
 // Everything this process creates (database, WAL, snapshots) is readable by its owner only.
 process.umask(0o077);
@@ -23,7 +24,13 @@ const products = new Products({
   cachePath: config.dbPath === ":memory:" ? undefined : join(dirname(config.dbPath), "alkometriikka-cache.json"),
 });
 if (products.enabled && products.loadCache()) console.log(`Alko catalogue: ${products.count} products from cache`);
-const services = createServices({ db, crypto: createCrypto(config.appSecret), now: () => Date.now() }, { products });
+const barcodes = new Barcodes({
+  url: config.barcodesUrl,
+  apiKey: config.barcodesKey,
+  cachePath: config.dbPath === ":memory:" ? undefined : join(dirname(config.dbPath), "barcodes-cache.json"),
+});
+if (barcodes.enabled && barcodes.loadCache()) console.log(`Barcodes: ${barcodes.count} links from cache`);
+const services = createServices({ db, crypto: createCrypto(config.appSecret), now: () => Date.now() }, { products, barcodes });
 const bot = createBot(config, services);
 
 await bot.init();
@@ -58,6 +65,17 @@ if (products.enabled) {
   });
 } else {
   console.log("ALKOMETRIIKKA_URL is empty: product search is disabled.");
+}
+if (barcodes.enabled) {
+  jobs.push({
+    name: "barcode links",
+    everyMs: 30 * 60_000,
+    firstDelayMs: 8_000,
+    run: async () => {
+      const r = await barcodes.refresh();
+      if (r === "updated") console.log(`Barcode links updated: ${barcodes.count}`);
+    },
+  });
 }
 if (config.inactivity.deleteAfterDays > 0) {
   jobs.push({
