@@ -45,7 +45,9 @@ write_files:
       X11Forwarding no
       AllowAgentForwarding no
 
-  # Security updates every day, reboot at 04:30 when a kernel update requires it.
+  # Security updates every day (apt-daily-upgrade runs 06:00-07:00), reboot at 12:00 when a
+  # kernel update requires it. Not at night: that's when people use the bot, and a midday
+  # reboot that goes wrong gets noticed. Telegram holds messages during the ~1 min reboot.
   # The bot comes back automatically (restart: unless-stopped, docker enabled at boot).
   - path: /etc/apt/apt.conf.d/20auto-upgrades
     permissions: "0644"
@@ -57,7 +59,7 @@ write_files:
     permissions: "0644"
     content: |
       Unattended-Upgrade::Automatic-Reboot "true";
-      Unattended-Upgrade::Automatic-Reboot-Time "04:30";
+      Unattended-Upgrade::Automatic-Reboot-Time "12:00";
       Unattended-Upgrade::Remove-Unused-Dependencies "true";
 
   - path: /etc/fail2ban/jail.d/sshd.local

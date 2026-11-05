@@ -28,7 +28,7 @@ Never put `APP_SECRET` in the same place as the backups. Backups are only safe b
 2. Paste [`cloud-init.yml`](cloud-init.yml) as user data, after replacing the SSH keys in it. It sets up:
    - a `kili` user with key-only SSH, and root login disabled,
    - a firewall that allows only SSH inbound,
-   - automatic security updates with reboots at 04:30,
+   - automatic security updates, with reboots at 12:00 when an update needs one (midday is the quietest time for the bot),
    - fail2ban, Docker and Tailscale (installed, not yet joined).
 3. If the provider has a cloud firewall, allow only TCP 22 and UDP 41641 inbound there too.
 4. Check: `ssh kili@<ip>` works, while `ssh root@<ip>` and password login are refused, and `sudo ufw status` shows only OpenSSH and 41641/udp.
