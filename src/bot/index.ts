@@ -2,7 +2,7 @@ import { Bot, GrammyError, HttpError } from "grammy";
 import type { Config } from "../config.ts";
 import type { Services } from "../services/index.ts";
 import { displayName, fullName, type BotContext } from "./context.ts";
-import { commandMenus, registerCommands } from "./commands.ts";
+import { CB_CHART, CB_CHART_DEMO, commandMenus, handleChartPage, handleDemoChartPage, registerCommands } from "./commands.ts";
 import { handleMenuCallback, searchResultsView } from "./menu.ts";
 import { handleFlowText, handleImportDocument } from "./flows.ts";
 import { CB_MENU, sendHtml, sendView } from "./ui.ts";
@@ -77,6 +77,8 @@ export function createBot(config: Config, services: Services, opts: BotOptions =
     const data = ctx.callbackQuery.data;
     await ctx.answerCallbackQuery().catch(() => {});
     if (data.startsWith(CB_MENU)) await handleMenuCallback(ctx, data.slice(CB_MENU.length));
+    else if (data.startsWith(CB_CHART)) await handleChartPage(ctx, data.slice(CB_CHART.length));
+    else if (data.startsWith(CB_CHART_DEMO)) await handleDemoChartPage(ctx, data.slice(CB_CHART_DEMO.length));
   });
 
   const priv = bot.chatType("private");

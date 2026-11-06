@@ -13,6 +13,11 @@ import { dateTime, drinkList, escapeHtml, fmt, hoursMinutes, num, raw } from "..
 import { DAY_MS, parseIntStrict, roundTo, STANDARD_DRINK_GRAMS } from "../lib/units.ts";
 import type { Profile } from "../services/accounts.ts";
 import type { Config } from "../config.ts";
+import type { InlineKeyboardButton } from "grammy/types";
+
+/** Callback data prefix of the /kuvaaja page buttons. */
+export const CB_CHART = "kg:";
+export const CB_CHART_DEMO = "kd:";
 
 type Scope = "private" | "group" | "all";
 
@@ -112,24 +117,83 @@ async function stats(ctx: BotContext, p: Profile | null, args: string, metric: "
   );
 }
 
-/** /kuvaaja: the group's (or your own) estimated permilles as a chart image. */
-async function chart(ctx: BotContext, p: Profile | null) {
+/** The people on a /kuvaaja chart: yourself in private, the chat's members in a group. */
+interface ChartSource {
+  series: ChartSeries[];
+  name: string;
+}
+
+function chartSource(ctx: BotContext, p: Profile | null): ChartSource | null {
   const { services } = ctx.kili;
   const now = services.deps.now();
-  let series: ChartSeries[];
-  let name: string;
   if (isPrivate(ctx)) {
-    if (!p) return sendHtml(ctx, S.user404);
-    series = [{ id: p.id, name: p.fullName ?? p.name, body: p, drinks: services.drinks.since(p.id, now - EBAC_WINDOW_MS) }];
-    name = p.name;
-  } else {
-    series = services.groups.memberHistories(ctx.chat!.id).map((m) => ({ id: m.userId, name: m.fullName ?? m.name, body: m.body, drinks: m.drinks }));
-    name = chatTitle(ctx);
+    if (!p) return null;
+    return { series: [{ id: p.id, name: p.fullName ?? p.name, body: p, drinks: services.drinks.since(p.id, now - EBAC_WINDOW_MS) }], name: p.name };
   }
-  const title = fmt(S.commands.kuvaaja_title, { name });
-  const result = buildPermilleChart({ title: name ? `Promillekuvaaja feat. ${name}` : "Promillekuvaaja", series, now });
-  if (!result) return sendHtml(ctx, S.commands.kuvaaja_empty);
-  await ctx.replyWithPhoto(new InputFile(svgToPng(result.svg), "kuvaaja.png"), { caption: title, parse_mode: "HTML" });
+  const series = services.groups.memberHistories(ctx.chat!.id).map((m) => ({ id: m.userId, name: m.fullName ?? m.name, body: m.body, drinks: m.drinks }));
+  return { series, name: chatTitle(ctx) };
+}
+
+/** Renders one page of the chart with its ‹ › buttons (none when everything fits on one page). */
+function chartPage(source: ChartSource | null, now: number, page: number, prefix = CB_CHART) {
+  if (!source) return null;
+  const result = buildPermilleChart({ title: source.name ? `Promillekuvaaja feat. ${source.name}` : "Promillekuvaaja", series: source.series, now, page });
+  if (!result) return null;
+  const keyboard: InlineKeyboardButton[][] = [];
+  if (result.pages > 1) {
+    const at = result.page;
+    const go = (to: number) => `${prefix}${(to + result.pages) % result.pages}`;
+    keyboard.push([
+      { text: "‹ Edellinen", callback_data: go(at - 1) },
+      { text: result.label, callback_data: go(at) },
+      { text: "Seuraava ›", callback_data: go(at + 1) },
+    ]);
+  }
+  return {
+    photo: new InputFile(svgToPng(result.svg), "kuvaaja.png"),
+    caption: fmt(S.commands.kuvaaja_title, { name: source.name }),
+    keyboard,
+  };
+}
+
+/** /kuvaaja: the group's (or your own) estimated permilles as a chart image, top drinkers first. */
+async function chart(ctx: BotContext, p: Profile | null) {
+  const page = chartPage(chartSource(ctx, p), ctx.kili.services.deps.now(), 0);
+  if (!page) return ctx.kili.profile || !isPrivate(ctx) ? sendHtml(ctx, S.commands.kuvaaja_empty) : sendHtml(ctx, S.user404);
+  await ctx.replyWithPhoto(page.photo, { caption: page.caption, parse_mode: "HTML", reply_markup: { inline_keyboard: page.keyboard } });
+}
+
+/** ‹ › buttons under a /kuvaaja chart: swaps the photo in place. */
+export async function handleChartPage(ctx: BotContext, data: string) {
+  const page = chartPage(chartSource(ctx, ctx.kili.profile), ctx.kili.services.deps.now(), parseIntStrict(data) || 0);
+  await swapChartPage(ctx, page);
+}
+
+/** Fake 20-person group for trying the paging out: /admin_kuvaaja. */
+function demoChartSource(now: number): ChartSource {
+  const HOUR = 3_600_000;
+  const series = Array.from({ length: 20 }, (_, i) => ({
+    id: `demo${i}`,
+    name: `Henkilö ${i + 1}`,
+    body: { weight: 55 + i * 3, height: 165 + i, gender: i % 2 ? ("nainen" as const) : ("mies" as const) },
+    drinks: Array.from({ length: 2 + ((i * 7) % 5) }, (_, k) => ({ createdAt: now - (5 - k * 0.8 - (i % 4) * 0.3) * HOUR, alcoholMg: 12241 })),
+  }));
+  return { series, name: "Esimerkkiporukka" };
+}
+
+export async function handleDemoChartPage(ctx: BotContext, data: string) {
+  const now = ctx.kili.services.deps.now();
+  await swapChartPage(ctx, chartPage(demoChartSource(now), now, parseIntStrict(data) || 0, CB_CHART_DEMO));
+}
+
+async function swapChartPage(ctx: BotContext, page: ReturnType<typeof chartPage>) {
+  if (!page) return;
+  await ctx
+    .editMessageMedia(
+      { type: "photo", media: page.photo, caption: page.caption, parse_mode: "HTML" },
+      { reply_markup: { inline_keyboard: page.keyboard } },
+    )
+    .catch((e) => console.error("Could not change chart page:", e));
 }
 
 export const COMMANDS: CommandDef[] = [
@@ -196,6 +260,12 @@ export const COMMANDS: CommandDef[] = [
       sendHtml(ctx, "<b>Komennot</b>\n\n" + COMMANDS.filter((c) => !c.name.startsWith("admin") && isEnabled(c, ctx.kili.config)).map((c) => `/${c.name} - ${escapeHtml(c.description)}`).join("\n")) },
   { name: "terms", description: "käyttöehdot", scope: "all", needsUser: false, run: (ctx) => sendHtml(ctx, termsHtml(ctx.kili.config)) },
   { name: "about", description: "tietoa botista", scope: "all", needsUser: false, run: (ctx) => sendHtml(ctx, fmt(S.about, contactExtras(ctx.kili.config))) },
+  { name: "admin_kuvaaja", description: "kuvaajan sivutuksen esimerkki (admin)", scope: "private", needsUser: false, run: async (ctx) => {
+      if (!ctx.from || !ctx.kili.config.adminIds.includes(ctx.from.id)) return sendHtml(ctx, S.unauthorized);
+      const now = ctx.kili.services.deps.now();
+      const page = chartPage(demoChartSource(now), now, 0, CB_CHART_DEMO)!;
+      await ctx.replyWithPhoto(page.photo, { caption: page.caption, parse_mode: "HTML", reply_markup: { inline_keyboard: page.keyboard } });
+    } },
   { name: "admin_stats", description: "botin tilastot (admin)", scope: "private", needsUser: false, run: async (ctx) => {
       if (!ctx.from || !ctx.kili.config.adminIds.includes(ctx.from.id)) return sendHtml(ctx, S.unauthorized);
       const g = ctx.kili.services.stats.global();

@@ -303,6 +303,7 @@ describe("bot end-to-end", () => {
     expect(photo?.payload.caption).toContain("Kilta &lt;3 &amp; co");
     expect(textOf(await h.send(2002, "/kuvaaja", { id: -999, title: "Tyhjä" }))).toContain("Ei piirrettävää");
     expect((await h.send(A, "/kuvaaja")).some((c) => c.method === "sendPhoto")).toBe(true);
+    expect((await h.press(A, "kg:0")).some((c) => c.method === "editMessageMedia")).toBe(true); // page buttons swap the photo
     expect(textOf(await h.send(2002, "/moro", G))).toContain("Rekisteröidy");
 
     // Export
@@ -311,6 +312,12 @@ describe("bot end-to-end", () => {
 
     // Admin only
     expect(textOf(await h.send(2002, "/admin_stats"))).toContain("Ei käyttöoikeutta");
+    // Chart paging demo (admin only): overview + groups, buttons swap the photo
+    expect(textOf(await h.send(2002, "/admin_kuvaaja"))).toContain("Ei käyttöoikeutta");
+    const demo = await h.send(1, "/admin_kuvaaja");
+    expect(demo.some((c) => c.method === "sendPhoto")).toBe(true);
+    expect(buttonsOf(demo).map((b) => [b.text, b.callback_data])).toEqual([["‹ Edellinen", "kd:2"], ["Kaikki", "kd:0"], ["Seuraava ›", "kd:1"]]);
+    expect((await h.press(1, "kd:2")).some((c) => c.method === "editMessageMedia")).toBe(true);
 
     // Delete account
     await h.press(A, "m:ad");

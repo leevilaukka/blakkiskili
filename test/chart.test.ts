@@ -20,7 +20,7 @@ describe("permille chart", () => {
   test("single person: line, now dot and value label, no legend", () => {
     const r = buildPermilleChart({ title: "Promillekuvaaja feat. leevi", series: [person("a", "leevi", [3, 2, 1])], now })!;
     expect(r.shown).toBe(1);
-    expect(r.svg).toContain('stroke-dasharray="6 5"'); // forecast
+    expect(r.svg).toContain('stroke-dasharray="2 6"'); // forecast
     expect(r.svg).toContain(">nyt<");
     expect(r.svg).toMatch(/>\d\.\d\d‰</); // direct value label
     expect(r.svg).not.toContain("<tspan"); // no legend entries
@@ -34,11 +34,35 @@ describe("permille chart", () => {
     expect(r.svg.match(/<tspan/g)).toHaveLength(2);
   });
 
-  test("at most 8 people, the rest summarised", () => {
-    const series = Array.from({ length: 11 }, (_, i) => person(`u${i}`, `p${i}`, [2, 1.5, 1 - i * 0.05]));
-    const r = buildPermilleChart({ title: "t", series, now })!;
-    expect(r).toMatchObject({ shown: 8, hidden: 3 });
-    expect(r.svg).toContain("+3 muuta");
+  test("overview of everyone first, then groups of 10 ranked by peak", () => {
+    const series = Array.from({ length: 13 }, (_, i) => person(`u${i}`, `p${i}`, [2, 1.5, 1 - i * 0.05]));
+    const names = (r: { svg: string }) => [...r.svg.matchAll(/>(p\d+) <tspan/g)].map((m) => m[1]);
+    const all = buildPermilleChart({ title: "t", series, now })!;
+    expect(all).toMatchObject({ shown: 13, page: 0, pages: 3, label: "Kaikki" });
+    expect(all.svg).not.toContain("kaikki"); // the overview is just the plain title
+    expect(new Set(names(all)).size).toBe(13);
+    const first = buildPermilleChart({ title: "t", series, now, page: 1 })!;
+    const second = buildPermilleChart({ title: "t", series, now, page: 2 })!;
+    expect(first).toMatchObject({ shown: 10, page: 1, label: "1/2" });
+    expect(second).toMatchObject({ shown: 3, page: 2, label: "2/2" });
+    expect(first.svg).toContain("t (1/2)");
+    expect(second.svg).toContain("<tspan"); // a short last page still gets a legend
+    expect(buildPermilleChart({ title: "t", series, now, page: 99 })!.page).toBe(2); // clamped
+    expect(new Set([...names(first), ...names(second)]).size).toBe(13); // nobody twice, nobody lost
+  });
+
+  test("up to 10 people: one chart, no pages", () => {
+    const series = Array.from({ length: 10 }, (_, i) => person(`u${i}`, `p${i}`, [2, 1 - i * 0.05]));
+    expect(buildPermilleChart({ title: "t", series, now })).toMatchObject({ shown: 10, pages: 1, label: "" });
+  });
+
+  test("the ‰ axis fits each page, so a runaway leader does not flatten the rest", () => {
+    const series = [person("big", "big", [5, 4, 3, 2.5, 2, 1.5, 1, 0.5]), ...Array.from({ length: 10 }, (_, i) => person(`s${i}`, `s${i}`, [1.5, 1 - i * 0.05]))];
+    const top = (svg: string) => Math.max(...[...svg.matchAll(/text-anchor="end">([\d.]+)</g)].map((m) => Number(m[1])));
+    const first = buildPermilleChart({ title: "t", series, now, page: 1 })!;
+    const second = buildPermilleChart({ title: "t", series, now, page: 2 })!;
+    expect(first.pages).toBe(3);
+    expect(top(second.svg)).toBeLessThan(top(first.svg));
   });
 
   test("colour follows the person, not the set or rank", () => {
@@ -46,8 +70,8 @@ describe("permille chart", () => {
     const b = assignColors(["carol", "dave", "alice"]);
     expect(new Set(a.values()).size).toBe(3); // distinct
     expect(b.get("alice")).toBe(a.get("alice")!); // no collision with dave here → same colour
-    const eight = assignColors(Array.from({ length: 8 }, (_, i) => `id${i}`));
-    expect(new Set(eight.values()).size).toBe(8);
+    const eight = assignColors(Array.from({ length: 10 }, (_, i) => `id${i}`));
+    expect(new Set(eight.values()).size).toBe(10);
   });
 
   test("renders to a PNG", () => {
