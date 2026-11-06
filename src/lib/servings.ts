@@ -20,6 +20,7 @@ export interface CatalogProduct {
   price: number | null; // euros, whole package
   kcal100: number | null; // energy per 100 ml (Alko's "Energia kcal/100 ml")
   country: string | null; // Valmistusmaa
+  ean: string | null; // EAN, filled from scans by Alkometriikka (empty for most products)
 }
 
 export interface Serving {

@@ -6,6 +6,7 @@
 
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import type { CatalogDrink, CatalogProduct } from "../lib/servings.ts";
+import { normalizeEan } from "../lib/ean.ts";
 import { cleanName, mergeServings, packCount, servingsFor } from "../lib/servings.ts";
 
 const REQUIRED = ["Numero", "Nimi", "Pullokoko", "Alkoholi-%", "Tyyppi"] as const;
@@ -107,6 +108,7 @@ export function parseCatalog(json: unknown): { products: CatalogProduct[]; updat
       price: price !== null && price > 0 ? price : null,
       kcal100: kcal100 !== null && kcal100 >= 0 && kcal100 < 1000 ? kcal100 : null,
       country: str(get(v, "Valmistusmaa")),
+      ean: normalizeEan(str(get(v, "EAN")) ?? ""),
     });
   }
   if (products.length === 0) throw new Error("Alkometriikka data.json: no usable products");
@@ -122,6 +124,8 @@ export interface ProductsOptions {
 
 export class Products {
   private byId = new Map<string, Indexed>();
+  private byEanMap = new Map<string, string>();
+  private skipped = new Map<string, CatalogProduct>(); // in the catalogue but not drinkable (alcohol-free)
   private list: Indexed[] = [];
   private etag: string | null = null;
   private lastModified: string | null = null;
@@ -150,8 +154,12 @@ export class Products {
   load(json: unknown) {
     const { products, updatedAt } = parseCatalog(json);
     const groups = new Map<string, CatalogProduct[]>();
+    const skipped = new Map<string, CatalogProduct>();
     for (const product of products) {
-      if (servingsFor(product).length === 0) continue;
+      if (servingsFor(product).length === 0) {
+        skipped.set(product.id, product);
+        continue;
+      }
       const base = normalize(product.name)
         .replace(/\b\d+ ?pack\b/g, "")
         .replace(PACKAGING_WORDS, "")
@@ -183,19 +191,35 @@ export class Products {
       list.push(x);
       for (const v of variants) byId.set(v.id, x);
     }
+    const byEan = new Map<string, string>();
+    for (const p of products) if (p.ean && !byEan.has(p.ean)) byEan.set(p.ean, p.id);
     this.list = list;
     this.byId = byId;
+    this.byEanMap = byEan;
+    this.skipped = skipped;
     this.updatedAt = updatedAt;
   }
 
-  /** The product's page on Alkometriikka (next to data.json), or undefined if search is off. */
+  /** The product's page on Alkometriikka (next to data.json), tagged so its analytics can tell the visit came from the bot. Undefined if search is off. */
   pageUrl(productId: string): string | undefined {
     if (!this.opts.url || !/^\d{1,10}$/.test(productId)) return undefined;
     try {
-      return new URL(`tuotteet/${productId}/`, this.opts.url).href;
+      const url = new URL(`tuotteet/${productId}/`, this.opts.url);
+      url.search = new URLSearchParams({ utm_source: "blakkiskili", utm_medium: "telegram", utm_campaign: "product_link" }).toString();
+      return url.href;
     } catch {
       return undefined;
     }
+  }
+
+  /** The product number with this EAN in the catalogue, if Alkometriikka has recorded one. */
+  productIdByEan(ean: string): string | undefined {
+    return this.byEanMap.get(ean);
+  }
+
+  /** A catalogue product that can't be logged as a drink (alcohol-free), for explaining why. */
+  notDrinkable(id: string): CatalogProduct | undefined {
+    return this.skipped.get(id);
   }
 
   /** The drink a product number belongs to (any package size of it). */

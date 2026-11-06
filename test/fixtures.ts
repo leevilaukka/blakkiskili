@@ -1,16 +1,16 @@
 // A small catalogue in Alkometriikka's data.json shape (column order shuffled on purpose:
 // the parser must look columns up by name).
 
-const SCHEMA = ["Nimi", "Numero", "Valmistaja", "Pullokoko", "Hinta", "Tyyppi", "Alatyyppi", "Pakkaustyyppi", "Alkoholi-%", "Valikoima", "Tila", "Energia kcal/100 ml", "Valmistusmaa"];
+const SCHEMA = ["Nimi", "Numero", "Valmistaja", "Pullokoko", "Hinta", "Tyyppi", "Alatyyppi", "Pakkaustyyppi", "Alkoholi-%", "Valikoima", "Tila", "Energia kcal/100 ml", "Valmistusmaa", "EAN"];
 
-type Row = [name: string, id: string, maker: string, size: number, price: number, type: string, subtype: string, packaging: string, abv: number, selection: string, status: string, kcal100: number | null, country: string | null];
+type Row = [name: string, id: string, maker: string, size: number, price: number, type: string, subtype: string, packaging: string, abv: number, selection: string, status: string, kcal100: number | null, country: string | null, ean?: string | null];
 
 export const PRODUCTS: Row[] = [
   ["Karhu 4,6 tölkki", "700001", "Sinebrychoff", 0.33, 2.19, "Panimotuotteet", "oluet", "tölkki", 4.6, "vakiovalikoima", "Aktiivinen", 40, "Suomi"],
   ["Karhu 4,6", "700002", "Sinebrychoff", 0.33, 2.29, "Panimotuotteet", "oluet", "lasipullo", 4.6, "vakiovalikoima", "Aktiivinen", 40, "Suomi"],
   ["Karhu 4,6 tölkki", "700008", "Sinebrychoff", 0.5, 2.99, "Panimotuotteet", "oluet", "tölkki", 4.6, "vakiovalikoima", "Aktiivinen", 40, "Suomi"],
   ["Karhu 5,3 6-pack tölkki", "700003", "Sinebrychoff", 1.98, 12.9, "Panimotuotteet", "oluet", "tölkki", 5.3, "vakiovalikoima", "Aktiivinen", 50, "Suomi"],
-  ["Karjala tölkki", "700004", "Hartwall", 0.5, 2.99, "Panimotuotteet", "oluet", "tölkki", 8, "tilausvalikoima", "Aktiivinen", 70, "Suomi"],
+  ["Karjala tölkki", "700004", "Hartwall", 0.5, 2.99, "Panimotuotteet", "oluet", "tölkki", 8, "tilausvalikoima", "Aktiivinen", 70, "Suomi", "4006381333931"],
   ["Original Long Drink tölkki", "700005", "Hartwall", 0.33, 2.49, "Panimotuotteet", "juomasekoitukset", "tölkki", 5.5, "vakiovalikoima", "Aktiivinen", 60, "Suomi"],
   ["Olvi Lonkero Greippi tölkki", "700006", "Olvi", 0.33, 2.39, "Panimotuotteet", "juomasekoitukset", "tölkki", 5, "vakiovalikoima", "Aktiivinen", 50, "Suomi"],
   ["Pubi Lager hanapakkaus", "700007", "Pienpanimo", 20, 99, "Panimotuotteet", "oluet", "hanapakkaus", 4.7, "tilausvalikoima", "Aktiivinen", 40, "Suomi"],

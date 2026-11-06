@@ -1,154 +1,73 @@
-// Barcode (EAN) → Alko product links, kept by Alkometriikka's backend and filled by people:
-// anyone can link a barcode to a product, and a link counts once enough people agree.
+// Barcode (EAN) → Alko product number, from Alkometriikka's API Worker (api.alkometriikka.fi).
 //
-// The confirmed links are mirrored here (and cached on disk like the catalogue), so a lookup is
-// a map read. Votes go to the backend under an opaque voter id derived from the user's Telegram
-// id with a key of its own: the backend can't tell who voted or connect it to the user's account.
+// Alko's own API has no barcodes. The Worker looks each new one up from Alko's mobile app API once
+// and keeps the answer; Alkometriikka's sync then writes the known ones into data.json's EAN
+// column, which `Products.productIdByEan` reads. This is only the fallback for barcodes that
+// haven't made it there yet. The request is just the barcode number: nothing about the user.
 
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { normalizeEan } from "../lib/ean.ts";
 
 export interface BarcodesOptions {
-  /** Alkometriikka backend, e.g. https://api.alkometriikka.fi. Unset = barcodes are off. */
+  /** Alkometriikka API Worker, e.g. https://api.alkometriikka.fi. Unset = no lookups beyond the catalogue. */
   url?: string;
-  /** Shared secret that lets this bot vote. Without it barcodes can be looked up but not linked. */
-  apiKey?: string;
-  cachePath?: string;
   fetch?: typeof fetch;
+  now?: () => number;
 }
 
-export type LinkResult =
-  | { ok: true; status: "confirmed" | "pending"; productId: string | null }
-  | { ok: false; reason: "invalid" | "unknown-product" | "rate-limited" | "unavailable" };
+export type ResolveResult =
+  | { ok: true; ean: string; productId: string | null }
+  | { ok: false; reason: "invalid" | "rate-limited" | "unavailable"; ean?: string };
 
 const TIMEOUT_MS = 8000;
+/** How long an answer is remembered. The Worker is rate limited per IP and all users share ours. */
+const FOUND_TTL_MS = 24 * 3600_000;
+const MISSING_TTL_MS = 10 * 60_000;
 
 export class Barcodes {
-  private map = new Map<string, string>();
-  private etag: string | null = null;
-  private loaded = false;
   private readonly fetchFn: typeof fetch;
+  private readonly now: () => number;
+  private readonly answers = new Map<string, { productId: string | null; until: number }>();
 
   constructor(private readonly opts: BarcodesOptions = {}) {
     this.fetchFn = opts.fetch ?? fetch;
+    this.now = opts.now ?? Date.now;
   }
 
+  /** Whether the Worker can be asked. */
   get enabled(): boolean {
     return !!this.opts.url;
   }
 
-  /** Whether users can be offered to link barcodes. */
-  get canLink(): boolean {
-    return this.enabled && !!this.opts.apiKey;
-  }
-
-  get count(): number {
-    return this.map.size;
-  }
-
-  private endpoint(path: string): string {
-    return `${this.opts.url!.replace(/\/+$/, "")}${path}`;
-  }
-
-  private load(items: unknown): boolean {
-    if (!items || typeof items !== "object") return false;
-    const next = new Map<string, string>();
-    for (const [ean, productId] of Object.entries(items)) {
-      if (normalizeEan(ean) === ean && typeof productId === "string" && /^\d{1,10}$/.test(productId)) next.set(ean, productId);
-    }
-    this.map = next;
-    this.loaded = true;
-    return true;
-  }
-
-  loadCache(): boolean {
-    const path = this.opts.cachePath;
-    if (!path || !existsSync(path)) return false;
-    try {
-      const cached = JSON.parse(readFileSync(path, "utf8")) as { items?: unknown; etag?: string | null };
-      if (!this.load(cached.items)) return false;
-      this.etag = cached.etag ?? null;
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /** Downloads the confirmed links if they changed. Keeps the current ones on any error (and rethrows). */
-  async refresh(): Promise<"updated" | "unchanged" | "disabled"> {
-    if (!this.enabled) return "disabled";
-    const headers: Record<string, string> = { Accept: "application/json" };
-    if (this.loaded && this.etag) headers["If-None-Match"] = this.etag;
-    const res = await this.fetchFn(this.endpoint("/v1/eans"), { headers, signal: AbortSignal.timeout(TIMEOUT_MS) });
-    if (res.status === 304) return "unchanged";
-    if (!res.ok) throw new Error(`Barcode download failed: HTTP ${res.status}`);
-    const body = (await res.json()) as { items?: unknown };
-    if (!this.load(body.items)) throw new Error("Barcode download: unexpected format");
-    this.etag = res.headers.get("etag");
-    if (this.opts.cachePath) {
-      const tmp = `${this.opts.cachePath}.tmp`;
-      writeFileSync(tmp, JSON.stringify({ items: Object.fromEntries(this.map), etag: this.etag }), { mode: 0o600 });
-      renameSync(tmp, this.opts.cachePath);
-    }
-    return "updated";
-  }
-
-  /**
-   * The product number of a barcode, from the mirror first and otherwise straight from the
-   * backend (someone may have just confirmed it). Null when it isn't a valid barcode;
-   * `productId` is null when it isn't linked (yet).
-   */
-  async resolve(input: string): Promise<{ ean: string; productId: string | null } | null> {
+  /** The product number of a barcode; `productId` is null when Alko doesn't know it. */
+  async resolve(input: string): Promise<ResolveResult> {
     const ean = normalizeEan(input);
-    if (!ean) return null;
-    const known = this.map.get(ean);
-    if (known) return { ean, productId: known };
-    if (!this.enabled) return { ean, productId: null };
+    if (!ean) return { ok: false, reason: "invalid" };
+    if (!this.enabled) return { ok: true, ean, productId: null };
+
+    const cached = this.answers.get(ean);
+    if (cached && cached.until > this.now()) return { ok: true, ean, productId: cached.productId };
+
     try {
-      const res = await this.fetchFn(this.endpoint(`/v1/eans/${ean}`), {
+      const res = await this.fetchFn(`${this.opts.url!.replace(/\/+$/, "")}/gtin/${ean}`, {
         headers: { Accept: "application/json" },
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
-      if (res.ok) {
-        const info = (await res.json()) as { status?: string; productId?: string | null };
-        if (info.status === "confirmed" && typeof info.productId === "string") {
-          this.map.set(ean, info.productId);
-          return { ean, productId: info.productId };
-        }
-      }
+      if (res.status === 404) return this.remember(ean, null);
+      if (res.status === 400) return { ok: false, reason: "invalid", ean };
+      if (res.status === 429) return { ok: false, reason: "rate-limited", ean };
+      if (!res.ok) return { ok: false, reason: "unavailable", ean };
+      const body = (await res.json()) as { id?: unknown };
+      const id = body.id == null ? "" : String(body.id);
+      if (!/^\d{1,10}$/.test(id)) return { ok: false, reason: "unavailable", ean };
+      return this.remember(ean, id);
     } catch {
-      // Offline: the mirror said no, so treat it as unlinked.
+      return { ok: false, reason: "unavailable", ean };
     }
-    return { ean, productId: null };
   }
 
-  /** Votes that `ean` belongs to `productId`. `voter` is already an opaque id, never a Telegram id. */
-  async link(input: string, productId: string, voter: string): Promise<LinkResult> {
-    const ean = normalizeEan(input);
-    if (!ean) return { ok: false, reason: "invalid" };
-    if (!this.canLink) return { ok: false, reason: "unavailable" };
-    try {
-      const res = await this.fetchFn(this.endpoint(`/v1/eans/${ean}`), {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.opts.apiKey}`,
-          "X-Voter": voter,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ productId }),
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
-      if (res.status === 404) return { ok: false, reason: "unknown-product" };
-      if (res.status === 429) return { ok: false, reason: "rate-limited" };
-      if (!res.ok) return { ok: false, reason: "unavailable" };
-      const info = (await res.json()) as { status?: string; productId?: string | null };
-      if (info.status === "confirmed" && typeof info.productId === "string") {
-        this.map.set(ean, info.productId);
-        return { ok: true, status: "confirmed", productId: info.productId };
-      }
-      return { ok: true, status: "pending", productId: null };
-    } catch {
-      return { ok: false, reason: "unavailable" };
-    }
+  private remember(ean: string, productId: string | null): ResolveResult {
+    if (this.answers.size >= 5000) this.answers.clear();
+    this.answers.set(ean, { productId, until: this.now() + (productId ? FOUND_TTL_MS : MISSING_TTL_MS) });
+    return { ok: true, ean, productId };
   }
 }

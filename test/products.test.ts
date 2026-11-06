@@ -51,6 +51,22 @@ describe("catalogue parsing", () => {
   });
 });
 
+describe("EAN column", () => {
+  test("is read by name, normalised, and found by productIdByEan", () => {
+    expect(catalogue.productIdByEan("4006381333931")).toBe("700004");
+    expect(catalogue.productIdByEan("4006381333948")).toBeUndefined();
+    const rows = PRODUCTS.map((r) => [...r] as typeof r);
+    rows[0]![13] = "not a barcode";
+    const p = new Products();
+    p.load(catalogJson(rows));
+    expect(p.get("700001")!.product.ean).toBeNull();
+    // a catalogue without the column (older data.json) still loads
+    const old = catalogJson();
+    old.schema = old.schema.filter((c) => c !== "EAN");
+    expect(() => new Products().load(old)).not.toThrow();
+  });
+});
+
 describe("servings", () => {
   test("beer: one container per size; multipacks per can; kegs by the glass", () => {
     expect(servingSummary(drink("700001"))).toEqual(["c33:33 cl", "c50:50 cl"]);
@@ -129,7 +145,9 @@ describe("names and custom amounts", () => {
 
     expect(catalogue.pageUrl("700022")).toBeUndefined(); // search disabled: no URL
     const online = new Products({ url: "https://alkometriikka.fi/data.json" });
-    expect(online.pageUrl("700022")).toBe("https://alkometriikka.fi/tuotteet/700022/");
+    expect(online.pageUrl("700022")).toBe(
+      "https://alkometriikka.fi/tuotteet/700022/?utm_source=blakkiskili&utm_medium=telegram&utm_campaign=product_link",
+    );
     expect(online.pageUrl("../x")).toBeUndefined();
   });
 

@@ -1,10 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { defaultBarcodeIO } from "../src/bot/barcode.ts";
 import { normalizeEan } from "../src/lib/ean.ts";
-import { createCrypto } from "../src/lib/ids.ts";
 import { Barcodes } from "../src/services/barcodes.ts";
 
 describe("normalizeEan", () => {
@@ -19,79 +15,52 @@ describe("normalizeEan", () => {
   });
 });
 
-describe("voterKey", () => {
-  test("is one stable, opaque id per account, unrelated to the account id and to other keys", () => {
-    const crypto = createCrypto("test-secret-test-secret-test-secret-123");
-    const account = "7f3a9c0d51e24b6f8a1d";
-    const voter = crypto.voterKey(account);
-    expect(voter).toBe(crypto.voterKey(account));
-    expect(voter).toMatch(/^[0-9a-f]{48}$/);
-    expect(voter).not.toContain(account);
-    expect(voter).not.toBe(crypto.voterKey("another-account"));
-    expect(voter).not.toBe(crypto.identityKey("telegram", account).slice(0, 48));
-    // a different APP_SECRET gives different voters, so ids can't be matched across deployments
-    expect(createCrypto("another-secret-another-secret-12345").voterKey(account)).not.toBe(voter);
-  });
-});
-
 describe("Barcodes", () => {
-  test("mirrors confirmed links, uses the ETag and keeps a disk cache", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kili-barcodes-"));
-    try {
-      const cachePath = join(dir, "barcodes.json");
-      const seen: (string | null)[] = [];
-      const fetchFn = (async (_url: string, init?: RequestInit) => {
-        const inm = new Headers(init?.headers).get("if-none-match");
-        seen.push(inm);
-        if (inm === '"v1"') return new Response(null, { status: 304 });
-        return new Response(JSON.stringify({ items: { "4006381333931": "700004", bad: "1", "96385074": "not-a-number" } }), {
-          headers: { etag: '"v1"' },
-        });
-      }) as unknown as typeof fetch;
+  const respond = (status: number, body: unknown = {}) => (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
 
-      const a = new Barcodes({ url: "https://api.test/", cachePath, fetch: fetchFn });
-      expect(await a.refresh()).toBe("updated");
-      expect(await a.refresh()).toBe("unchanged");
-      expect(seen).toEqual([null, '"v1"']);
-      expect(a.count).toBe(1); // invalid entries are dropped
-      expect(await a.resolve("4006381333931")).toEqual({ ean: "4006381333931", productId: "700004" });
-
-      const b = new Barcodes({ url: "https://api.test", cachePath });
-      expect(b.loadCache()).toBe(true);
-      expect(b.count).toBe(1);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  test("falls back to the backend for a barcode confirmed since the last refresh, and survives it being down", async () => {
-    let up = true;
-    const fetchFn = (async () => {
-      if (!up) throw new Error("offline");
-      return new Response(JSON.stringify({ status: "confirmed", productId: "700004" }));
+  test("maps the Worker's answers, and remembers them for a while", async () => {
+    let calls = 0;
+    let clock = 0;
+    const fetchFn = (async (input: string | URL | Request) => {
+      calls++;
+      expect(String(input)).toBe("https://api.test/gtin/4006381333931");
+      return new Response(JSON.stringify({ id: 700004 }));
     }) as unknown as typeof fetch;
-    const service = new Barcodes({ url: "https://api.test", fetch: fetchFn });
-    expect((await service.resolve("4006381333931"))?.productId).toBe("700004");
-    up = false;
-    expect((await service.resolve("96385074"))?.productId).toBeNull();
-    expect(await service.resolve("nope")).toBeNull();
+    const service = new Barcodes({ url: "https://api.test/", fetch: fetchFn, now: () => clock });
+    expect(await service.resolve("4006381333931")).toEqual({ ok: true, ean: "4006381333931", productId: "700004" });
+    expect(await service.resolve("4006381333931")).toEqual({ ok: true, ean: "4006381333931", productId: "700004" });
+    expect(calls).toBe(1);
+    clock += 25 * 3600_000;
+    await service.resolve("4006381333931");
+    expect(calls).toBe(2);
   });
 
-  test("never votes without a key, and maps failures", async () => {
-    const respond = (status: number) => (async () => new Response("{}", { status })) as unknown as typeof fetch;
-    expect(await new Barcodes({ url: "https://api.test" }).link("4006381333931", "700004", "v")).toEqual({
-      ok: false,
-      reason: "unavailable",
-    });
-    const link = (status: number) =>
-      new Barcodes({ url: "https://api.test", apiKey: "k", fetch: respond(status) }).link("4006381333931", "700004", "voter");
-    expect(await link(429)).toEqual({ ok: false, reason: "rate-limited" });
-    expect(await link(404)).toEqual({ ok: false, reason: "unknown-product" });
-    expect(await link(500)).toEqual({ ok: false, reason: "unavailable" });
-    expect(await new Barcodes({ url: "https://api.test", apiKey: "k" }).link("123", "700004", "v")).toEqual({
-      ok: false,
-      reason: "invalid",
-    });
+  test("404 means unlinked (retried after a short while), other failures are not remembered", async () => {
+    let clock = 0;
+    let calls = 0;
+    const status = { current: 404 };
+    const fetchFn = (async () => {
+      calls++;
+      return new Response("{}", { status: status.current });
+    }) as unknown as typeof fetch;
+    const service = new Barcodes({ url: "https://api.test", fetch: fetchFn, now: () => clock });
+    expect(await service.resolve("4006381333931")).toEqual({ ok: true, ean: "4006381333931", productId: null });
+    await service.resolve("4006381333931");
+    expect(calls).toBe(1);
+    clock += 11 * 60_000;
+    status.current = 429;
+    expect(await service.resolve("4006381333931")).toMatchObject({ ok: false, reason: "rate-limited" });
+    status.current = 502;
+    expect(await service.resolve("4006381333931")).toMatchObject({ ok: false, reason: "unavailable" });
+    expect(calls).toBe(3);
+  });
+
+  test("rejects bad numbers locally, treats junk answers as unavailable, and needs a URL to ask", async () => {
+    const service = new Barcodes({ url: "https://api.test", fetch: respond(200, { id: "not-a-number" }) });
+    expect(await service.resolve("12345")).toEqual({ ok: false, reason: "invalid" });
+    expect(await service.resolve("4006381333931")).toMatchObject({ ok: false, reason: "unavailable" });
+    expect(await new Barcodes({ url: "https://api.test", fetch: respond(400) }).resolve("4006381333931")).toMatchObject({ ok: false, reason: "invalid" });
+    expect(await new Barcodes().resolve("4006381333931")).toEqual({ ok: true, ean: "4006381333931", productId: null });
   });
 });
 

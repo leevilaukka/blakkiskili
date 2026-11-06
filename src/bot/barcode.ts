@@ -1,7 +1,7 @@
 // Barcodes in the private chat: typed digits and photos of a barcode.
 
 import type { BotContext } from "./context.ts";
-import { barcodeView, linkBarcode } from "./menu.ts";
+import { barcodeView } from "./menu.ts";
 import { back, sendHtml, sendView } from "./ui.ts";
 import { S } from "../strings.ts";
 import { normalizeEan } from "../lib/ean.ts";
@@ -43,19 +43,20 @@ export function defaultBarcodeIO(): BarcodeIO {
 /** A typed message that is a valid barcode number. False for anything else. */
 export async function barcodeFromText(ctx: BotContext, text: string): Promise<boolean> {
   const { profile } = ctx.kili;
-  if (!profile || !ctx.kili.services.barcodes.enabled || !normalizeEan(text)) return false;
-  await sendView(ctx, await barcodeView(ctx, profile, text));
+  const { barcodes, products } = ctx.kili.services;
+  if (!profile || !(barcodes.enabled || products.enabled) || !normalizeEan(text)) return false;
+  await sendView(ctx, await barcodeView(ctx, text));
   return true;
 }
 
-/** A photo of a barcode: read it, then link it to the product being asked about or look it up. */
+/** A photo of a barcode: read it, then look it up. */
 export async function handleBarcodePhoto(ctx: BotContext, io: BarcodeIO): Promise<void> {
   const { profile, identityId, services } = ctx.kili;
   if (!profile || !identityId) {
     await sendHtml(ctx, S.user404);
     return;
   }
-  if (!services.barcodes.enabled) {
+  if (!services.barcodes.enabled && !services.products.enabled) {
     await sendHtml(ctx, S.barcode.off);
     return;
   }
@@ -76,11 +77,5 @@ export async function handleBarcodePhoto(ctx: BotContext, io: BarcodeIO): Promis
     return;
   }
 
-  const state = services.pending.get(identityId);
-  if (state?.kind === "eanFor" && normalizeEan(ean)) {
-    services.pending.clear(identityId);
-    await sendView(ctx, await linkBarcode(ctx, ean, state.productId));
-    return;
-  }
-  await sendView(ctx, await barcodeView(ctx, profile, ean));
+  await sendView(ctx, await barcodeView(ctx, ean));
 }

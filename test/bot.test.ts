@@ -597,51 +597,37 @@ describe("bot end-to-end", () => {
 
 // ---------- Barcodes ----------
 
-const BEER_EAN = "4006381333931";
-const OTHER_EAN = "96385074";
+const BEER_EAN = "4006381333931"; // Karjala, in the catalogue's EAN column
+const WORKER_EAN = "96385074"; // not in the catalogue: the API Worker knows it (Karjala again)
+const ALCOHOL_FREE_EAN = "4006381334013"; // Karhu 0,0 (700040), which the bot can't log
+const UNKNOWN_EAN = "4006381333948"; // Alko doesn't know it
 
-/** A tiny stand-in for Alkometriikka's backend: a link is confirmed once two voters agree. */
-function fakeBackend() {
-  const votes = new Map<string, Map<string, string>>(); // ean → voter → product
-  const requests: { method: string; path: string; voter?: string | null; auth?: string | null }[] = [];
-  const confirmed = (ean: string) => {
-    const counts = new Map<string, number>();
-    for (const p of votes.get(ean)?.values() ?? []) counts.set(p, (counts.get(p) ?? 0) + 1);
-    return [...counts].find(([, n]) => n >= 2)?.[0] ?? null;
-  };
+/** A tiny stand-in for the API Worker's GET /gtin/{ean}. */
+function fakeWorker() {
+  const requests: { path: string; headers: Headers }[] = [];
   const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
-    const headers = new Headers(init?.headers);
-    const method = init?.method ?? "GET";
-    requests.push({ method, path: url.pathname, voter: headers.get("x-voter"), auth: headers.get("authorization") });
-    if (url.pathname === "/v1/eans") {
-      const items = Object.fromEntries([...votes.keys()].flatMap((e) => (confirmed(e) ? [[e, confirmed(e)]] : [])));
-      return new Response(JSON.stringify({ count: Object.keys(items).length, items }), { headers: { etag: '"1"' } });
-    }
+    requests.push({ path: url.pathname, headers: new Headers(init?.headers) });
     const ean = url.pathname.split("/").pop()!;
-    if (method === "POST") {
-      const { productId } = JSON.parse(String(init!.body));
-      if (productId === "999") return new Response("{}", { status: 404 });
-      const forEan = votes.get(ean) ?? new Map();
-      forEan.set(headers.get("x-voter")!, productId);
-      votes.set(ean, forEan);
-    }
-    const productId = confirmed(ean);
-    return new Response(JSON.stringify({ ean, status: productId ? "confirmed" : votes.has(ean) ? "pending" : "unknown", productId }));
+    if (ean === ALCOHOL_FREE_EAN) return new Response(JSON.stringify({ id: "700040" }));
+    if (ean === WORKER_EAN) return new Response(JSON.stringify({ id: "700004" }));
+    if (ean === "4006381333955") return new Response("{}", { status: 429 });
+    if (ean === "4006381333962") return new Response("{}", { status: 502 });
+    return new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
   }) as typeof fetch;
-  return { fetchFn, requests, votes };
+  return { fetchFn, requests };
 }
 
 function barcodeHarness(photos: Record<string, string | null> = {}) {
   const products = new Products();
   products.load(catalogJson());
-  const backend = fakeBackend();
-  const service = new Barcodes({ url: "https://api.test", apiKey: "bot-key", fetch: backend.fetchFn });
+  const worker = fakeWorker();
+  const service = new Barcodes({ url: "https://api.test", fetch: worker.fetchFn });
   const io: BarcodeIO = {
     download: async (_ctx, fileId) => new TextEncoder().encode(fileId),
     decode: async (bytes) => photos[new TextDecoder().decode(bytes)] ?? null,
   };
-  return { h: harness(undefined, [], products, {}, { service, io }), backend, service };
+  return { h: harness(undefined, [], products, {}, { service, io }), worker };
 }
 
 async function registerUser(h: ReturnType<typeof harness>, id: number) {
@@ -653,80 +639,57 @@ async function registerUser(h: ReturnType<typeof harness>, id: number) {
 }
 
 describe("barcodes", () => {
-  test("an unknown barcode is linked by search, and two people agreeing confirms it", async () => {
-    const { h, backend } = barcodeHarness();
+  test("a barcode in the catalogue opens its product without asking the Worker", async () => {
+    const { h, worker } = barcodeHarness();
     await registerUser(h, 6001);
-    await registerUser(h, 6002);
-
-    // Unknown: the bot asks for a product name
-    const unknown = await h.send(6001, BEER_EAN);
-    expect(textOf(unknown)).toContain("ei ole vielä linkitetty");
-    // Typing a name lists packages to link the barcode to
-    const picks = await h.send(6001, "karjala");
-    const pick = buttonsOf(picks).find((b) => b.callback_data === `m:el:${BEER_EAN}:700004`);
-    expect(pick).toBeDefined();
-
-    const linked = await h.press(6001, pick!.callback_data);
-    expect(textOf(linked)).toContain("otetaan käyttöön, kun joku toinenkin vahvistaa");
-    // the product is shown so the drink can still be logged
-    expect(buttonsOf(linked).some((b) => b.callback_data.startsWith("m:ps:700004"))).toBe(true);
-    // the backend got an opaque voter id, not a Telegram id
-    const post = backend.requests.find((r) => r.method === "POST")!;
-    expect(post.auth).toBe("Bearer bot-key");
-    expect(post.voter).toMatch(/^[0-9a-f]{48}$/);
-    expect(post.voter).not.toContain("6001");
-
-    // Still unconfirmed for another user, who agrees
-    await h.send(6002, BEER_EAN);
-    const second = await h.send(6002, "karjala");
-    const confirmed = await h.press(6002, buttonsOf(second).find((b) => b.callback_data.startsWith("m:el:"))!.callback_data);
-    expect(textOf(confirmed)).toContain("vahvistettu");
-
-    // Now anyone scanning it gets the product straight away
     const hit = await h.send(6001, BEER_EAN);
     expect(textOf(hit)).toContain("kuuluu tälle tuotteelle");
     expect(textOf(hit)).toContain("Karjala");
+    expect(buttonsOf(hit).some((b) => b.callback_data.startsWith("m:ps:700004"))).toBe(true);
+    expect(worker.requests).toEqual([]);
   });
 
-  test("a photo of a barcode is read and looked up, and linked when a product asked for it", async () => {
-    const { h, service } = barcodeHarness({ photoA: BEER_EAN, photoB: "036000291452", blank: null });
-    await registerUser(h, 6003);
-
-    expect(textOf(await h.sendPhoto(6003, "blank"))).toContain("En löytänyt kuvasta viivakoodia");
-    expect(textOf(await h.sendPhoto(6003, "photoA"))).toContain("ei ole vielä linkitetty");
-
-    // From a product: "Linkitä viivakoodi" then the photo (UPC-A is normalised to 13 digits)
-    const product = await h.press(6003, "m:p:700004");
-    expect(buttonsOf(product).some((b) => b.callback_data === "m:eb:700004")).toBe(true);
-    const prompt = await h.press(6003, "m:eb:700004");
-    expect(textOf(prompt)).toContain("Lähetä tuotteen");
-    expect(textOf(await h.sendPhoto(6003, "photoB"))).toContain("otetaan käyttöön");
-    expect(service.count).toBe(0); // one vote only: not confirmed
-
-    // The same by typing the digits
-    await h.press(6003, "m:eb:700004");
-    expect(textOf(await h.send(6003, "12345"))).toContain("En tunnistanut viivakoodia");
-    expect(textOf(await h.send(6003, OTHER_EAN))).toContain("otetaan käyttöön");
+  test("other barcodes are asked from the Worker, which gets only the number", async () => {
+    const { h, worker } = barcodeHarness();
+    await registerUser(h, 6002);
+    const hit = await h.send(6002, WORKER_EAN);
+    expect(textOf(hit)).toContain("Karjala");
+    expect(worker.requests.map((r) => r.path)).toEqual([`/gtin/${WORKER_EAN}`]);
+    expect(worker.requests[0]!.headers.get("authorization")).toBeNull();
+    expect(worker.requests[0]!.headers.get("x-voter")).toBeNull();
+    // answered from memory the second time
+    await h.send(6002, WORKER_EAN);
+    expect(worker.requests.length).toBe(1);
   });
 
-  test("a product with several package sizes asks which one the barcode is on", async () => {
+  test("an alcohol-free product is named, not reported as missing", async () => {
     const { h } = barcodeHarness();
-    await registerUser(h, 6004);
-    const choose = await h.press(6004, "m:eb:700001");
-    expect(textOf(choose)).toContain("Valitse pakkaus");
-    const ids = buttonsOf(choose).filter((b) => b.callback_data.startsWith("m:ep:")).map((b) => b.callback_data);
-    expect(ids).toContain("m:ep:700001");
-    expect(ids.length).toBeGreaterThan(1);
+    await registerUser(h, 6006);
+    expect(textOf(await h.send(6006, ALCOHOL_FREE_EAN))).toContain("alkoholiton");
+    expect(textOf(await h.send(6006, ALCOHOL_FREE_EAN))).toContain("Karhu 0,0");
   });
 
-  test("barcodes are off without a backend, and linking is hidden without the key", async () => {
-    const products = new Products();
-    products.load(catalogJson());
-    const h = harness(undefined, [], products);
+  test("unknown barcodes, Worker errors and bad numbers get their own messages", async () => {
+    const { h } = barcodeHarness();
+    await registerUser(h, 6003);
+    expect(textOf(await h.send(6003, UNKNOWN_EAN))).toContain("Alko ei tunne viivakoodia");
+    expect(textOf(await h.send(6003, "4006381333955"))).toContain("haettu juuri paljon");
+    expect(textOf(await h.send(6003, "4006381333962"))).toContain("haku ei onnistunut");
+    expect(textOf(await h.send(6003, "12345"))).toContain("Mitä?");
+  });
+
+  test("a photo of a barcode is read and looked up (UPC-A is normalised to 13 digits)", async () => {
+    const { h } = barcodeHarness({ photoA: BEER_EAN, photoB: "036000291452", blank: null });
+    await registerUser(h, 6004);
+    expect(textOf(await h.sendPhoto(6004, "blank"))).toContain("En löytänyt kuvasta viivakoodia");
+    expect(textOf(await h.sendPhoto(6004, "photoA"))).toContain("Karjala");
+    expect(textOf(await h.sendPhoto(6004, "photoB"))).toContain("Alko ei tunne viivakoodia");
+  });
+
+  test("barcodes only work with the catalogue or the Worker", async () => {
+    const h = harness();
     await registerUser(h, 6005);
     expect(textOf(await h.send(6005, BEER_EAN))).toContain("Mitä?");
     expect(textOf(await h.sendPhoto(6005, "x"))).toContain("eivät ole käytössä");
-    const product = await h.press(6005, "m:p:700004");
-    expect(buttonsOf(product).some((b) => b.callback_data.startsWith("m:eb:"))).toBe(false);
   });
 });
