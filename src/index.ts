@@ -1,6 +1,8 @@
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { webhookCallback } from "grammy";
+import { startPolling } from "./bot/polling.ts";
+import type { RunnerHandle } from "@grammyjs/runner";
 import { loadConfig } from "./config.ts";
 import { openDatabase } from "./db/index.ts";
 import { createCrypto } from "./lib/ids.ts";
@@ -93,9 +95,11 @@ const stopJobs = startJobs(jobs, (job, err) => {
   void alert(job, err instanceof Error ? err.message : String(err));
 });
 
+let runner: RunnerHandle | undefined;
 const shutdown = async () => {
   stopJobs();
-  await bot.stop().catch(() => {});
+  // Lets updates that are being handled finish before the database closes
+  await (runner?.isRunning() ? runner.stop() : bot.stop()).catch(() => {});
   db.close();
   process.exit(0);
 };
@@ -103,7 +107,12 @@ process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
 if (config.mode === "webhook") {
-  const handle = webhookCallback(bot, "std/http", { secretToken: config.webhookSecret });
+  const handle = webhookCallback(bot, "std/http", {
+    secretToken: config.webhookSecret,
+    // A slow handler (e.g. /data) must not make Telegram resend the update after 10 s: answer 200
+    // and let it finish.
+    onTimeout: "return",
+  });
   const server = Bun.serve({
     port: config.port,
     routes: {
@@ -120,5 +129,6 @@ if (config.mode === "webhook") {
 } else {
   await bot.api.deleteWebhook();
   console.log(`@${bot.botInfo.username} started (long polling)`);
-  await bot.start({ allowed_updates: [...ALLOWED_UPDATES] });
+  runner = startPolling(bot, ALLOWED_UPDATES);
+  await runner.task();
 }
