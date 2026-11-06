@@ -34,7 +34,7 @@ interface Call {
 
 function assertTelegramHtml(text: string) {
   const stack: string[] = [];
-  const stripped = text.replace(/<(\/?)(b|code)>/g, (_m, close: string, tag: string) => {
+  const stripped = text.replace(/<(\/?)(b|code|a)(?: href="[^"<>]*")?>/g, (_m, close: string, tag: string) => {
     if (close) expect(stack.pop()).toBe(tag);
     else stack.push(tag);
     return "";
@@ -427,7 +427,8 @@ describe("bot end-to-end", () => {
     const wine = await h.press(A, "m:p:700010");
     // Maker, country, ABV; energy, the 75 cl bottle's price and the price of one standard drink
     expect(textOf(wine)).toContain("Château Testi · Ranska · 13 %\n80 kcal / 100 ml · Alkossa 14,90 € / 75 cl · 2,32 € / annos");
-    expect(textOf(wine)).not.toContain("<a href"); // no Alkometriikka URL configured in this test
+    expect(textOf(wine)).not.toContain("Alkometriikassa"); // no Alkometriikka URL configured in this test
+    expect(textOf(wine)).toContain('<a href="https://www.alko.fi/tuotteet/700010/">Alkon sivulla</a>'); // plain link, no tracking
     expect(buttonsOf(wine).map((b) => b.text)).toEqual(expect.arrayContaining(["37.5 cl · 3.2 annosta · 300 kcal", "75 cl · 6.4 annosta · 600 kcal"]));
     const glass = buttonsOf(wine).find((b) => b.text.startsWith("16 cl"))!;
     expect(glass.text).toBe("16 cl · 1.4 annosta · 128 kcal");

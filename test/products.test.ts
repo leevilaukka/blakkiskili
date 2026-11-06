@@ -149,6 +149,8 @@ describe("names and custom amounts", () => {
       "https://alkometriikka.fi/tuotteet/700022/?utm_source=blakkiskili&utm_medium=telegram&utm_campaign=product_link",
     );
     expect(online.pageUrl("../x")).toBeUndefined();
+    expect(online.alkoUrl("700022")).toBe("https://www.alko.fi/tuotteet/700022/");
+    expect(online.alkoUrl("../x")).toBeUndefined();
   });
 
   test("custom servings: any sane amount within the single-drink limit", () => {

@@ -212,6 +212,11 @@ export class Products {
     }
   }
 
+  /** The product's page on alko.fi. Plain link, no tracking parameters. Undefined for ids that aren't product numbers. */
+  alkoUrl(productId: string): string | undefined {
+    return /^\d{1,10}$/.test(productId) ? `https://www.alko.fi/tuotteet/${productId}/` : undefined;
+  }
+
   /** The product number with this EAN in the catalogue, if Alkometriikka has recorded one. */
   productIdByEan(ean: string): string | undefined {
     return this.byEanMap.get(ean);

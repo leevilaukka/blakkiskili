@@ -138,11 +138,12 @@ export const S = {
     button: "🔎 Hae Alkosta",
     title: "Hae Alkosta",
     prompt:
-      "Kirjoita juoman nimi, esim. <code>karhu</code>, <code>lapin kulta</code> tai <code>jallu</code>. Voit lisätä perään määrän, esim. <code>jallu 3 cl</code>. Haku kattaa Alkon valikoiman (Alkometriikka). Voit myös lähettää kuvan tuotteen viivakoodista tai kirjoittaa viivakoodin numerot.",
+      "Kirjoita juoman nimi, esim. <code>karhu</code>, <code>lapin kulta</code> tai <code>jallu</code>. Voit lisätä perään määrän, esim. <code>jallu 3 cl</code>. Haku kattaa Alkon valikoiman (tiedot: <a href=\"https://alkometriikka.fi\">Alkometriikka</a>). Voit myös lähettää kuvan viivakoodista tai kirjoittaa sen numerot.",
     results: "Osumat haulle <b>{q}</b>. Voit myös kirjoittaa uuden haun.",
     none: "Ei osumia haulle <b>{q}</b>. Kokeile toista nimeä tai käytä <b>Oma juoma</b> -nappia.",
     product: "<b>{name}</b>\n{details}\n\nValitse määrä:",
     product_link: "Lisätietoja Alkometriikassa",
+    alko_link: "Alkon sivulla",
     price: "Alkossa {price} / {size}",
     per_standard_drink: "{price} / annos",
     gone: "Tuotetta ei enää löydy valikoimasta. Hae uudelleen.",
@@ -332,7 +333,7 @@ export const S = {
   announcement: "📣 <b>Tiedote {date}</b>\n{text}",
 
   about:
-    "<b>Bläkkiskili</b> arvioi veren alkoholipitoisuutta juomiesi perusteella. Se perustuu Joonas Ulmasen (@ultsi) alkuperäiseen Bläkkisvuoheen (https://gitlab.com/ultsi-projects/blakkisvuohi), mutta ei ole alkuperäisen tekijän ylläpitämä. Bläkkiskili on vapaata ohjelmistoa GPLv3-lisenssillä.{source}{maintainer}\n\nKäyttöehdot: /terms",
+    "<b>Bläkkiskili</b> arvioi veren alkoholipitoisuutta juomiesi perusteella. Se perustuu Joonas Ulmasen (@ultsi) alkuperäiseen Bläkkisvuoheen (https://gitlab.com/ultsi-projects/blakkisvuohi), mutta ei ole alkuperäisen tekijän ylläpitämä. Bläkkiskili on vapaata ohjelmistoa GPLv3-lisenssillä.\n\nAlkon tuotetiedot tulevat <a href=\"https://alkometriikka.fi\">Alkometriikasta</a>.{source}{maintainer}\n\nKäyttöehdot: /terms",
 
   commands: {
     moro: "Rippaa rauhassa kera {chat_title} -kavereiden.",

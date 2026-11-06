@@ -246,7 +246,7 @@ function packageText(p: CatalogDrink["product"]): string {
 
 /**
  * Lines under the product name (HTML): maker, country and ABV; energy and the representative
- * package's Alko price; a link to the product on Alkometriikka.
+ * package's Alko price; links to the product on Alkometriikka and Alko.
  */
 function productDetails(ctx: BotContext, d: CatalogDrink): string {
   const p = d.product;
@@ -258,8 +258,13 @@ function productDetails(ctx: BotContext, d: CatalogDrink): string {
     perDrink === null ? null : fmt(S.search.per_standard_drink, { price: euros(perDrink) }),
   ].filter(Boolean);
   if (facts.length) lines.push(facts.join(" · "));
-  const url = ctx.kili.services.products.pageUrl(p.id);
-  if (url) lines.push(fmt('<a href="{url}">{text}</a>', { url, text: S.search.product_link }));
+  const links: string[] = [];
+  const add = (url: string | undefined, text: string) => {
+    if (url) links.push(fmt('<a href="{url}">{text}</a>', { url, text }));
+  };
+  add(ctx.kili.services.products.pageUrl(p.id), S.search.product_link);
+  add(ctx.kili.services.products.alkoUrl(p.id), S.search.alko_link);
+  if (links.length) lines.push(links.join(" · "));
   return lines.join("\n");
 }
 
