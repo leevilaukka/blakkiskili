@@ -1,3 +1,4 @@
+import { sequentialize } from "@grammyjs/runner";
 import { Bot, GrammyError, HttpError } from "grammy";
 import type { Config } from "../config.ts";
 import type { Services } from "../services/index.ts";
@@ -30,7 +31,11 @@ export function createBot(config: Config, services: Services, opts: BotOptions =
   const limiter = opts.limiter ?? new RateLimiter(30, 60_000);
   const bot = new Bot<BotContext>(config.botToken);
 
-  // First, so floods are dropped before touching the database.
+  // Updates are handled concurrently (see polling.ts), but one user's updates in order: a typed
+  // answer must not be processed before the step that asked for it has finished.
+  bot.use(sequentialize((ctx) => ctx.from?.id.toString()));
+
+  // Before touching the database, so floods are dropped early.
   bot.use(rateLimit(limiter));
 
   // Resolve the sender's account once per update, and keep their display name fresh.
