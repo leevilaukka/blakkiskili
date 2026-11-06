@@ -448,6 +448,12 @@ describe("bot end-to-end", () => {
     expect(answer.payload.results.map((r: { id: string }) => r.id)).toEqual(["700022:2", "700022:4", "700022:6", "700025:2", "700025:4", "700025:6"]);
     // Second line: energy and the price of this amount (4 cl of the 70 cl bottle at 33,90 €)
     expect(answer.payload.results[1]).toMatchObject({ title: "🥃 Jaloviina ***", description: "4 cl · 38 % · 1.0 annosta\n84 kcal · Alkossa 1,94 €" });
+    // each result carries the product photo as a thumbnail
+    expect(answer.payload.results[1]).toMatchObject({
+      thumbnail_url: "https://images.alko.fi/images/cs_srgb,f_auto,t_products/cdn/700022/kuva.jpg",
+      thumbnail_width: 160,
+      thumbnail_height: 192,
+    });
     expect(answer.payload.is_personal).toBe(true);
     const inGroup = (await h.inlineQuery(A, "jallu", "supergroup")).find((c) => c.method === "answerInlineQuery")!;
     expect(inGroup.payload.results).toEqual([]);

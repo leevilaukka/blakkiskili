@@ -28,6 +28,14 @@ const MAX_RESULTS = 50; // Telegram's limit per answer
 const MAX_PRODUCTS = 16;
 
 /**
+ * The product photo as a small JPEG (160×192, padded), the same URL Alkometriikka uses for share
+ * metadata. Telegram's servers fetch and cache it, so Alko never sees the user. A product without
+ * a photo answers 4xx and the result just shows no thumbnail.
+ */
+export const thumbnailUrl = (productId: string) =>
+  `https://images.alko.fi/images/cs_srgb,f_auto,t_products/cdn/${encodeURIComponent(productId)}/kuva.jpg`;
+
+/**
  * One result per serving, so even "a glass of this wine" is a single tap. With an amount in
  * the query ("jallu 3 cl"), one result per drink with exactly that amount.
  */
@@ -48,6 +56,9 @@ export function inlineResults(drinks: readonly CatalogDrink[], litres?: number):
         // Second line: "130 kcal · Alkossa 2,19 €"
         description: [`${s.label} · ${d.product.abv} % · ${standardDrinksText(s)}`, servingFacts(s)].filter(Boolean).join("\n"),
         input_message_content: { message_text: escapeHtml(servingDescription(d, s)), parse_mode: "HTML" },
+        thumbnail_url: thumbnailUrl(d.product.id),
+        thumbnail_width: 160,
+        thumbnail_height: 192,
       });
     }
   }

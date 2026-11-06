@@ -138,7 +138,7 @@ export const S = {
     button: "🔎 Hae Alkosta",
     title: "Hae Alkosta",
     prompt:
-      "Kirjoita juoman nimi, esim. <code>karhu</code>, <code>lapin kulta</code> tai <code>jallu</code>. Voit lisätä perään määrän, esim. <code>jallu 3 cl</code>. Haku kattaa Alkon valikoiman (Alkometriikka).",
+      "Kirjoita juoman nimi, esim. <code>karhu</code>, <code>lapin kulta</code> tai <code>jallu</code>. Voit lisätä perään määrän, esim. <code>jallu 3 cl</code>. Haku kattaa Alkon valikoiman (Alkometriikka). Voit myös lähettää kuvan tuotteen viivakoodista tai kirjoittaa viivakoodin numerot.",
     results: "Osumat haulle <b>{q}</b>. Voit myös kirjoittaa uuden haun.",
     none: "Ei osumia haulle <b>{q}</b>. Kokeile toista nimeä tai käytä <b>Oma juoma</b> -nappia.",
     product: "<b>{name}</b>\n{details}\n\nValitse määrä:",
@@ -287,7 +287,7 @@ export const S = {
       button: "Yleistä",
       title: "Help: Yleistä",
       text:
-        "Bläkkiskili auttaa arvioimaan alkoholin määrää veressä eli promilleja. Botille tilastoidaan juomia sitä mukaa, kun niitä juodaan, ja botti laskee juoduista juomista promillet, palamisen huomioon ottaen. Lisäksi botin voi lisätä ryhmään ryhmätilastoja varten.\n\n<b>Käyttö</b>\n\nBotin käyttäminen on yksinkertaista. Juodut juomat tilastoidaan /start-valikosta (tai pikakomennoilla, ks. /komennot) ja botti laskee promillemäärän heti. Botin käyttö <b>vaatii tunnuksen</b> luomisen, jotta promillejen arviointi olisi mahdollisimman tarkkaa.",
+        "Bläkkiskili auttaa arvioimaan alkoholin määrää veressä eli promilleja. Botille tilastoidaan juomia sitä mukaa, kun niitä juodaan, ja botti laskee juoduista juomista promillet, palamisen huomioon ottaen. Lisäksi botin voi lisätä ryhmään ryhmätilastoja varten.\n\n<b>Käyttö</b>\n\nBotin käyttäminen on yksinkertaista. Juodut juomat tilastoidaan /start-valikosta (tai pikakomennoilla, ks. /komennot) ja botti laskee promillemäärän heti. Botin käyttö <b>vaatii tunnuksen</b> luomisen, jotta promillejen arviointi olisi mahdollisimman tarkkaa.\n\n<b>Juoman haku</b>\n\nJuoma löytyy Alkon valikoimasta nimellä (Juo-valikon Hae Alkosta) tai viivakoodilla: lähetä minulle kuva tuotteen viivakoodista tai kirjoita viivakoodin numerot.",
     },
     faq: {
       button: "FAQ",
@@ -297,7 +297,7 @@ export const S = {
         button: "Juominen",
         title: "FAQ: Juominen",
         text:
-          "<b>Kannattaako juoma merkata avatessa vai viimeistellessä?</b>\nJuomat kannattaa merkata silloin, kun ne avaa. Promillearvioinnissa oletetaan juoman imeytyvän 99-prosenttisesti 30 minuutissa. Lisäksi avatessa juoman muistaa merkata paremmin.\n\n<b>Kuinka tarkka promillejen arviointi on?</b>\nNoin 1.5‰ asti hyvin tarkka, jonka jälkeen laskukaava alkaa heittämään. Laskenta on sama kuin alkuperäisessä Bläkkisvuohessa.\n\n<b>Unohdin lisätä juomat, mitä nyt?</b>\nKäytä /jalkikellotus-komentoa, tai /start-valikosta löytyvää Jälkikellotus-nappulaa.",
+          "<b>Kannattaako juoma merkata avatessa vai viimeistellessä?</b>\nJuomat kannattaa merkata silloin, kun ne avaa. Promillearvioinnissa oletetaan juoman imeytyvän 99-prosenttisesti 30 minuutissa. Lisäksi avatessa juoman muistaa merkata paremmin.\n\n<b>Kuinka tarkka promillejen arviointi on?</b>\nNoin 1.5‰ asti hyvin tarkka, jonka jälkeen laskukaava alkaa heittämään. Laskenta on sama kuin alkuperäisessä Bläkkisvuohessa.\n\n<b>Unohdin lisätä juomat, mitä nyt?</b>\nKäytä /jalkikellotus-komentoa, tai /start-valikosta löytyvää Jälkikellotus-nappulaa.\n\n<b>Voinko hakea juoman viivakoodilla?</b>\nVoit. Lähetä minulle privaviestinä kuva Alkon tuotteen viivakoodista tai kirjoita viivakoodin numerot, niin avaan tuotteen ja voit merkitä juoman suoraan. Vain viivakoodin numero lähetetään Alkometriikalle, ei mitään sinuun liittyvää. Vanhoja, Alkon valikoimasta poistuneita tuotteita ei välttämättä löydy.",
       },
       ryhmat: {
         button: "Ryhmät",
