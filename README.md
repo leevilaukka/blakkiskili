@@ -91,6 +91,13 @@ Data minimisation was the reason the original bot was shut down, so:
   - Network errors are retried on the next run.
   - The terms and privacy texts state the rule automatically. `0` keeps accounts forever and removes the sentence.
 - Typed-input state lives in a `pending` table, per login, and expires after 24 h.
+- **Backups:**
+  - Every hour the bot writes a consistent snapshot of the database (`VACUUM INTO`, integrity-checked, mode 600).
+  - The `backup` service uses restic to ship it off-site, encrypted client-side, keeping 7 daily, 4 weekly and 3 monthly snapshots.
+  - It optionally pings a dead-man's switch, and failures are DMed to `ADMIN_IDS`.
+  - The backup service has its own credentials file (`backup.env`) and never sees `APP_SECRET`.
+- **Containers:** read-only root filesystem, all capabilities dropped, `no-new-privileges`, non-root user, memory and process limits, and log rotation. The process umask is 077.
+- **Rate limit:** 30 updates per minute per user, against floods and database stuffing.
 
 ## Several platforms, one account
 
@@ -104,13 +111,6 @@ To add a platform, e.g. Discord:
 - Write a front end next to `src/bot/` that resolves `services.identities.key({ platform, platformUserId })` → `accounts.byIdentity()`, keys typed input by the identity id, calls `accounts.register()` for sign-up and `identities.redeemLinkCode()` for `/yhdista`.
 - Give `runInactivityJob` a sender for the platform's contacts.
 - Groups (`groups.ts`) and `/data`/`/tuo` are still Telegram-shaped: group keys are Telegram chat IDs, and the CSV `userid` is the legacy sha256 of the Telegram ID.
-- **Backups:**
-  - Every hour the bot writes a consistent snapshot of the database (`VACUUM INTO`, integrity-checked, mode 600).
-  - The `backup` service uses restic to ship it off-site, encrypted client-side, keeping 7 daily, 4 weekly and 3 monthly snapshots.
-  - It optionally pings a dead-man's switch, and failures are DMed to `ADMIN_IDS`.
-  - The backup service has its own credentials file (`backup.env`) and never sees `APP_SECRET`.
-- **Containers:** read-only root filesystem, all capabilities dropped, `no-new-privileges`, non-root user, memory and process limits, and log rotation. The process umask is 077.
-- **Rate limit:** 30 updates per minute per user, against floods and database stuffing.
 
 ## Code layout
 
