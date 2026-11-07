@@ -45,6 +45,11 @@ export function retentionText(config: Config) {
   return raw(config.inactivity.deleteAfterDays > 0 ? fmt(S.retention, retentionParams(config)) : "");
 }
 
+/** The website paragraph of the privacy text, or nothing when the website is off. */
+export function webPrivacyText(config: Config) {
+  return raw(config.web.enabled ? S.privacy_web : "");
+}
+
 /** Terms of service with the configured retention policy. */
 export function termsHtml(config: Config): string {
   return fmt(S.terms, { retention: retentionText(config) });

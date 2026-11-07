@@ -36,6 +36,13 @@ jobs:
       - name: Test
         run: bun test
 
+      - name: Website: install, check and build
+        working-directory: web
+        run: |
+          bun install --frozen-lockfile
+          bun run check
+          bun run build
+
   image:
     needs: test
     runs-on: ubuntu-latest

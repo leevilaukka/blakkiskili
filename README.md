@@ -110,6 +110,8 @@ Data minimisation was the reason the original bot was shut down, so:
 - **Containers:** read-only root filesystem, all capabilities dropped, `no-new-privileges`, non-root user, memory and process limits, and log rotation. The process umask is 077.
 - **Rate limit:** 30 updates per minute per user, against floods and database stuffing.
 
+**Website.** Sign-in is the Telegram Login Widget or a single-use `/web` link (token in the URL fragment, so it never reaches a log). Sessions are random tokens in an HttpOnly cookie; only their HMAC is stored, and they expire after 30 idle days. Writes need the site's own `Origin` and a custom header, the Content-Security-Policy allows no inline styles and only the one hashed bootstrap script, and every API call takes the account from the session, never from the request. Event screens are read-only links (hash stored, expiring in at most 7 days, revocable, members can appear as "Nimetön"); the token is exchanged for a cookie so it is never in a request URL. The server is reached only through a Cloudflare Tunnel; see `deploy/RUNBOOK.md` §7. Rate limits: sign-in 10 per minute per address, other calls 120 per minute per account, at most 5 live streams per account or screen link.
+
 ## Several platforms, one account
 
 An account (`users`) is the person: body data, drinks, groups. Each platform login is a row in `identities` (HMAC of the platform user ID → account), at most one per platform. Accounts made before this have their Telegram HMAC as their id. New ones get a random id, so an account doesn't depend on any one login.

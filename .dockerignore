@@ -11,3 +11,4 @@ deploy
 web/node_modules
 web/.svelte-kit
 web/build
+tunnel.env

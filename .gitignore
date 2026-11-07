@@ -42,3 +42,4 @@ data/
 backup.env
 backups/
 restore/
+tunnel.env

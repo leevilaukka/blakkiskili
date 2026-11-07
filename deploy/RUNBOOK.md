@@ -115,3 +115,26 @@ Delete `restore/` when done. It contains the whole database.
 **Backups failing** (healthchecks email or admin DM): check `docker compose logs backup`. Usual causes are an expired or rotated key, a full bucket, or the bot being down, which shows as "snapshot is older than…".
 
 **Lost `APP_SECRET`:** the data can't be recovered, by design. Start fresh, and tell users they can re-import their `/data` exports.
+
+## 7. Website (Cloudflare Tunnel)
+
+The website runs inside the bot's process (`src/web/`) and is off unless `WEB_ENABLED=1`. It listens on port 8081 **inside the compose network only**. The `tunnel` container (cloudflared) connects out to Cloudflare and forwards requests to `http://kili:8081`, so nothing new is open on the server: ufw and the cloud firewall stay as they are. Never add a `ports:` entry for 8081: the server trusts the `CF-Connecting-IP` header for rate limiting, which is only safe because nothing but the tunnel can reach the port.
+
+**Set up** (once):
+1. Cloudflare dashboard → Zero Trust → Networks → Tunnels → create a tunnel (cloudflared, Docker). Copy its token. Under *Public hostname* add `kili.alkometriikka.fi` → service `HTTP` `kili:8081`. Cloudflare creates the DNS record in the zone. Make sure no Worker route or Access policy on the zone covers that hostname.
+2. On the server, in `~/blakkiskili`: `install -m 600 /dev/null tunnel.env && nano tunnel.env`, containing `TUNNEL_TOKEN=...`. Type or paste it yourself; it never needs to pass through a chat or a tool.
+3. In `.env`: `WEB_ENABLED=1`, `WEB_ORIGIN=https://kili.alkometriikka.fi`, and `COMPOSE_PROFILES=backup,web`.
+4. BotFather → `/setdomain` → the bot → `kili.alkometriikka.fi` (needed for the Telegram login button).
+5. `git pull && docker compose pull kili && docker compose up -d`. The logs should show `Web: listening on :8081` and the tunnel `Registered tunnel connection`. Pin the cloudflared image to the version that works (`docker compose images tunnel`) instead of `latest`.
+6. Check: `https://kili.alkometriikka.fi/healthz` says `ok`; `/web` in the bot gives a link that signs you in; `curl -sI https://kili.alkometriikka.fi/` shows the `Content-Security-Policy` header; `ss -ltn` on the server shows nothing listening on 8081 or 8080.
+
+**Capacity** (1 vCPU, 1.8 GB, no swap): the bot has 384 MB and the tunnel 128 MB. Each watched group or screen is rendered once per update and shared by all its viewers; streams are capped at 5 per account or screen link and 500 in total. Watch `docker stats` and `free -m` during the first busy event. A container that goes over its limit is killed, so raise `mem_limit` before a big event rather than after.
+
+**Roll back** without touching data: set `WEB_ENABLED=` in `.env` and `docker compose up -d` (the site and `/web` disappear, the bot is unaffected), or just `docker compose stop tunnel`.
+
+**Incidents.** Run these in the bot container (`sqlite3` isn't installed there):
+- Sign everybody out (suspected session theft): `docker compose exec kili bun -e 'import {Database} from "bun:sqlite"; console.log(new Database("/app/data/kili.sqlite").run("DELETE FROM web_sessions"))'`
+- Kill every screen link: same, with `DELETE FROM screen_tokens`; kill every invite with `DELETE FROM group_invites`. Individual links can be revoked by members on the group page.
+- A leaked **screen link** shows one group's names and promilles until it expires (at most 7 days) or is revoked. A leaked **session cookie** is a full account takeover for 30 days idle. Both are stored only as hashes, so a database leak alone yields neither.
+- Cloudflare sees all website traffic (including IP addresses); the privacy text says so. The server itself keeps no access log and no IP addresses on disk.
+

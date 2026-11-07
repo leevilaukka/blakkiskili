@@ -3,7 +3,7 @@
 // View. Nodes that expect typed input set a Pending state; any other navigation clears it.
 
 import type { BotContext } from "./context.ts";
-import { contactExtras, displayName, fullName, retentionText, termsHtml } from "./context.ts";
+import { contactExtras, displayName, fullName, retentionText, termsHtml, webPrivacyText } from "./context.ts";
 import { back, btn, editView, sendExport, type View } from "./ui.ts";
 import { PLATFORM_NAMES, S, randomDrinkResponse } from "../strings.ts";
 import { formatLinkCode, LINK_CODE_TTL_MS } from "../services/identities.ts";
@@ -656,7 +656,7 @@ const NODES: Record<string, Handler> = {
   hp: (ctx) =>
     textNode(
       S.help.privacy.title,
-      fmt(S.help.privacy.text, { ...contactExtras(ctx.kili.config), retention: retentionText(ctx.kili.config) }),
+      fmt(S.help.privacy.text, { ...contactExtras(ctx.kili.config), retention: retentionText(ctx.kili.config), web: webPrivacyText(ctx.kili.config) }),
       "h",
     ),
   hf: () => ({

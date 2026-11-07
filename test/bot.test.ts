@@ -735,6 +735,20 @@ describe("/web", () => {
     expect(reply).not.toContain("<a ");
   });
 
+  test("the privacy text describes the website only while it is on", async () => {
+    const on = harness(undefined, [], undefined, { web: { enabled: true, origin: "https://kili.test", port: 0, distDir: "" } });
+    const privacyOn = textOf(await on.press(7010, "m:hp"));
+    expect(privacyOn).toContain("Verkkosivu");
+    expect(privacyOn).toContain("näyttölinkin");
+    expect(privacyOn).toContain("ryhmien nimet salattuna"); // stored whenever someone says /moro, website or not
+
+    const off = harness(undefined, [], undefined, { web: { enabled: false, origin: "", port: 0, distDir: "" } });
+    const privacyOff = textOf(await off.press(7011, "m:hp"));
+    expect(privacyOff).not.toContain("Verkkosivu");
+    expect(privacyOff).not.toContain("näyttölinkin");
+    expect(privacyOff).toContain("ryhmien nimet salattuna");
+  });
+
   test("does not exist while the website is off", async () => {
     const h = harness(undefined, [], undefined, { web: { enabled: false, origin: "", port: 0, distDir: "" } });
     await registerUser(h, 7003);
