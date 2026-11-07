@@ -2,7 +2,18 @@
 // along by itself; state-changing calls also send the custom header the server requires (a
 // cross-site form can't), and the browser adds the Origin header on its own.
 
-import type { Config, Dashboard, DrinkItem, LogDrinkRequest, Me, ProductItem } from "../../../shared/api.ts";
+import type {
+  Config,
+  Dashboard,
+  DrinkItem,
+  GroupSummary,
+  GroupView,
+  LogDrinkRequest,
+  Me,
+  ProductItem,
+  ScreenLinkItem,
+  ScreenView,
+} from "../../../shared/api.ts";
 
 export class ApiError extends Error {
   constructor(
@@ -40,6 +51,27 @@ export const api = {
   signInWithTelegram: (widgetData: unknown) => request<{ ok: true }>("POST", "/api/auth/telegram", widgetData),
   signInWithLink: (token: string) => request<{ ok: true }>("POST", "/api/auth/link", { token }),
   logout: () => request<{ ok: true }>("POST", "/api/auth/logout", {}),
+
+  groups: () => request<{ groups: GroupSummary[] }>("GET", "/api/groups"),
+  createGroup: (name: string) => request<GroupSummary>("POST", "/api/groups", { name }),
+  joinGroup: (code: string) => request<{ id: string }>("POST", "/api/groups/join", { code }),
+  group: (id: string) => request<GroupView>("GET", `/api/groups/${id}`),
+  renameGroup: (id: string, name: string) => request<GroupView>("PATCH", `/api/groups/${id}`, { name }),
+  hideOnScreens: (id: string, hideOnScreen: boolean) => request<GroupView>("PATCH", `/api/groups/${id}/me`, { hideOnScreen }),
+  leaveGroup: (id: string) => request<{ ok: true }>("POST", `/api/groups/${id}/leave`, {}),
+  deleteGroup: (id: string) => request<{ ok: true }>("DELETE", `/api/groups/${id}`),
+  removeMember: (id: string, ref: string) => request<{ ok: true }>("DELETE", `/api/groups/${id}/members/${ref}`),
+  createInvite: (id: string) => request<{ code: string; expiresAt: number }>("POST", `/api/groups/${id}/invite`, {}),
+  revokeInvite: (id: string) => request<{ ok: true }>("DELETE", `/api/groups/${id}/invite`),
+  createGroupScreen: (id: string, hours: number) => request<{ token: string; expiresAt: number }>("POST", `/api/groups/${id}/screens`, { hours }),
+  revokeGroupScreen: (id: string, ref: string) => request<{ ok: true }>("DELETE", `/api/groups/${id}/screens/${ref}`),
+
+  myScreens: () => request<{ screens: ScreenLinkItem[] }>("GET", "/api/screens"),
+  createMyScreen: (hours: number) => request<{ token: string; expiresAt: number }>("POST", "/api/screens", { hours }),
+  revokeMyScreen: (ref: string) => request<{ ok: true }>("DELETE", `/api/screens/${ref}`),
+
+  openScreen: (token: string) => request<{ ok: true }>("POST", "/api/screen/open", { token }),
+  screen: () => request<ScreenView>("GET", "/api/screen"),
 };
 
 /** Finnish texts for the error codes the API returns. */
@@ -60,6 +92,18 @@ export function errorText(e: unknown): string {
     invalid_link: "Linkki on vanhentunut tai jo käytetty. Lähetä botille /web saadaksesi uuden.",
     bad_signature: "Telegram-kirjautumista ei voitu vahvistaa.",
     expired: "Kirjautuminen vanheni. Yritä uudelleen.",
+    invalid_name: "Nimi ei kelpaa (1–40 merkkiä).",
+    too_many_groups: "Sinulla on jo liian monta ryhmää.",
+    too_many_screens: "Tällä on jo liian monta näyttölinkkiä. Peru joku niistä ensin.",
+    too_many_streams: "Liian monta avointa välilehteä.",
+    invalid_invite: "Kutsu on vanhentunut tai väärä. Pyydä uusi kutsulinkki.",
+    already_member: "Olet jo tässä ryhmässä.",
+    group_full: "Ryhmä on täynnä.",
+    not_owner: "Vain ryhmän perustaja voi tehdä tämän.",
+    telegram_group: "Telegram-ryhmää hallitaan Telegramissa.",
+    use_leave: "Poistu ryhmästä omalla painikkeella.",
+    invalid_screen: "Näyttölinkki on vanhentunut tai peruttu.",
+    not_found: "Ei löytynyt.",
     network: "Yhteys palvelimeen ei toimi.",
   };
   return texts[code] ?? "Jokin meni pieleen. Yritä uudelleen.";

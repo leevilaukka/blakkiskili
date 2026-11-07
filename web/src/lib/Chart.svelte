@@ -18,8 +18,10 @@
   const slot = (hex: string) => Math.max(0, LIGHT.indexOf(hex)) + 1;
 
   let width = $state(640);
+  let viewportHeight = $state(900);
   const W = $derived(Math.max(width, 300));
-  const H = $derived(big ? 480 : 300);
+  // The big (event screen) chart fills what the window leaves below the heading and legend.
+  const H = $derived(big ? Math.min(Math.max(viewportHeight - 300, 300), 640) : 300);
   const M = $derived({ top: 18, right: 16, bottom: 30, left: 44 });
 
   const floorHour = (t: number) => t - (t % HOUR);
@@ -139,6 +141,8 @@
   const summary = $derived(lines.map((l) => `${l.name} ${permille(l.current)} promillea`).join(", "));
 </script>
 
+<svelte:window bind:innerHeight={viewportHeight} />
+
 <figure class="chart" class:big>
   {#if lines.length >= 2}
     <ul class="legend">
@@ -225,6 +229,7 @@
     {/if}
   </div>
 
+  {#if !big}
   <details class="table">
     <summary>Taulukko</summary>
     <table>
@@ -236,6 +241,7 @@
       </tbody>
     </table>
   </details>
+  {/if}
 </figure>
 
 <style>

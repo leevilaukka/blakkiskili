@@ -10,7 +10,12 @@
 
   async function done() {
     session.me = await api.me();
-    goto("/", { replaceState: true });
+    // An invite link opened while signed out is waiting in sessionStorage (see /join).
+    let pendingInvite = false;
+    try {
+      pendingInvite = !!sessionStorage.getItem("kili-invite");
+    } catch {}
+    goto(pendingInvite ? "/join" : "/", { replaceState: true });
   }
 
   async function withLink(token: string) {
@@ -26,6 +31,7 @@
 
   onMount(async () => {
     if (session.me) return goto("/", { replaceState: true });
+    // (a signed-in visitor never sees this page)
 
     // /web in the bot gives /login#t=TOKEN. The token is in the fragment so it never reaches
     // a server log; remove it from the address bar and history right away.

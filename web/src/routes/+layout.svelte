@@ -9,8 +9,14 @@
   let { children } = $props();
 
   const onLogin = $derived(page.url.pathname === "/login");
+  // Event screens are opened by a link and need no account.
+  const onScreen = $derived(page.url.pathname === "/screen");
 
   onMount(async () => {
+    if (onScreen) {
+      session.ready = true;
+      return;
+    }
     try {
       session.me = await api.me();
     } catch (e) {
@@ -22,7 +28,7 @@
 
   // Signed out (first load, expired session or logout): the only page is the sign-in.
   $effect(() => {
-    if (session.ready && !session.me && !onLogin && !session.offline) goto("/login", { replaceState: true });
+    if (session.ready && !session.me && !onLogin && !onScreen && !session.offline) goto("/login", { replaceState: true });
   });
 
   async function logout() {
@@ -34,12 +40,13 @@
 
 <svelte:head><title>Bläkkiskili</title></svelte:head>
 
-{#if session.me}
+{#if session.me && !onScreen}
   <header>
     <a class="brand" href="/">Bläkkiskili</a>
     <nav aria-label="Päävalikko">
       <a href="/" aria-current={page.url.pathname === "/" ? "page" : undefined}>Etusivu</a>
       <a href="/log" aria-current={page.url.pathname === "/log" ? "page" : undefined}>Juo</a>
+      <a href="/groups" aria-current={page.url.pathname.startsWith("/groups") ? "page" : undefined}>Ryhmät</a>
       <a href="/settings" aria-current={page.url.pathname === "/settings" ? "page" : undefined}>Asetukset</a>
     </nav>
     <button class="link" onclick={logout}>Kirjaudu ulos</button>
@@ -48,7 +55,7 @@
 
 {#if !session.ready}
   <p class="page muted">Ladataan…</p>
-{:else if session.offline && !session.me && !onLogin}
+{:else if session.offline && !session.me && !onLogin && !onScreen}
   <p class="page error">Yhteys palvelimeen ei toimi. Päivitä sivu hetken päästä.</p>
 {:else}
   {@render children()}

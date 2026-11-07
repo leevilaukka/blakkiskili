@@ -38,6 +38,22 @@ for (const [ago, preset] of [[200, "b33a"], [140, "b50"], [85, "s40"], [30, "b33
 const friend = services.accounts.register({ platform: "telegram", platformUserId: 2 }, { name: "kaveri", fullName: "Kaveri K", weight: 62, height: 168, gender: "nainen" }).profile;
 for (const ago of [150, 90, 40]) services.drinks.add(friend.id, findPreset("w16")!.mg, findPreset("w16")!.name, { at: now - ago * MINUTE_MS, kcal: 90 });
 
+// Two more people and a web group of everyone, with a screen link and a spare invite
+const extra = ["Aino Virtanen", "Eero Korhonen", "Sanna Mäkelä"].map((fullName, i) =>
+  services.accounts.register({ platform: "telegram", platformUserId: 10 + i }, { name: fullName.split(" ")[0]!.toLowerCase(), fullName, weight: 60 + i * 10, height: 165 + i * 6, gender: i === 1 ? "mies" : "nainen" }).profile,
+);
+const group = services.groups.createWeb(demo.id, "Demoryhmä");
+if (group === "limit") throw new Error("unexpected");
+const join = services.groups.createInvite(group.id, demo.id);
+for (const p of [friend, ...extra]) services.groups.redeemInvite(join.code, p.id);
+extra.forEach((p, i) => {
+  for (const ago of [170 - i * 20, 110 - i * 15, 50 - i * 5]) services.drinks.add(p.id, findPreset(i % 2 ? "b50" : "w16")!.mg, "x", { at: now - ago * MINUTE_MS, kcal: 100 });
+});
+services.groups.setHidden(extra[2]!.id, group.id, true); // shows as "Nimetön 1" on screens
+const screen = services.screens.create({ groupId: group.id }, demo.id);
+
 startWebServer({ config, services, botUsername: "demo_bot" });
 const { token } = services.webSessions.createLoginLink(demo.id, null);
 console.log(`\nSign in (valid for ${(10 * MINUTE_MS) / MINUTE_MS} minutes, once):\n  ${origin}/login#t=${token}\n`);
+if (screen !== "limit") console.log(`Event screen of "Demoryhmä" (needs no sign-in):\n  ${origin}/screen#t=${screen.token}\n`);
+console.log(`Invite to "Demoryhmä" (for a second account):\n  ${origin}/join#c=${join.code}\n`);
