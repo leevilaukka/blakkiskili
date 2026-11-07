@@ -334,6 +334,7 @@ function profileView(profile: Profile, notice = ""): View {
     keyboard: [
       [btn(m.paino.button, "amw"), btn(m.pituus.button, "amh")],
       [btn(m.sukupuoli.button, "amg"), btn(S.asetukset.paivita.button, "amn")],
+      [btn(fmt(S.asetukset.kuvaaja.button, { choice: profile.chartName === "username" ? S.asetukset.kuvaaja.username : S.asetukset.kuvaaja.full }), "amk")],
       back("a"),
     ],
   };
@@ -543,6 +544,16 @@ const NODES: Record<string, Handler> = {
     const name = ctx.from ? displayName(ctx.from) : p.name;
     ctx.kili.services.accounts.updateName(p.id, name, ctx.from ? fullName(ctx.from) : undefined);
     return profileViewFor(ctx, fmt(S.asetukset.paivita.done, { name }));
+  }),
+  amk: withProfile((ctx, p, arg) => {
+    if (arg === "f" || arg === "u") {
+      ctx.kili.services.accounts.updateChartName(p.id, arg === "u" ? "username" : "full");
+      return profileViewFor(ctx, S.asetukset.kuvaaja.changed);
+    }
+    return {
+      text: header(S.asetukset.title) + fmt(S.asetukset.kuvaaja.on_select, { full: p.fullName ?? p.name, username: p.name, now: p.chartName === "username" ? S.asetukset.kuvaaja.username : S.asetukset.kuvaaja.full }),
+      keyboard: [[btn(S.asetukset.kuvaaja.full, "amk:f"), btn(S.asetukset.kuvaaja.username, "amk:u")], back("am")],
+    };
   }),
   ax: withProfile(async (ctx) => {
     if (ctx.from) await sendExport(ctx, ctx.from.id);

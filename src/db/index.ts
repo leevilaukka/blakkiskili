@@ -108,6 +108,12 @@ const MIGRATIONS: string[] = [
     expires_at INTEGER NOT NULL                  -- epoch ms
   ) STRICT;
   `,
+
+  /* 7: chart name choice */ `
+  -- Which name /kuvaaja shows for the user: 'full' (Telegram first + last name, as the original
+  -- bot did) or 'username' (the name shown in group listings: @username, else full name).
+  ALTER TABLE users ADD COLUMN chart_name TEXT NOT NULL DEFAULT 'full' CHECK (chart_name IN ('full', 'username'));
+  `,
 ];
 
 export function openDatabase(path: string): Database {

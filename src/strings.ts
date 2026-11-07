@@ -203,6 +203,14 @@ export const S = {
       button: E.refresh + " Päivitä nimi",
       done: "Nimi päivitetty! Nimesi on nyt: <b>{name}</b>. Nimi päivittyy myös automaattisesti, kun käytät bottia.",
     },
+    kuvaaja: {
+      button: E.chart + " Kuvaajan nimi: {choice}",
+      on_select:
+        "Valitse, mikä nimi näkyy /kuvaaja-kuvaajissa.\n\n<b>Oikea nimi:</b> {full}\n<b>Käyttäjänimi:</b> {username}\n\nNyt valittuna: {now}. Jos käyttäjänimeä ei ole, näytetään oikea nimi.",
+      full: "oikea nimi",
+      username: "käyttäjänimi",
+      changed: "Kuvaajan nimi muutettu!",
+    },
     data: { button: E.inbox + " Lataa tietoni" },
     linkit: {
       button: E.link + " Yhdistetyt palvelut",

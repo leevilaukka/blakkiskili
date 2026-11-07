@@ -3,6 +3,7 @@ import { legacyHash } from "../lib/ids.ts";
 import { HOUR_MS, STANDARD_DRINK_GRAMS } from "../lib/units.ts";
 import { EBAC_WINDOW_MS } from "./drinks.ts";
 import type { Deps } from "./index.ts";
+import type { ChartName } from "./accounts.ts";
 
 export interface GroupMemberStatus {
   userId: string;
@@ -18,6 +19,7 @@ export interface MemberHistory {
   name: string;
   /** Telegram first + last name for charts; null until the user next uses the bot. */
   fullName: string | null;
+  chartName: ChartName;
   body: BodyProfile;
   drinks: DrinkSample[];
 }
@@ -76,7 +78,7 @@ export class Groups {
     const now = this.deps.now();
     const rows = this.deps.db
       .query(
-        `SELECT u.id, u.name_enc, u.full_name_enc, u.weight, u.height, u.gender, d.alcohol_mg, d.created_at
+        `SELECT u.id, u.name_enc, u.full_name_enc, u.chart_name, u.weight, u.height, u.gender, d.alcohol_mg, d.created_at
          FROM group_members m
          JOIN users u ON u.id = m.user_id
          JOIN drinks d ON d.user_id = u.id AND d.created_at > ?
@@ -87,6 +89,7 @@ export class Groups {
       id: string;
       name_enc: string;
       full_name_enc: string | null;
+      chart_name: ChartName;
       weight: number;
       height: number;
       gender: Gender;
@@ -102,6 +105,7 @@ export class Groups {
           userId: r.id,
           name: this.deps.crypto.decrypt(r.name_enc),
           fullName: r.full_name_enc === null ? null : this.deps.crypto.decrypt(r.full_name_enc),
+          chartName: r.chart_name,
           body: { weight: r.weight, height: r.height, gender: r.gender },
           drinks: [],
         };

@@ -11,7 +11,7 @@ import { S, randomDrinkResponse } from "../strings.ts";
 import { KALJA033, KALJA05, type DrinkPreset } from "../lib/catalog.ts";
 import { dateTime, drinkList, escapeHtml, fmt, hoursMinutes, num, raw } from "../lib/format.ts";
 import { DAY_MS, parseIntStrict, roundTo, STANDARD_DRINK_GRAMS } from "../lib/units.ts";
-import type { Profile } from "../services/accounts.ts";
+import { chartLabel, type Profile } from "../services/accounts.ts";
 import type { Config } from "../config.ts";
 import type { InlineKeyboardButton } from "grammy/types";
 
@@ -128,9 +128,9 @@ function chartSource(ctx: BotContext, p: Profile | null): ChartSource | null {
   const now = services.deps.now();
   if (isPrivate(ctx)) {
     if (!p) return null;
-    return { series: [{ id: p.id, name: p.fullName ?? p.name, body: p, drinks: services.drinks.since(p.id, now - EBAC_WINDOW_MS) }], name: p.name };
+    return { series: [{ id: p.id, name: chartLabel(p), body: p, drinks: services.drinks.since(p.id, now - EBAC_WINDOW_MS) }], name: p.name };
   }
-  const series = services.groups.memberHistories(ctx.chat!.id).map((m) => ({ id: m.userId, name: m.fullName ?? m.name, body: m.body, drinks: m.drinks }));
+  const series = services.groups.memberHistories(ctx.chat!.id).map((m) => ({ id: m.userId, name: chartLabel(m), body: m.body, drinks: m.drinks }));
   return { series, name: chatTitle(ctx) };
 }
 

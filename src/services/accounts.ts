@@ -5,11 +5,15 @@ import { toCsv } from "../lib/csv.ts";
 import type { Deps } from "./index.ts";
 import type { Identities, IdentityRef } from "./identities.ts";
 
+export type ChartName = "full" | "username";
+
 export interface Profile {
   id: string;
   name: string;
   /** Telegram first + last name, as shown in charts; null until refreshed. */
   fullName: string | null;
+  /** Which name charts show: the Telegram full name (default, like the original bot) or the username. */
+  chartName: ChartName;
   weight: number;
   height: number;
   gender: Gender;
@@ -22,6 +26,7 @@ interface UserRow {
   id: string;
   name_enc: string;
   full_name_enc: string | null;
+  chart_name: ChartName;
   weight: number;
   height: number;
   gender: Gender;
@@ -61,6 +66,7 @@ export class Accounts {
       id: row.id,
       name: this.deps.crypto.decrypt(row.name_enc),
       fullName: row.full_name_enc === null ? null : this.deps.crypto.decrypt(row.full_name_enc),
+      chartName: row.chart_name,
       weight: row.weight,
       height: row.height,
       gender: row.gender,
@@ -155,6 +161,10 @@ export class Accounts {
     this.deps.db.query("UPDATE users SET gender = ? WHERE id = ?").run(gender, userId);
   }
 
+  updateChartName(userId: string, chartName: ChartName) {
+    this.deps.db.query("UPDATE users SET chart_name = ? WHERE id = ?").run(chartName, userId);
+  }
+
   updateName(userId: string, name: string, fullName?: string) {
     const enc = (s: string) => this.deps.crypto.encrypt(s);
     this.deps.db
@@ -238,4 +248,9 @@ export class Accounts {
       },
     ];
   }
+}
+
+/** The name a chart shows for this account, per their choice. */
+export function chartLabel(p: { name: string; fullName: string | null; chartName: ChartName }): string {
+  return p.chartName === "username" ? p.name : (p.fullName ?? p.name);
 }

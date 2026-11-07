@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { setup } from "./helpers.ts";
 import { legacyHash } from "../src/lib/ids.ts";
+import { chartLabel } from "../src/services/accounts.ts";
 import { HOUR_MS } from "../src/lib/units.ts";
 
 const TG_ID = 123456789;
@@ -29,6 +30,18 @@ describe("crypto", () => {
     expect(row.full_name_enc).not.toContain("Matti");
     services.accounts.updateName(uid, "nick2");
     expect(services.accounts.get(uid)!.fullName).toBe("Matti Meikäläinen");
+  });
+
+  test("chart name defaults to the full name and can be switched to the username", () => {
+    const { crypto, services } = setup();
+    const uid = crypto.identityKey("telegram", TG_ID);
+    services.accounts.upsert(uid, profile);
+    services.accounts.updateName(uid, "nick", "Matti Meikäläinen");
+    const p = () => services.accounts.get(uid)!;
+    expect(p().chartName).toBe("full");
+    expect(chartLabel(p())).toBe("Matti Meikäläinen");
+    services.accounts.updateChartName(uid, "username");
+    expect(chartLabel(p())).toBe("nick");
   });
 });
 
