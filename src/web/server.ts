@@ -13,20 +13,28 @@ export interface WebServerOptions {
   config: Config;
   services: Services;
   botUsername: string;
+  /** Tests shorten these; production uses the defaults. */
+  idleTimeout?: number;
+  live?: NonNullable<Parameters<typeof createWebApp>[0]["live"]>;
 }
 
-export function startWebServer({ config, services, botUsername }: WebServerOptions) {
+/** Long-lived event streams: the page's own, a group's, and an event screen's. */
+export const isEventStream = (pathname: string) => /^\/api\/(events|screen\/events|groups\/[0-9a-f]{32,64}\/events)$/.test(pathname);
+
+export function startWebServer({ config, services, botUsername, idleTimeout, live }: WebServerOptions) {
   const app = createWebApp({
     services,
     botToken: config.botToken,
     botUsername,
     origin: config.web.origin,
+    live,
   });
   const site = new StaticSite(config.web.distDir);
   if (!site.available) console.warn(`Web: no build in ${config.web.distDir}; only the API works (bun run web:build).`);
 
   const server = Bun.serve({
     port: config.web.port,
+    ...(idleTimeout === undefined ? {} : { idleTimeout }),
     // Bodies are tiny JSON; the API rejects anything larger anyway.
     maxRequestBodySize: 16 * 1024,
     async fetch(req, srv) {
@@ -34,7 +42,7 @@ export function startWebServer({ config, services, botUsername }: WebServerOptio
       if (pathname === "/healthz") return new Response("ok");
       const ip = req.headers.get("cf-connecting-ip") ?? srv.requestIP(req)?.address ?? "unknown";
       // Live streams stay open for hours; Bun would close them after its idle timeout.
-      if (pathname === "/api/events") srv.timeout(req, 0);
+      if (isEventStream(pathname)) srv.timeout(req, 0);
       try {
         if (pathname.startsWith("/api/")) return withSecurityHeaders(await app(req, ip));
         if (req.method !== "GET" && req.method !== "HEAD") return withSecurityHeaders(new Response("Method not allowed", { status: 405 }));

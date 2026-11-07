@@ -17,6 +17,8 @@ export interface HubOptions {
   /** Which of the channels people are watching right now a change affects. */
   channelsFor: (change: Change, watched: readonly string[]) => string[];
   tickMs?: number;
+  /** A comment line sent to every viewer this often, so a quiet stream is never idle for long. */
+  keepAliveMs?: number;
   minGapMs?: number;
   /** Open streams in total, and per owner (an account, or a screen token). */
   maxTotal?: number;
@@ -39,14 +41,17 @@ export class Hub {
   private readonly perOwner = new Map<string, number>();
   private total = 0;
   private ticker?: ReturnType<typeof setInterval>;
+  private keeper?: ReturnType<typeof setInterval>;
   private readonly unsubscribe: () => void;
   private readonly tickMs: number;
+  private readonly keepAliveMs: number;
   private readonly minGapMs: number;
   private readonly maxTotal: number;
   private readonly maxPerOwner: number;
 
   constructor(private readonly opts: HubOptions) {
     this.tickMs = opts.tickMs ?? 15_000;
+    this.keepAliveMs = opts.keepAliveMs ?? 5_000;
     this.minGapMs = opts.minGapMs ?? 1_000;
     this.maxTotal = opts.maxTotal ?? 500;
     this.maxPerOwner = opts.maxPerOwner ?? 5;
@@ -74,6 +79,7 @@ export class Hub {
     this.total += 1;
     this.perOwner.set(owner, (this.perOwner.get(owner) ?? 0) + 1);
     if (!this.ticker) this.ticker = setInterval(() => this.tick(), this.tickMs);
+    if (!this.keeper) this.keeper = setInterval(() => this.keepAlive(), this.keepAliveMs);
 
     this.deliver(channel, viewer);
     return () => this.remove(channel, viewer);
@@ -83,7 +89,9 @@ export class Hub {
   close() {
     this.unsubscribe();
     if (this.ticker) clearInterval(this.ticker);
+    if (this.keeper) clearInterval(this.keeper);
     this.ticker = undefined;
+    this.keeper = undefined;
     for (const ch of this.channels.values()) if (ch.timer) clearTimeout(ch.timer);
     this.channels.clear();
     this.perOwner.clear();
@@ -101,9 +109,11 @@ export class Hub {
       if (ch.timer) clearTimeout(ch.timer);
       this.channels.delete(channel);
     }
-    if (this.total === 0 && this.ticker) {
-      clearInterval(this.ticker);
+    if (this.total === 0) {
+      if (this.ticker) clearInterval(this.ticker);
+      if (this.keeper) clearInterval(this.keeper);
       this.ticker = undefined;
+      this.keeper = undefined;
     }
   }
 
@@ -142,6 +152,19 @@ export class Hub {
       ch.timer = undefined;
       this.deliver(channel);
     }, wait);
+  }
+
+  /** SSE comment lines are ignored by the browser; they only keep the connection from looking idle. */
+  private keepAlive() {
+    for (const [channel, ch] of this.channels) {
+      for (const v of [...ch.viewers]) {
+        try {
+          v.send(": keepalive\n\n");
+        } catch {
+          this.remove(channel, v);
+        }
+      }
+    }
   }
 
   private tick() {

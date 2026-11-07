@@ -3,6 +3,7 @@ import { findPreset } from "../src/lib/catalog.ts";
 import { ChangeBus } from "../src/services/changebus.ts";
 import { createWebApp } from "../src/web/app.ts";
 import { Hub } from "../src/web/sse.ts";
+import { isEventStream } from "../src/web/server.ts";
 import { setup, tg } from "./helpers.ts";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -114,6 +115,25 @@ describe("Hub", () => {
     h.close();
   });
 
+  test("sends a keepalive comment to every viewer while anyone watches, and stops after", async () => {
+    const { h } = hub({ keepAliveMs: 25 });
+    const a: string[] = [];
+    const b: string[] = [];
+    const stop = h.subscribe("u:1", "1", (t) => a.push(t))!;
+    h.subscribe("u:2", "2", (t) => b.push(t));
+    await sleep(90);
+    for (const got of [a, b]) {
+      const comments = got.filter((t) => t === ": keepalive\n\n");
+      expect(comments.length).toBeGreaterThanOrEqual(2);
+      expect(got.some((t) => t.startsWith("event: update"))).toBe(true); // the initial data is still there
+    }
+    stop();
+    const n = a.length;
+    await sleep(70);
+    expect(a).toHaveLength(n); // gone viewers get nothing
+    h.close();
+  });
+
   test("limits per owner and in total, freed when a viewer leaves", () => {
     const { h } = hub({ maxPerOwner: 2, maxTotal: 3 });
     const stops = [h.subscribe("u:1", "a", () => {}), h.subscribe("u:1", "a", () => {})];
@@ -153,6 +173,18 @@ describe("Hub", () => {
     bus.emit({ accountId: "1" });
     h.close();
     dead.h.close();
+  });
+});
+
+describe("which routes are long-lived streams", () => {
+  const id = "a".repeat(32);
+  test("exactly the event streams, which must be exempt from the server's idle timeout", () => {
+    for (const path of ["/api/events", "/api/screen/events", `/api/groups/${id}/events`, `/api/groups/${"b".repeat(64)}/events`]) {
+      expect(isEventStream(path), path).toBe(true);
+    }
+    for (const path of ["/api/events/", "/api/screen", "/api/groups", `/api/groups/${id}`, `/api/groups/${id}/events/x`, "/api/groups/zz/events", "/events", "/api/dashboard"]) {
+      expect(isEventStream(path), path).toBe(false);
+    }
   });
 });
 

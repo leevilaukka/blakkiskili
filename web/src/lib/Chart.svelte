@@ -1,8 +1,8 @@
 <script lang="ts">
   // Estimated permilles over time, drawn from the API's JSON (the same numbers as the bot's
   // /kuvaaja picture). Past solid, forecast dashed on a light wash, a "nyt" marker, hairline grid
-  // and one y axis. Identity is never colour alone: two or more people always get a legend with
-  // each current value, and up to four also get direct labels at the "now" dot.
+  // and one y axis. Identity is never colour alone: everyone is in the legend with their current
+  // value, and up to four people also get direct labels at the "now" dot.
   //
   // Colours come from CSS classes (s1..s10 → --series-n), so dark mode swaps in its own validated
   // steps and the page's Content-Security-Policy needs no inline styles.
@@ -144,7 +144,7 @@
 <svelte:window bind:innerHeight={viewportHeight} />
 
 <figure class="chart" class:big>
-  {#if lines.length >= 2}
+  {#if lines.length >= 1}
     <ul class="legend">
       {#each drawn as d (d.line.id)}
         <li>
