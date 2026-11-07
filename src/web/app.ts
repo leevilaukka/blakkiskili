@@ -23,6 +23,7 @@ import { RateLimiter } from "../bot/ratelimit.ts";
 import { EBAC_WINDOW_MS, type Drink } from "../services/drinks.ts";
 import type { Services } from "../services/index.ts";
 import type { Config as ApiConfig, Dashboard, DrinkItem, LogDrinkRequest, Me, ProductItem } from "../../shared/api.ts";
+import { Hub } from "./sse.ts";
 import { verifyTelegramLogin } from "./telegram.ts";
 
 export interface WebAppOptions {
@@ -31,6 +32,8 @@ export interface WebAppOptions {
   botUsername: string;
   /** Public origin, e.g. "https://kili.example.com" (no trailing slash). */
   origin: string;
+  /** Live-update timing; tests shorten it. */
+  live?: { tickMs?: number; minGapMs?: number; maxTotal?: number; maxPerOwner?: number };
 }
 
 const MAX_BODY = 4 * 1024;
@@ -239,9 +242,38 @@ export function createWebApp(opts: WebAppOptions) {
     ),
   });
 
+  // ---------- live updates ----------
+
+  const hub = new Hub({
+    bus: services.bus,
+    ...opts.live,
+    channelsFor: (change) => (change.accountId ? [`u:${change.accountId}`] : []),
+    render(channel) {
+      const p = channel.startsWith("u:") ? services.accounts.get(channel.slice(2)) : null;
+      return p ? dashboard(p) : null;
+    },
+  });
+
+  function events(p: Profile): Response {
+    if (!hub.hasRoom(p.id)) return fail(429, "too_many_streams");
+    const encoder = new TextEncoder();
+    let stop: (() => void) | null = null;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        stop = hub.subscribe(`u:${p.id}`, p.id, (text) => controller.enqueue(encoder.encode(text)));
+      },
+      cancel() {
+        stop?.();
+      },
+    });
+    return new Response(stream, {
+      headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-store", "x-accel-buffering": "no" },
+    });
+  }
+
   // ---------- routing ----------
 
-  return async function handle(req: Request, clientIp: string): Promise<Response> {
+  async function handle(req: Request, clientIp: string): Promise<Response> {
     const url = new URL(req.url);
     const path = url.pathname;
     const method = req.method;
@@ -280,6 +312,7 @@ export function createWebApp(opts: WebAppOptions) {
       if (method === "PATCH") return patchMe(p, req);
     }
     if (path === "/api/dashboard" && method === "GET") return json(dashboard(p));
+    if (path === "/api/events" && method === "GET") return events(p);
     if (path === "/api/products" && method === "GET") return search(p, url);
     if (path === "/api/drinks" && method === "POST") return logDrink(p, req);
     if (path === "/api/drinks/undo" && method === "POST") {
@@ -291,7 +324,9 @@ export function createWebApp(opts: WebAppOptions) {
       return services.drinks.delete(p.id, Number(one[1])) ? json({ ok: true }) : fail(404, "not_found");
     }
     return fail(404, "not_found");
-  };
+  }
+
+  return Object.assign(handle, { close: () => hub.close(), viewers: () => hub.viewers });
 }
 
 export type WebApp = ReturnType<typeof createWebApp>;

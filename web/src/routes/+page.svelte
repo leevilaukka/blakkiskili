@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import type { Dashboard } from "../../../shared/api.ts";
-  import { api, errorText } from "#lib/api.ts";
+  import { api, ApiError, errorText } from "#lib/api.ts";
+  import { session } from "#lib/session.svelte.ts";
   import Chart from "#lib/Chart.svelte";
   import { clock, dayClock, decimal1, permille } from "#lib/format.ts";
 
@@ -20,13 +21,34 @@
 
   onMount(() => {
     load();
-    // The estimate falls with the clock, so redraw even when nothing was logged.
-    const timer = setInterval(load, 15_000);
-    const visible = () => document.visibilityState === "visible" && load();
-    document.addEventListener("visibilitychange", visible);
+    // The server pushes a fresh dashboard whenever something changes (a drink from the bot or
+    // another tab) and every 15 s as the estimate falls with the clock. If nothing arrives for a
+    // while (a proxy buffering the stream, an old browser), fall back to asking.
+    let lastUpdate = Date.now();
+    const source = new EventSource("/api/events");
+    source.addEventListener("update", (e) => {
+      dash = JSON.parse((e as MessageEvent).data);
+      error = "";
+      lastUpdate = Date.now();
+    });
+    source.addEventListener("end", () => source.close());
+    source.onerror = async () => {
+      // The browser reconnects by itself; only check whether the session is the reason.
+      try {
+        await api.me();
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) {
+          source.close();
+          session.me = null;
+        }
+      }
+    };
+    const fallback = setInterval(() => {
+      if (Date.now() - lastUpdate > 45_000) load();
+    }, 15_000);
     return () => {
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", visible);
+      source.close();
+      clearInterval(fallback);
     };
   });
 

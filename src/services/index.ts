@@ -18,6 +18,7 @@ import { Products } from "./products.ts";
 import { Identities } from "./identities.ts";
 import { Barcodes } from "./barcodes.ts";
 import { WebSessions } from "./websessions.ts";
+import { ChangeBus } from "./changebus.ts";
 
 export interface Deps {
   db: Database;
@@ -34,10 +35,11 @@ export interface ServiceOptions {
 }
 
 export function createServices(deps: Deps, opts: ServiceOptions = {}) {
+  const bus = new ChangeBus();
   const identities = new Identities(deps);
-  const accounts = new Accounts(deps, identities);
-  const drinks = new Drinks(deps, accounts);
-  const groups = new Groups(deps);
+  const accounts = new Accounts(deps, identities, bus);
+  const drinks = new Drinks(deps, accounts, bus);
+  const groups = new Groups(deps, bus);
   const stats = new Stats(deps);
   const importer = new Importer(deps, accounts, identities);
   const pending = new Pending(deps);
@@ -46,7 +48,7 @@ export function createServices(deps: Deps, opts: ServiceOptions = {}) {
   const products = opts.products ?? new Products();
   const barcodes = opts.barcodes ?? new Barcodes();
   const webSessions = new WebSessions(deps);
-  return { identities, accounts, drinks, groups, stats, importer, pending, inactivity, announcements, products, barcodes, webSessions, deps };
+  return { identities, accounts, drinks, groups, stats, importer, pending, inactivity, announcements, products, barcodes, webSessions, bus, deps };
 }
 
 export type Services = ReturnType<typeof createServices>;

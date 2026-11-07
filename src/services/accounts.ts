@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { Gender } from "../lib/alcomath.ts";
 import { legacyHash } from "../lib/ids.ts";
 import { toCsv } from "../lib/csv.ts";
+import { ChangeBus } from "./changebus.ts";
 import type { Deps } from "./index.ts";
 import type { Identities, IdentityRef } from "./identities.ts";
 
@@ -59,6 +60,7 @@ export class Accounts {
   constructor(
     private readonly deps: Deps,
     private readonly identities: Identities,
+    private readonly bus = new ChangeBus(),
   ) {}
 
   private toProfile(row: UserRow): Profile {
@@ -151,18 +153,22 @@ export class Accounts {
 
   updateWeight(userId: string, weight: number) {
     this.deps.db.query("UPDATE users SET weight = ? WHERE id = ?").run(weight, userId);
+    this.bus.emit({ accountId: userId });
   }
 
   updateHeight(userId: string, height: number) {
     this.deps.db.query("UPDATE users SET height = ? WHERE id = ?").run(height, userId);
+    this.bus.emit({ accountId: userId });
   }
 
   updateGender(userId: string, gender: Gender) {
     this.deps.db.query("UPDATE users SET gender = ? WHERE id = ?").run(gender, userId);
+    this.bus.emit({ accountId: userId });
   }
 
   updateChartName(userId: string, chartName: ChartName) {
     this.deps.db.query("UPDATE users SET chart_name = ? WHERE id = ?").run(chartName, userId);
+    this.bus.emit({ accountId: userId });
   }
 
   updateName(userId: string, name: string, fullName?: string) {
@@ -170,6 +176,7 @@ export class Accounts {
     this.deps.db
       .query("UPDATE users SET name_enc = ?, full_name_enc = coalesce(?, full_name_enc) WHERE id = ?")
       .run(enc(name), fullName ? enc(fullName) : null, userId);
+    this.bus.emit({ accountId: userId });
   }
 
   /** Deletes the user and, through ON DELETE CASCADE, all drinks, memberships and logins. */
@@ -180,6 +187,7 @@ export class Accounts {
         .run(userId);
       this.deps.db.query("DELETE FROM users WHERE id = ?").run(userId);
     })();
+    this.bus.emit({ accountId: userId });
   }
 
   /**

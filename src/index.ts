@@ -105,7 +105,7 @@ if (config.web.enabled) {
 let runner: RunnerHandle | undefined;
 const shutdown = async () => {
   stopJobs();
-  await web?.stop();
+  await web?.shutdown();
   // Lets updates that are being handled finish before the database closes
   await (runner?.isRunning() ? runner.stop() : bot.stop()).catch(() => {});
   db.close();

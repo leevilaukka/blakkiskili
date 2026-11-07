@@ -1,6 +1,7 @@
 import { calculateEbac, type Ebac } from "../lib/alcomath.ts";
 import { DAY_MS, HOUR_MS } from "../lib/units.ts";
 import type { Accounts, Profile } from "./accounts.ts";
+import { ChangeBus } from "./changebus.ts";
 import type { Deps } from "./index.ts";
 
 export interface Drink {
@@ -54,6 +55,7 @@ export class Drinks {
   constructor(
     private readonly deps: Deps,
     private readonly accounts: Accounts,
+    private readonly bus = new ChangeBus(),
   ) {}
 
   add(
@@ -71,7 +73,10 @@ export class Drinks {
     // would hit the natural-key constraint; nudge it by a millisecond instead.
     for (let t = opts.at ?? this.deps.now(); ; t += 1) {
       const row = insert.get(userId, mg, description, t, opts.productId ?? null, kcal) as DrinkRow | null;
-      if (row) return toDrink(row);
+      if (row) {
+        this.bus.emit({ accountId: userId });
+        return toDrink(row);
+      }
     }
   }
 
@@ -104,13 +109,18 @@ export class Drinks {
   /** Deletes the most recent drink. Returns it, or null if there was none. */
   undoLast(userId: string): Drink | null {
     const last = this.last(userId);
-    if (last) this.deps.db.query("DELETE FROM drinks WHERE id = ?").run(last.id);
+    if (last) {
+      this.deps.db.query("DELETE FROM drinks WHERE id = ?").run(last.id);
+      this.bus.emit({ accountId: userId });
+    }
     return last;
   }
 
   /** Deletes one of the user's drinks by id. False if it doesn't exist or belongs to someone else. */
   delete(userId: string, drinkId: number): boolean {
-    return this.deps.db.query("DELETE FROM drinks WHERE user_id = ? AND id = ?").run(userId, drinkId).changes > 0;
+    const deleted = this.deps.db.query("DELETE FROM drinks WHERE user_id = ? AND id = ?").run(userId, drinkId).changes > 0;
+    if (deleted) this.bus.emit({ accountId: userId });
+    return deleted;
   }
 
   /** Drinks since `sinceMs`, ascending. */

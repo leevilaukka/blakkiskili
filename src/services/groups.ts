@@ -2,6 +2,7 @@ import { calculateEbac, type BodyProfile, type DrinkSample, type Gender } from "
 import { legacyHash } from "../lib/ids.ts";
 import { HOUR_MS, STANDARD_DRINK_GRAMS } from "../lib/units.ts";
 import { EBAC_WINDOW_MS } from "./drinks.ts";
+import { ChangeBus } from "./changebus.ts";
 import type { Deps } from "./index.ts";
 import type { ChartName } from "./accounts.ts";
 
@@ -25,7 +26,10 @@ export interface MemberHistory {
 }
 
 export class Groups {
-  constructor(private readonly deps: Deps) {}
+  constructor(
+    private readonly deps: Deps,
+    private readonly bus = new ChangeBus(),
+  ) {}
 
   private ensureGroup(groupId: string) {
     this.deps.db
@@ -39,6 +43,7 @@ export class Groups {
     this.deps.db
       .query("INSERT OR IGNORE INTO group_members (user_id, group_id, joined_at) VALUES (?, ?, ?)")
       .run(userId, groupId, this.deps.now());
+    this.bus.emit({ accountId: userId, groupId });
   }
 
   leave(userId: string, chatId: number) {
@@ -48,6 +53,7 @@ export class Groups {
     this.deps.db
       .query("DELETE FROM legacy_group_memberships WHERE user_id = ? AND legacy_group_id = ?")
       .run(userId, legacyHash(chatId));
+    this.bus.emit({ accountId: userId, groupId });
   }
 
   isMember(userId: string, chatId: number): boolean {

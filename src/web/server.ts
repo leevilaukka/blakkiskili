@@ -33,6 +33,8 @@ export function startWebServer({ config, services, botUsername }: WebServerOptio
       const { pathname } = new URL(req.url);
       if (pathname === "/healthz") return new Response("ok");
       const ip = req.headers.get("cf-connecting-ip") ?? srv.requestIP(req)?.address ?? "unknown";
+      // Live streams stay open for hours; Bun would close them after its idle timeout.
+      if (pathname === "/api/events") srv.timeout(req, 0);
       try {
         if (pathname.startsWith("/api/")) return withSecurityHeaders(await app(req, ip));
         if (req.method !== "GET" && req.method !== "HEAD") return withSecurityHeaders(new Response("Method not allowed", { status: 405 }));
@@ -44,5 +46,10 @@ export function startWebServer({ config, services, botUsername }: WebServerOptio
     },
   });
   console.log(`Web: listening on :${server.port} (${config.web.origin})`);
-  return server;
+  return Object.assign(server, {
+    async shutdown() {
+      app.close();
+      await server.stop(true); // true: also closes the open event streams
+    },
+  });
 }
