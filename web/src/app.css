@@ -1,17 +1,50 @@
-/* Tokens by role. Light values are the bot chart's; dark values are the dataviz palette's dark
-   steps, validated against #1a1a19 (see Chart.svelte). Colour never carries meaning alone. */
+/* The look follows Alkometriikka (kili.alkometriikka.fi is its subdomain): its four brand reds,
+   gray (light) and zinc (dark) neutrals, Inter, 4px corners and bordered buttons with a 1px
+   shadow. Chart series colours are the dataviz palette (light steps validated on near-white, dark
+   steps on #1a1a19, which zinc-900 matches); see Chart.svelte. Colour never carries meaning alone. */
+
+@font-face {
+  font-family: "Inter";
+  font-weight: 500;
+  font-display: swap;
+  /* Alkometriikka's subset: Latin and its extensions plus the punctuation used (‰ € · … – included) */
+  src: url("./lib/assets/fonts/Inter_24pt-Medium.subset.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-weight: 700;
+  font-display: swap;
+  src: url("./lib/assets/fonts/Inter_24pt-Bold.subset.woff2") format("woff2");
+}
+
 :root {
   color-scheme: light;
-  --surface-1: #fcfcfb;
-  --surface-2: #f0efec;
-  --border: #e1e0d9;
-  --axis: #c3c2b7;
-  --text-primary: #0b0b0b;
-  --text-secondary: #52514e;
-  --text-muted: #6f6d67;
-  --accent: #2a78d6;
-  --accent-ink: #ffffff;
-  --danger: #b3261e;
+  --brand-1: #e51b15;
+  --brand-2: #bf1616;
+  --brand-3: #960f0f;
+  --brand-4: #52000a;
+
+  --surface-1: #ffffff; /* page, cards, chart */
+  --surface-2: #f3f4f6; /* panels, hover, forecast wash */
+  --raised: #ffffff; /* buttons and inputs */
+  --border: #d1d5db;
+  --border-soft: #e5e7eb;
+  --axis: #9ca3af;
+  --text-primary: #09090b;
+  --text-secondary: #4b5563;
+  --text-muted: #6b7280;
+  --wordmark: var(--brand-3);
+  --link: var(--brand-2);
+  --accent: var(--brand-1); /* focus ring */
+  --positive: #15803d;
+  --positive-hover: #166534;
+  --danger: #bf1616;
+  --danger-bg: #e51b15;
+  --danger-hover: #b91c1c;
+  --ok-bg: #dcfce7;
+  --ok-border: #86efac;
+  --ok-text: #14532d;
+  --shadow: 0 1px 0 rgb(0 0 0 / 10%);
 
   --series-1: #2a78d6;
   --series-2: #eb6834;
@@ -28,16 +61,22 @@
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) {
     color-scheme: dark;
-    --surface-1: #1a1a19;
-    --surface-2: #262625;
-    --border: #353533;
-    --axis: #4a4946;
-    --text-primary: #f0efec;
-    --text-secondary: #c3c2b7;
-    --text-muted: #9b9990;
-    --accent: #3987e5;
-    --accent-ink: #0b0b0b;
-    --danger: #f2877f;
+    --surface-1: #18181b;
+    --surface-2: #09090b;
+    --raised: #27272a;
+    --border: #3f3f46;
+    --border-soft: #27272a;
+    --axis: #52525b;
+    --text-primary: #e4e4e7;
+    --text-secondary: #a1a1aa;
+    --text-muted: #8f8f99;
+    --wordmark: #ffffff;
+    --link: #f87171;
+    --danger: #f87171;
+    --ok-bg: #052e16;
+    --ok-border: #166534;
+    --ok-text: #bbf7d0;
+    --shadow: 0 1px 0 rgb(0 0 0 / 30%);
 
     --series-1: #3987e5;
     --series-2: #d95926;
@@ -52,16 +91,22 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --surface-1: #1a1a19;
-  --surface-2: #262625;
-  --border: #353533;
-  --axis: #4a4946;
-  --text-primary: #f0efec;
-  --text-secondary: #c3c2b7;
-  --text-muted: #9b9990;
-  --accent: #3987e5;
-  --accent-ink: #0b0b0b;
-  --danger: #f2877f;
+  --surface-1: #18181b;
+  --surface-2: #09090b;
+  --raised: #27272a;
+  --border: #3f3f46;
+  --border-soft: #27272a;
+  --axis: #52525b;
+  --text-primary: #e4e4e7;
+  --text-secondary: #a1a1aa;
+  --text-muted: #8f8f99;
+  --wordmark: #ffffff;
+  --link: #f87171;
+  --danger: #f87171;
+  --ok-bg: #052e16;
+  --ok-border: #166534;
+  --ok-text: #bbf7d0;
+  --shadow: 0 1px 0 rgb(0 0 0 / 30%);
 
   --series-1: #3987e5;
   --series-2: #d95926;
@@ -80,10 +125,12 @@
 html {
   background: var(--surface-1);
   color: var(--text-primary);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  font-size: 16px;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-weight: 500;
+  font-size: 14px;
   line-height: 1.45;
   -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
@@ -92,8 +139,16 @@ body {
   background: var(--surface-1);
 }
 
+/* The event screen's embed view for OBS overlays (/screen?bg=transparent) */
+:root[data-bg="transparent"],
+:root[data-bg="transparent"] body {
+  background: transparent;
+}
+
 #app {
-  display: contents;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
 }
 
 h1,
@@ -101,10 +156,23 @@ h2,
 h3 {
   line-height: 1.2;
   margin: 0;
+  font-weight: 700;
+}
+h2 {
+  font-size: 1.25rem;
+}
+
+p {
+  margin: 0.5rem 0;
 }
 
 a {
-  color: var(--accent);
+  color: var(--link);
+}
+
+strong,
+b {
+  font-weight: 700;
 }
 
 button,
@@ -119,7 +187,7 @@ button {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 1px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -132,15 +200,20 @@ button {
   white-space: nowrap;
 }
 
+/* ---- layout ---- */
+
 .page {
-  max-width: 72rem;
+  width: 100%;
+  max-width: 76rem;
   margin: 0 auto;
-  padding: 1rem 1.25rem 4rem;
+  padding: 1.25rem 1rem 3rem;
+  flex: 1;
 }
 
-/* Forms and lists stay narrow, left-aligned under the header. */
+/* Forms and lists: one narrow column, centred like Alkometriikka's tool pages. */
 .col {
-  max-width: 44rem;
+  max-width: 46rem;
+  margin: 0 auto;
 }
 
 /* Two columns from desktop width: the main thing (chart) and the lists around it. */
@@ -151,6 +224,8 @@ button {
 }
 .cols > * {
   min-width: 0;
+  display: grid;
+  gap: 1rem;
 }
 @media (min-width: 62rem) {
   .cols {
@@ -159,43 +234,195 @@ button {
   }
 }
 
+/* Page title: breadcrumb, h1 and a muted lead, as on Alkometriikka's pages. */
+.head {
+  margin-bottom: 1.25rem;
+}
+.head h1 {
+  font-size: 2rem;
+  letter-spacing: -0.01em;
+}
+.head .lead {
+  margin: 0.4rem 0 0;
+  color: var(--text-secondary);
+  font-size: 1.07rem;
+}
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0 0 0.9rem;
+  color: var(--text-secondary);
+  font-size: 1rem;
+}
+.crumbs a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: inherit;
+  text-decoration: none;
+}
+.crumbs a:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+.crumbs [aria-current] {
+  color: var(--text-primary);
+}
+
+/* ---- surfaces ---- */
+
 .card {
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 1rem;
+  border-radius: 4px;
+  padding: 1.25rem;
   background: var(--surface-1);
+}
+/* A form or settings block: grey panel, white inputs. */
+.card.panel {
+  background: var(--surface-2);
+}
+.card > h2:first-child {
+  margin-bottom: 0.75rem;
+}
+.card > h2 + .muted {
+  margin-top: -0.4rem;
+}
+
+/* Number tiles: small label over a big value. */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: 0.6rem;
+}
+.stat {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.75rem 1rem;
+  background: var(--surface-1);
+}
+.stat .k {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 0.93rem;
+}
+.stat .v {
+  display: block;
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+.stat .v small {
+  font-size: 0.6em;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.stat .sub {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.86rem;
 }
 
 .muted {
   color: var(--text-secondary);
 }
 
+.error {
+  color: var(--danger);
+}
+
+/* A confirmation that something happened (drink added). */
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--ok-border);
+  border-radius: 4px;
+  background: var(--ok-bg);
+  color: var(--ok-text);
+}
+.notice a {
+  color: inherit;
+  font-weight: 700;
+}
+
+/* ---- controls ---- */
+
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
   border: 1px solid var(--border);
-  background: var(--surface-2);
-  border-radius: 10px;
-  padding: 0.55rem 0.9rem;
-  min-height: 44px;
+  background: var(--raised);
+  color: var(--text-primary);
+  border-radius: 4px;
+  padding: 0.45rem 0.8rem;
+  min-height: 38px;
+  box-shadow: var(--shadow);
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  transition: background-color 0.15s, border-color 0.15s;
 }
-
 .btn:hover {
-  border-color: var(--axis);
+  background: var(--surface-2);
 }
-
+.btn[aria-current="page"] {
+  background: var(--surface-2);
+}
 .btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
-  font-weight: 600;
+  background: var(--positive);
+  border-color: var(--positive);
+  color: #fff;
+  font-weight: 700;
 }
-
+.btn.primary:hover {
+  background: var(--positive-hover);
+  border-color: var(--positive-hover);
+}
+.btn.danger {
+  background: var(--danger-bg);
+  border-color: var(--danger-bg);
+  color: #fff;
+}
+.btn.danger:hover {
+  background: var(--danger-hover);
+  border-color: var(--danger-hover);
+}
+.btn.ghost {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--text-secondary);
+}
+.btn.ghost:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+.btn.small {
+  min-height: 32px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.93rem;
+}
+.btn.icon {
+  padding-inline: 0.5rem;
+}
 .btn:disabled {
   opacity: 0.55;
   cursor: default;
 }
-
-.error {
-  color: var(--danger);
+/* Fingers need bigger targets than the mouse (Alkometriikka's pointer-coarse rule). */
+@media (pointer: coarse) {
+  .btn {
+    min-height: 44px;
+  }
+  .btn.small {
+    min-height: 40px;
+  }
 }
 
 input[type="text"],
@@ -203,11 +430,49 @@ input[type="number"],
 input[type="search"],
 select {
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0.55rem 0.7rem;
-  background: var(--surface-1);
-  min-height: 44px;
+  border-radius: 4px;
+  padding: 0.45rem 0.65rem;
+  background: var(--raised);
+  min-height: 38px;
   width: 100%;
+  box-shadow: var(--shadow);
+}
+input::placeholder {
+  color: var(--text-muted);
+}
+input[type="radio"],
+input[type="checkbox"] {
+  accent-color: var(--brand-2);
+  width: 1.1rem;
+  height: 1.1rem;
+  margin: 0;
+}
+/* iOS zooms into inputs with text under 16px. */
+@media (pointer: coarse) {
+  input[type="text"],
+  input[type="number"],
+  input[type="search"],
+  select {
+    font-size: 16px;
+    min-height: 44px;
+  }
+}
+
+/* A label above its input. */
+.field {
+  display: grid;
+  gap: 0.3rem;
+  color: var(--text-primary);
+}
+
+kbd,
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+  padding: 0.05rem 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-2);
 }
 
 /* SvelteKit's route announcer hides itself with an inline style attribute, which our strict
@@ -221,4 +486,10 @@ select {
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.01ms !important;
+  }
 }

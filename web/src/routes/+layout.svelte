@@ -4,6 +4,7 @@
   import { page } from "$app/state";
   import { onMount } from "svelte";
   import { api, ApiError } from "#lib/api.ts";
+  import Icon, { type IconName } from "#lib/Icon.svelte";
   import { session } from "#lib/session.svelte.ts";
 
   let { children } = $props();
@@ -11,6 +12,14 @@
   const onLogin = $derived(page.url.pathname === "/login");
   // Event screens are opened by a link and need no account.
   const onScreen = $derived(page.url.pathname === "/screen");
+
+  // The logo is the way home, as on Alkometriikka; these are the header buttons after it.
+  const nav: { href: string; label: string; icon: IconName }[] = [
+    { href: "/log", label: "Juo", icon: "plus" },
+    { href: "/groups", label: "Ryhmät", icon: "users" },
+    { href: "/settings", label: "Asetukset", icon: "settings" },
+  ];
+  const current = (href: string) => page.url.pathname === href || page.url.pathname.startsWith(`${href}/`);
 
   onMount(async () => {
     if (onScreen) {
@@ -41,17 +50,21 @@
 <svelte:head><title>Bläkkiskili</title></svelte:head>
 
 {#if session.me && !onScreen}
-  <header>
-   <div class="bar">
-    <a class="brand" href="/">Bläkkiskili</a>
+  <header class="top">
+    <a class="brand" href="/" aria-label="Bläkkiskili, etusivu">
+      <img src="/kili-head-96.jpg" alt="" width="40" height="40" />
+      <span class="word">Bläkkiskili</span>
+    </a>
     <nav aria-label="Päävalikko">
-      <a href="/" aria-current={page.url.pathname === "/" ? "page" : undefined}>Etusivu</a>
-      <a href="/log" aria-current={page.url.pathname === "/log" ? "page" : undefined}>Juo</a>
-      <a href="/groups" aria-current={page.url.pathname.startsWith("/groups") ? "page" : undefined}>Ryhmät</a>
-      <a href="/settings" aria-current={page.url.pathname === "/settings" ? "page" : undefined}>Asetukset</a>
+      {#each nav as item (item.href)}
+        <a class="btn" href={item.href} aria-current={current(item.href) ? "page" : undefined} aria-label={item.label}>
+          <span class="label">{item.label}</span><Icon name={item.icon} />
+        </a>
+      {/each}
+      <button class="btn" onclick={logout} aria-label="Kirjaudu ulos" title="Kirjaudu ulos">
+        <Icon name="logout" />
+      </button>
     </nav>
-    <button class="link" onclick={logout}>Kirjaudu ulos</button>
-   </div>
   </header>
 {/if}
 
@@ -63,60 +76,88 @@
   {@render children()}
 {/if}
 
+{#if !onScreen && session.ready}
+  <footer class="foot">
+    <span>Promillet ovat laskennallisia arvioita, eivät mittaustulos.</span>
+    <span>Tuotetiedot: <a href="https://alkometriikka.fi" rel="noopener">Alkometriikka</a></span>
+  </footer>
+{/if}
+
 <style>
-  header {
-    border-bottom: 1px solid var(--border);
-  }
-  /* the same width and side padding as .page, so the logo lines up with the content */
-  .bar {
+  .top {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    max-width: 72rem;
-    margin: 0 auto;
-    padding: 0.6rem 1.25rem;
-    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-1);
   }
   .brand {
-    font-weight: 700;
-    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-shrink: 0;
     text-decoration: none;
+    margin-right: auto;
+  }
+  .brand img {
+    display: block;
+    width: 40px;
+    height: 40px;
+    border-radius: 6px;
+  }
+  .word {
+    color: var(--wordmark);
+    font-size: 1.75rem;
+    line-height: 1;
+    letter-spacing: -0.01em;
   }
   nav {
     display: flex;
-    gap: 0.25rem;
-    flex: 1;
+    align-items: center;
+    gap: 0.5rem;
   }
-  nav a {
-    padding: 0.5rem 0.7rem;
-    border-radius: 8px;
-    color: var(--text-secondary);
-    text-decoration: none;
+  nav .btn {
+    gap: 0.45rem;
+    padding-inline: 0.6rem;
   }
-  nav a[aria-current="page"] {
-    background: var(--surface-2);
-    color: var(--text-primary);
-    font-weight: 600;
+  nav .btn :global(.icon) {
+    font-size: 1.3rem;
+    width: 1.3rem;
+    height: 1.3rem;
   }
-  /* phones: brand and sign-out on one row, the menu under them */
+  /* phones: icons only, and the wordmark only where it still fits beside them */
   @media (max-width: 40rem) {
-    .bar {
-      gap: 0.25rem 1rem;
-    }
-    .link {
-      order: 2;
-      margin-left: auto;
+    .label {
+      display: none;
     }
     nav {
-      order: 3;
-      flex-basis: 100%;
+      gap: 0.4rem;
+    }
+    .word {
+      font-size: 1.45rem;
     }
   }
-  .link {
-    background: none;
-    border: 0;
-    color: var(--text-secondary);
-    padding: 0.5rem;
-    text-decoration: underline;
+  @media (max-width: 21rem) {
+    .word {
+      display: none;
+    }
+  }
+
+  .foot {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.25rem 1.5rem;
+    width: calc(100% - 2rem);
+    max-width: 74rem;
+    margin: 0 auto;
+    padding: 1.25rem 0 1.5rem;
+    border-top: 1px solid var(--border-soft);
+    color: var(--text-muted);
+    font-size: 0.86rem;
+  }
+  .foot a {
+    color: inherit;
   }
 </style>

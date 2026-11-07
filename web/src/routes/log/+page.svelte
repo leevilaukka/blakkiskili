@@ -3,6 +3,7 @@
   import type { Config, LogDrinkRequest, ProductItem } from "../../../../shared/api.ts";
   import { api, errorText } from "#lib/api.ts";
   import { decimal1 } from "#lib/format.ts";
+  import Icon from "#lib/Icon.svelte";
 
   let config = $state<Config | null>(null);
   let products = $state<ProductItem[]>([]);
@@ -13,9 +14,11 @@
   let cl = $state("");
   let percent = $state("");
   let timer: ReturnType<typeof setTimeout> | undefined;
+  /** Products whose photo failed (none at Alko, or offline): they keep the emoji. */
+  let noPhoto = $state<Record<string, true>>({});
 
   const categories = [
-    { id: "miedot", title: "Oluet ja siiderit" },
+    { id: "miedot", title: "Miedot" },
     { id: "viinit", title: "Viinit" },
     { id: "shotit", title: "Shotit" },
   ] as const;
@@ -87,34 +90,53 @@
 
 <main class="page">
 <div class="col">
-  <h1>Lisää juoma</h1>
+  <div class="head">
+    <h1>Lisää juoma</h1>
+    <p class="lead">Hae Alkon valikoimasta, valitse valmis juoma tai kirjoita oma. Juoma merkitään tähän hetkeen.</p>
+  </div>
+
+  <div class="actions">
+    <button class="btn" disabled={busy} onclick={() => log({ kind: "repeat" })}><Icon name="repeat" /> Toista viimeisin</button>
+    <button class="btn" disabled={busy} onclick={undo}><Icon name="undo" /> Kumoa viimeisin</button>
+  </div>
 
   <div class="status" aria-live="polite">
-    {#if message}<p class="ok">{message} · <a href="/">Näytä etusivu</a></p>{/if}
+    {#if message}<p class="notice"><Icon name="check" /> <span>{message} · <a href="/">Näytä etusivu</a></span></p>{/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
   </div>
 
-  <div class="row">
-    <button class="btn" disabled={busy} onclick={() => log({ kind: "repeat" })}>Toista viimeisin</button>
-    <button class="btn" disabled={busy} onclick={undo}>Kumoa viimeisin</button>
-  </div>
-
   {#if config?.catalogue}
-    <section class="card">
+    <section class="card panel">
       <h2>Hae Alkon tuotteista</h2>
-      <label class="sr-only" for="q">Hae juomaa</label>
-      <input id="q" type="search" placeholder="Esim. karhu, jaloviina, prosecco" bind:value={query} oninput={onInput} autocomplete="off" />
+      <div class="search">
+        <Icon name="search" />
+        <label class="sr-only" for="q">Hae juomaa</label>
+        <input id="q" type="search" placeholder="Esim. karhu, jaloviina, prosecco" bind:value={query} oninput={onInput} autocomplete="off" />
+      </div>
       {#if products.length}
         <ul class="products">
           {#each products as p (p.id)}
             <li>
-              <p class="pname"><span aria-hidden="true">{p.emoji}</span> {p.name} <span class="muted">{p.abv.toString().replace(".", ",")} %</span></p>
+              <!-- Through our server, so the browser never contacts Alko (src/web/photos.ts) -->
+              <div class="thumb" aria-hidden="true">
+                <span class="emoji">{p.emoji}</span>
+                {#if !noPhoto[p.id]}
+                  <img src="/api/products/{encodeURIComponent(p.id)}/photo" alt="" loading="lazy" decoding="async" width="160" height="192" onerror={() => (noPhoto[p.id] = true)} />
+                {/if}
+              </div>
+              <div class="info">
+              <p class="pname">
+                <span class="title">{p.name}</span>
+                <span class="abv">{p.abv.toString().replace(".", ",")} %</span>
+              </p>
+              {#if p.maker}<p class="maker">{p.maker}</p>{/if}
               <div class="servings">
                 {#each p.servings as s (s.key)}
-                  <button class="btn" disabled={busy} onclick={() => log({ kind: "product", productId: p.id, serving: s.key })}>
-                    {s.label} <span class="muted">· {decimal1(s.standardDrinks)} ann.</span>
+                  <button class="btn small" disabled={busy} onclick={() => log({ kind: "product", productId: p.id, serving: s.key })}>
+                    {s.label} <span class="muted">{decimal1(s.standardDrinks)} ann.</span>
                   </button>
                 {/each}
+              </div>
               </div>
             </li>
           {/each}
@@ -127,12 +149,12 @@
 
   {#if config}
     {#each categories as cat}
-      <section class="card">
+      <section class="card panel">
         <h2>{cat.title}</h2>
-        <div class="servings">
+        <div class="presets">
           {#each config.presets.filter((p) => p.category === cat.id) as p (p.id)}
-            <button class="btn" disabled={busy} onclick={() => log({ kind: "preset", id: p.id })}>
-              {p.name} <span class="muted">· {decimal1(p.standardDrinks)} ann.</span>
+            <button class="btn preset" disabled={busy} onclick={() => log({ kind: "preset", id: p.id })}>
+              <span>{p.name}</span> <span class="muted">{decimal1(p.standardDrinks)} ann.</span>
             </button>
           {/each}
         </div>
@@ -140,68 +162,140 @@
     {/each}
   {/if}
 
-  <section class="card">
+  <section class="card panel">
     <h2>Oma juoma</h2>
     <form onsubmit={custom}>
-      <div class="fields">
-        <label>Määrä (cl)<input type="text" inputmode="decimal" bind:value={cl} placeholder="33" required /></label>
-        <label>Prosentti (%)<input type="text" inputmode="decimal" bind:value={percent} placeholder="5,1" required /></label>
-      </div>
-      <button class="btn primary" disabled={busy} type="submit">Lisää</button>
+      <label class="field">Määrä (cl)<input type="text" inputmode="decimal" bind:value={cl} placeholder="33" required /></label>
+      <label class="field">Alkoholia (%)<input type="text" inputmode="decimal" bind:value={percent} placeholder="5,1" required /></label>
+      <button class="btn primary" disabled={busy} type="submit"><Icon name="plus" /> Lisää</button>
     </form>
   </section>
 </div>
 </main>
 
 <style>
-  h1 {
-    font-size: 1.4rem;
-    margin-bottom: 0.5rem;
-  }
-  h2 {
-    font-size: 1.05rem;
-    margin-bottom: 0.6rem;
-  }
-  .status {
-    min-height: 2.5rem;
-  }
-  .status p {
-    margin: 0.25rem 0;
-  }
-  .ok {
-    color: var(--text-primary);
-  }
-  .row,
-  .servings {
+  .actions {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
   }
-  .card {
+  .status {
+    min-height: 1rem;
+    margin: 0.75rem 0;
+  }
+  .status p {
+    margin: 0;
+  }
+  .card + .card {
     margin-top: 1rem;
+  }
+  .search {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .search > :global(.icon) {
+    position: absolute;
+    left: 0.7rem;
+    color: var(--text-muted);
+    pointer-events: none;
+  }
+  .search input {
+    padding-left: 2.2rem;
   }
   .products {
     list-style: none;
     margin: 0.75rem 0 0;
     padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--surface-1);
   }
   .products li {
-    padding: 0.6rem 0;
-    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 0.9rem;
+    padding: 0.75rem 0.9rem;
+    border-top: 1px solid var(--border-soft);
+  }
+  /* Alko's photos are white-backed bottles; the box stays white in dark mode too, like Alkometriikka's */
+  .thumb {
+    position: relative;
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 3.5rem;
+    height: 4.2rem;
+    border-radius: 4px;
+    background: #fff;
+    overflow: hidden;
+  }
+  .thumb .emoji {
+    font-size: 1.6rem;
+  }
+  .thumb img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #fff;
+  }
+  .info {
+    flex: 1;
+    min-width: 0;
+  }
+  .maker {
+    margin: -0.35rem 0 0.5rem;
+    color: var(--text-secondary);
+    font-size: 0.93rem;
+  }
+  .products li:first-child {
+    border-top: 0;
   }
   .pname {
-    margin: 0 0 0.4rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    margin: 0 0 0.5rem;
   }
-  .fields {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.75rem;
-    margin-bottom: 0.75rem;
+  .title {
+    font-weight: 700;
   }
-  label {
-    display: grid;
-    gap: 0.25rem;
-    font-size: 0.9rem;
+  .abv {
     color: var(--text-secondary);
+    white-space: nowrap;
+  }
+  .servings {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  .presets {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+    gap: 0.5rem;
+  }
+  .preset {
+    justify-content: space-between;
+    white-space: normal;
+    text-align: left;
+  }
+  .preset .muted {
+    white-space: nowrap;
+    font-size: 0.93rem;
+  }
+  form {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 0.75rem;
+    align-items: end;
+  }
+  @media (max-width: 30rem) {
+    form {
+      grid-template-columns: 1fr 1fr;
+    }
+    form .btn {
+      grid-column: 1 / -1;
+    }
   }
 </style>

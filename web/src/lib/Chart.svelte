@@ -9,7 +9,22 @@
   import type { ChartData } from "../../../shared/api.ts";
   import { clock, permille } from "./format.ts";
 
-  let { data, big = false }: { data: ChartData; big?: boolean } = $props();
+  let {
+    data,
+    big = false,
+    legend = true,
+    fill = false,
+    scale = 1,
+  }: {
+    data: ChartData;
+    big?: boolean;
+    /** The names-and-values list above the plot. */
+    legend?: boolean;
+    /** The plot takes the height its container gives it (the event screen's embed view). */
+    fill?: boolean;
+    /** Text, margins, lines and dots grow by this (the event screen on a big display). */
+    scale?: number;
+  } = $props();
 
   const HOUR = 3_600_000;
   const EPS = 0.005;
@@ -19,10 +34,19 @@
 
   let width = $state(640);
   let viewportHeight = $state(900);
+  let plotHeight = $state(0);
   const W = $derived(Math.max(width, 300));
-  // The big (event screen) chart fills what the window leaves below the heading and legend.
-  const H = $derived(big ? Math.min(Math.max(viewportHeight - 300, 300), 640) : Math.round(Math.min(Math.max(W * 0.5, 280), 460)));
-  const M = $derived({ top: 18, right: 16, bottom: 30, left: 44 });
+  // The big (event screen) chart fills what the window leaves below the heading and legend; a
+  // filling one is exactly as tall as its box.
+  const H = $derived(
+    fill
+      ? Math.max(Math.floor(plotHeight), 160)
+      : big
+        ? Math.min(Math.max(viewportHeight - 300, 300), 640)
+        : Math.round(Math.min(Math.max(W * 0.5, 280), 460)),
+  );
+  const k = $derived(scale);
+  const M = $derived({ top: 18 * k, right: 16 * k, bottom: 30 * k, left: 44 * k });
 
   const floorHour = (t: number) => t - (t % HOUR);
   const ceilHour = (t: number) => (t % HOUR === 0 ? t : floorHour(t) + HOUR);
@@ -51,7 +75,7 @@
 
   const hourTicks = $derived.by(() => {
     const spanH = (view.end - view.start) / HOUR;
-    const step = [1, 2, 3, 4, 6].find((s) => spanH / s <= (W - M.left - M.right) / 44) ?? 6;
+    const step = [1, 2, 3, 4, 6].find((s) => spanH / s <= (W - M.left - M.right) / (44 * k)) ?? 6;
     const out: { t: number; label: string }[] = [];
     for (let t = ceilHour(view.start); t <= view.end; t += HOUR) {
       const h = new Date(t).getHours();
@@ -93,16 +117,17 @@
       .map((d) => ({
         d,
         dotY: y(d.line.current),
-        y: y(d.line.current) - 10,
+        y: y(d.line.current) - 10 * k,
         text: lines.length === 1 ? `${permille(d.line.current)}‰` : `${truncate(d.line.name, 16)} ${permille(d.line.current)}‰`,
       }))
       .sort((a, b) => a.y - b.y);
-    for (let i = 1; i < items.length; i++) items[i]!.y = Math.max(items[i]!.y, items[i - 1]!.y + 17);
-    for (const it of items) it.y = Math.min(Math.max(it.y, M.top + 14), H - M.bottom - 4);
-    for (let i = items.length - 2; i >= 0; i--) items[i]!.y = Math.min(items[i]!.y, items[i + 1]!.y - 17);
+    const gap = 17 * k;
+    for (let i = 1; i < items.length; i++) items[i]!.y = Math.max(items[i]!.y, items[i - 1]!.y + gap);
+    for (const it of items) it.y = Math.min(Math.max(it.y, M.top + 14 * k), H - M.bottom - 4 * k);
+    for (let i = items.length - 2; i >= 0; i--) items[i]!.y = Math.min(items[i]!.y, items[i + 1]!.y - gap);
     const chars = Math.max(...items.map((i) => [...i.text].length));
-    const toRight = nowX + 10 + chars * 7.4 <= W - M.right;
-    return items.map((it) => ({ ...it, toRight, lx: toRight ? nowX + 10 : nowX - 10 }));
+    const toRight = nowX + 10 * k + chars * 7.4 * k <= W - M.right;
+    return items.map((it) => ({ ...it, toRight, lx: toRight ? nowX + 10 * k : nowX - 10 * k }));
   });
   const truncate = (s: string, n: number) => ([...s].length > n ? [...s].slice(0, n - 1).join("") + "…" : s);
 
@@ -143,8 +168,8 @@
 
 <svelte:window bind:innerHeight={viewportHeight} />
 
-<figure class="chart" class:big>
-  {#if lines.length >= 1}
+<figure class="chart" class:big class:fill style:--k={k}>
+  {#if legend && lines.length >= 1}
     <ul class="legend">
       {#each drawn as d (d.line.id)}
         <li>
@@ -158,7 +183,7 @@
     </ul>
   {/if}
 
-  <div class="plot" bind:clientWidth={width}>
+  <div class="plot" bind:clientWidth={width} bind:clientHeight={plotHeight}>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
     <svg
       viewBox="0 0 {W} {H}"
@@ -173,19 +198,19 @@
       onblur={() => (cursor = null)}
     >
       <rect class="wash" x={nowX} y={M.top} width={Math.max(0, W - M.right - nowX)} height={H - M.top - M.bottom} />
-      <text class="muted" x={W - M.right - 6} y={M.top + 16} text-anchor="end">ennuste</text>
+      <text class="muted" x={W - M.right - 6 * k} y={M.top + 16 * k} text-anchor="end">ennuste</text>
 
       {#each yTicks as v}
         <line class="grid" class:zero={v === 0} x1={M.left} x2={W - M.right} y1={y(v)} y2={y(v)} />
-        <text class="muted" x={M.left - 8} y={y(v) + 4} text-anchor="end">{permille(v)}</text>
+        <text class="muted" x={M.left - 8 * k} y={y(v) + 4 * k} text-anchor="end">{permille(v)}</text>
       {/each}
       {#each hourTicks as h}
         <line class="grid" x1={x(h.t)} x2={x(h.t)} y1={M.top} y2={H - M.bottom} />
-        <text class="muted" x={x(h.t)} y={H - M.bottom + 20} text-anchor="middle">{h.label}</text>
+        <text class="muted" x={x(h.t)} y={H - M.bottom + 20 * k} text-anchor="middle">{h.label}</text>
       {/each}
 
       <line class="nowline" x1={nowX} x2={nowX} y1={M.top} y2={H - M.bottom} />
-      <text class="secondary" x={nowX} y={M.top - 5} text-anchor="middle">nyt</text>
+      <text class="secondary" x={nowX} y={M.top - 5 * k} text-anchor="middle">nyt</text>
 
       {#each drawn as d (d.line.id)}
         {#if d.hasPast}<path class="line {d.cls}" d={d.past} />{/if}
@@ -195,18 +220,18 @@
       {#if cursorT !== null}
         <line class="cross" x1={x(cursorT)} x2={x(cursorT)} y1={M.top} y2={H - M.bottom} />
         {#each drawn as d (d.line.id)}
-          <circle class="dot {d.cls}" cx={x(cursorT)} cy={y(valueAt(d.line, cursorT))} r="4.5" />
+          <circle class="dot {d.cls}" cx={x(cursorT)} cy={y(valueAt(d.line, cursorT))} r={4.5 * k} />
         {/each}
       {:else}
         {#each drawn as d (d.line.id)}
-          <circle class="dot {d.cls}" cx={nowX} cy={y(d.line.current)} r="4.5" />
+          <circle class="dot {d.cls}" cx={nowX} cy={y(d.line.current)} r={4.5 * k} />
         {/each}
       {/if}
 
       {#if cursorT === null}
         {#each labels as l (l.d.line.id)}
-          {#if Math.abs(l.y - 4 - l.dotY) > 12}
-            <line class="leader" x1={nowX} y1={l.dotY} x2={l.lx + (l.toRight ? -2 : 2)} y2={l.y - 4} />
+          {#if Math.abs(l.y - 4 * k - l.dotY) > 12 * k}
+            <line class="leader" x1={nowX} y1={l.dotY} x2={l.lx + (l.toRight ? -2 : 2) * k} y2={l.y - 4 * k} />
           {/if}
           <text class="direct" x={l.lx} y={l.y} text-anchor={l.toRight ? "start" : "end"}>{l.text}</text>
         {/each}
@@ -248,6 +273,17 @@
   .chart {
     margin: 0;
   }
+  /* fill: the figure takes its container's height and the plot whatever the legend leaves */
+  .chart.fill {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  .chart.fill .plot {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
   .plot {
     position: relative;
   }
@@ -261,8 +297,9 @@
   svg:focus-visible {
     outline-offset: 4px;
   }
+  /* --k: the scale prop, for a big display */
   .big svg {
-    font-size: 15px;
+    font-size: calc(15px * var(--k, 1));
   }
 
   .grid {
@@ -296,7 +333,7 @@
   .line {
     fill: none;
     stroke: var(--c);
-    stroke-width: 2.5;
+    stroke-width: calc(2.5px * var(--k, 1));
     stroke-linejoin: round;
     stroke-linecap: round;
   }
@@ -306,7 +343,7 @@
   .dot {
     fill: var(--c);
     stroke: var(--surface-1);
-    stroke-width: 2;
+    stroke-width: calc(2px * var(--k, 1));
   }
   .leader {
     stroke: var(--text-muted);
@@ -322,7 +359,8 @@
     font-size: 13px;
   }
   .big .direct {
-    font-size: 17px;
+    font-size: calc(17px * var(--k, 1));
+    stroke-width: calc(4px * var(--k, 1));
   }
 
   .legend {
@@ -335,8 +373,15 @@
     font-size: 0.9rem;
   }
   .big .legend {
-    font-size: 1.2rem;
-    gap: 0.4rem 1.6rem;
+    font-size: calc(1.2rem * var(--k, 1));
+    gap: calc(0.4rem * var(--k, 1)) calc(1.6rem * var(--k, 1));
+  }
+  .big .legend li {
+    gap: calc(0.4rem * var(--k, 1));
+  }
+  .big .legend .key {
+    width: calc(22px * var(--k, 1));
+    height: calc(10px * var(--k, 1));
   }
   .legend li {
     display: flex;

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ChartName, Gender } from "../../../../shared/api.ts";
   import { api, errorText } from "#lib/api.ts";
+  import Icon from "#lib/Icon.svelte";
   import { session } from "#lib/session.svelte.ts";
 
   const me = session.me!;
@@ -32,80 +33,73 @@
 
 <main class="page">
 <div class="col">
-  <h1>Asetukset</h1>
-  <p class="muted">Tunnus: {me.name}. Painon, pituuden ja sukupuolen perusteella arvioidaan promillet.</p>
+  <div class="head">
+    <h1>Asetukset</h1>
+    <p class="lead">Tunnus <strong>{me.name}</strong>. Painon, pituuden ja sukupuolen perusteella arvioidaan promillet.</p>
+  </div>
 
-  <form class="card" onsubmit={save}>
+  <form class="card panel" onsubmit={save}>
     <fieldset>
       <legend>Nimi kuvaajissa</legend>
       <label class="choice"><input type="radio" bind:group={chartName} value="full" /> Koko nimi (Telegramin etu- ja sukunimi)</label>
       <label class="choice"><input type="radio" bind:group={chartName} value="username" /> Käyttäjätunnus (@nimi)</label>
     </fieldset>
 
+    <h2>Promillearvion tiedot</h2>
     <div class="fields">
-      <label>Paino (kg)<input type="number" inputmode="numeric" bind:value={weight} min="20" max="250" required /></label>
-      <label>Pituus (cm)<input type="number" inputmode="numeric" bind:value={height} min="120" max="240" required /></label>
+      <label class="field">Paino (kg)<input type="number" inputmode="numeric" bind:value={weight} min="20" max="250" required /></label>
+      <label class="field">Pituus (cm)<input type="number" inputmode="numeric" bind:value={height} min="120" max="240" required /></label>
+      <label class="field">Sukupuoli
+        <select bind:value={gender}>
+          <option value="mies">Mies</option>
+          <option value="nainen">Nainen</option>
+        </select>
+      </label>
     </div>
-    <label class="gender">Sukupuoli
-      <select bind:value={gender}>
-        <option value="mies">Mies</option>
-        <option value="nainen">Nainen</option>
-      </select>
-    </label>
 
-    <div class="status" aria-live="polite">
-      {#if message}<p>{message}</p>{/if}
-      {#if error}<p class="error" role="alert">{error}</p>{/if}
+    <div class="foot">
+      <button class="btn primary" disabled={busy} type="submit"><Icon name="check" /> Tallenna</button>
+      <div class="status" aria-live="polite">
+        {#if message}<p>{message}</p>{/if}
+        {#if error}<p class="error" role="alert">{error}</p>{/if}
+      </div>
     </div>
-    <button class="btn primary" disabled={busy} type="submit">Tallenna</button>
   </form>
 </div>
 </main>
 
 <style>
-  h1 {
-    font-size: 1.4rem;
-  }
   fieldset {
     border: 0;
     padding: 0;
-    margin: 0 0 1rem;
+    margin: 0 0 1.25rem;
   }
   legend {
-    font-weight: 600;
-    margin-bottom: 0.4rem;
+    font-weight: 700;
+    font-size: 1.25rem;
+    margin-bottom: 0.5rem;
   }
   .choice {
     display: flex;
-    gap: 0.5rem;
+    gap: 0.6rem;
     align-items: center;
     padding: 0.3rem 0;
-    color: var(--text-primary);
-    font-size: 1rem;
   }
-  .choice input {
-    width: auto;
-    min-height: 0;
+  h2 {
+    margin-bottom: 0.6rem;
   }
   .fields {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
     gap: 0.75rem;
-    margin-bottom: 0.75rem;
+    margin-bottom: 1.25rem;
   }
-  label {
-    display: grid;
-    gap: 0.25rem;
-    font-size: 0.9rem;
-    color: var(--text-secondary);
-  }
-  .gender {
-    margin-bottom: 0.75rem;
-  }
-  .status {
-    min-height: 1.6rem;
+  .foot {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
   }
   .status p {
-    margin: 0.25rem 0;
+    margin: 0;
   }
 </style>

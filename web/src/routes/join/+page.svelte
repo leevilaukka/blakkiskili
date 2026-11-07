@@ -47,10 +47,12 @@
 </script>
 
 <svelte:head><title>Liity ryhmään · Bläkkiskili</title></svelte:head>
+<!-- An invite opened in a tab already on /join only changes the fragment: start over with it -->
+<svelte:window onhashchange={() => new URLSearchParams(location.hash.slice(1)).has("c") && location.reload()} />
 
 <main class="page">
 <div class="col">
-  <h1>Liity ryhmään</h1>
+  <div class="head"><h1>Liity ryhmään</h1></div>
   {#if working}<p class="muted">Liitytään…</p>{/if}
   {#if error}
     <p class="error" role="alert">{error}</p>

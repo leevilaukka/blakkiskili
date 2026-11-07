@@ -5,6 +5,7 @@
   import type { GroupView } from "../../../../../shared/api.ts";
   import { api, ApiError, errorText } from "#lib/api.ts";
   import Chart from "#lib/Chart.svelte";
+  import Icon from "#lib/Icon.svelte";
   import { clock, dayClock, decimal1, permille } from "#lib/format.ts";
   import { session } from "#lib/session.svelte.ts";
 
@@ -118,141 +119,143 @@
 <svelte:head><title>{view?.group.name ?? "Ryhmä"} · Bläkkiskili</title></svelte:head>
 
 <main class="page">
-  <p class="back"><a href="/groups">← Ryhmät</a></p>
+  <nav class="crumbs" aria-label="Murupolku">
+    <a href="/groups"><Icon name="users" /> Ryhmät</a>
+    {#if view}<Icon name="chevron-right" /><span aria-current="page">{view.group.name}</span>{/if}
+  </nav>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 
   {#if view}
-    <h1>{view.group.name}</h1>
-    <p class="muted">{view.group.memberCount} jäsentä · {view.group.kind === "telegram" ? "Telegram-ryhmä" : "Verkkoryhmä"}</p>
+    <div class="head">
+      <h1>{view.group.name}</h1>
+      <p class="lead">{view.group.memberCount} jäsentä · {view.group.kind === "telegram" ? "Telegram-ryhmä" : "Verkkoryhmä"} · päivittyy automaattisesti ({clock(view.now)})</p>
+    </div>
 
     <div class="cols">
-     <div class="left">
-    <section class="card">
-      {#if view.chart.lines.length}
-        <Chart data={view.chart} />
-      {:else}
-        <p class="muted">Kukaan ei ole juonut viimeisen vuorokauden aikana.</p>
-      {/if}
-    </section>
+      <div>
+        <section class="card" aria-label="Ryhmän promillekuvaaja">
+          {#if view.chart.lines.length}
+            <Chart data={view.chart} />
+          {:else}
+            <p class="muted">Kukaan ei ole juonut viimeisen vuorokauden aikana.</p>
+          {/if}
+        </section>
 
-    <section class="card">
-      <h2>Jäsenet</h2>
-      <ul class="members">
-        {#each view.members as m (m.ref)}
-          <li>
-            <span class="who">{m.name}{m.isMe ? " (sinä)" : ""}{m.hidden ? " · nimetön näytöillä" : ""}</span>
-            <span class="num">{permille(m.permille)}‰</span>
-            <span class="muted num">{decimal1(m.standardDrinks12h)} ann. / 12 h</span>
-            {#if view.group.isOwner && !m.isMe}
-              <button class="btn small" disabled={busy} onclick={() => remove(m.ref, m.name)}>Poista</button>
-            {:else}
-              <span></span>
-            {/if}
-          </li>
-        {/each}
-      </ul>
-    </section>
-
-     </div>
-     <div class="right">
-    <section class="card">
-      <h2>Näytä ruudulla</h2>
-      <p class="muted">
-        Luo linkki, jonka voi avata esimerkiksi tapahtuman tv:ssä ilman kirjautumista. Linkin haltija näkee ryhmän jäsenten nimet ja promillet, joten jaa se vain näytölle.
-      </p>
-      <div class="row">
-        <label class="inline">Voimassa
-          <select bind:value={hours}>
-            <option value="6">6 tuntia</option>
-            <option value="24">24 tuntia</option>
-            <option value="72">3 päivää</option>
-            <option value="168">7 päivää</option>
-          </select>
-        </label>
-        <button class="btn primary" disabled={busy} onclick={makeScreen}>Luo näyttölinkki</button>
+        <section class="card">
+          <h2>Jäsenet</h2>
+          <ul class="members">
+            {#each view.members as m (m.ref)}
+              <li>
+                <span class="who">{m.name}{#if m.isMe} <span class="tag">sinä</span>{/if}{#if m.hidden} <span class="tag">nimetön näytöillä</span>{/if}</span>
+                <span class="num strong">{permille(m.permille)}‰</span>
+                <span class="num muted">{decimal1(m.standardDrinks12h)} ann. / 12 h</span>
+                {#if view.group.isOwner && !m.isMe}
+                  <button class="btn ghost small icon" disabled={busy} onclick={() => remove(m.ref, m.name)} aria-label="Poista {m.name} ryhmästä" title="Poista ryhmästä"><Icon name="trash" /></button>
+                {:else}
+                  <span></span>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        </section>
       </div>
 
-      {#if fresh?.kind === "screen"}
-        <div class="fresh">
-          <p>Linkki näkyy vain nyt. Kopioi se ja avaa näytöllä:</p>
-          <input type="text" readonly value={fresh.url} onfocus={(e) => e.currentTarget.select()} aria-label="Näyttölinkki" />
-          <button class="btn" onclick={() => copy(fresh!.url)}>{copied ? "Kopioitu" : "Kopioi"}</button>
-        </div>
-      {/if}
-
-      {#if view.screens.length}
-        <ul class="links">
-          {#each view.screens as s (s.ref)}
-            <li>
-              <span>Näyttölinkki{s.mine ? " (oma)" : ""} · voimassa {dayClock(s.expiresAt, view.now)}</span>
-              {#if s.mine || view.group.isOwner}
-                <button class="btn small" disabled={busy} onclick={() => revokeScreen(s.ref)}>Peru</button>
-              {/if}
-            </li>
-          {/each}
-        </ul>
-      {/if}
-
-      <label class="check">
-        <input type="checkbox" checked={view.group.hideOnScreen} disabled={busy} onchange={(e) => toggleHide(e.currentTarget.checked)} />
-        Näytä minut näytöillä nimettömänä (Nimetön 1, 2, …)
-      </label>
-    </section>
-
-    {#if view.group.kind === "web" && view.group.isOwner}
-      <section class="card">
-        <h2>Kutsu</h2>
-        <p class="muted">
-          Kutsulinkillä pääsee ryhmään.
-          {#if view.inviteExpiresAt}Nykyinen kutsu on voimassa {dayClock(view.inviteExpiresAt, view.now)} asti.{/if}
-          Uusi linkki korvaa vanhan.
-        </p>
-        <div class="row">
-          <button class="btn primary" disabled={busy} onclick={makeInvite}>Luo kutsulinkki</button>
-          {#if view.inviteExpiresAt}<button class="btn" disabled={busy} onclick={revokeInvite}>Peru kutsu</button>{/if}
-        </div>
-        {#if fresh?.kind === "invite"}
-          <div class="fresh">
-            <p>Linkki näkyy vain nyt:</p>
-            <input type="text" readonly value={fresh.url} onfocus={(e) => e.currentTarget.select()} aria-label="Kutsulinkki" />
-            <button class="btn" onclick={() => copy(fresh!.url)}>{copied ? "Kopioitu" : "Kopioi"}</button>
+      <div>
+        <section class="card panel">
+          <h2><Icon name="monitor" /> Näytä ruudulla</h2>
+          <p class="muted">
+            Luo linkki, jonka voi avata esimerkiksi tapahtuman tv:ssä ilman kirjautumista. Linkin haltija näkee ryhmän jäsenten nimet ja promillet, joten jaa se vain näytölle.
+          </p>
+          <div class="row">
+            <label class="field">Voimassa
+              <select bind:value={hours}>
+                <option value="6">6 tuntia</option>
+                <option value="24">24 tuntia</option>
+                <option value="72">3 päivää</option>
+                <option value="168">7 päivää</option>
+              </select>
+            </label>
+            <button class="btn primary" disabled={busy} onclick={makeScreen}><Icon name="link" /> Luo näyttölinkki</button>
           </div>
-        {/if}
-        <form class="rename" onsubmit={saveName}>
-          <label class="sr-only" for="rn">Ryhmän nimi</label>
-          <input id="rn" type="text" bind:value={rename} maxlength="40" required />
-          <button class="btn" disabled={busy} type="submit">Nimeä uudelleen</button>
-        </form>
-      </section>
-    {/if}
 
-    <section class="card danger-zone">
-      <button class="btn" disabled={busy} onclick={leave}>Poistu ryhmästä</button>
-      {#if view.group.kind === "web" && view.group.isOwner}
-        <button class="btn danger" disabled={busy} onclick={destroy}>Poista ryhmä</button>
-      {/if}
-    </section>
-     </div>
+          {#if fresh?.kind === "screen"}
+            <div class="fresh">
+              <p>Linkki näkyy vain nyt. Kopioi se ja avaa näytöllä:</p>
+              <div class="copyrow">
+                <input type="text" readonly value={fresh.url} onfocus={(e) => e.currentTarget.select()} aria-label="Näyttölinkki" />
+                <button class="btn" onclick={() => copy(fresh!.url)}><Icon name={copied ? "check" : "copy"} /> {copied ? "Kopioitu" : "Kopioi"}</button>
+              </div>
+            </div>
+          {/if}
+
+          {#if view.screens.length}
+            <ul class="links">
+              {#each view.screens as s (s.ref)}
+                <li>
+                  <span>Näyttölinkki{s.mine ? " (oma)" : ""} · voimassa {dayClock(s.expiresAt, view.now)}</span>
+                  {#if s.mine || view.group.isOwner}
+                    <button class="btn small" disabled={busy} onclick={() => revokeScreen(s.ref)}>Peru</button>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+
+          <label class="check">
+            <input type="checkbox" checked={view.group.hideOnScreen} disabled={busy} onchange={(e) => toggleHide(e.currentTarget.checked)} />
+            Näytä minut näytöillä nimettömänä (Nimetön 1, 2, …)
+          </label>
+        </section>
+
+        {#if view.group.kind === "web" && view.group.isOwner}
+          <section class="card panel">
+            <h2><Icon name="link" /> Kutsu</h2>
+            <p class="muted">
+              Kutsulinkillä pääsee ryhmään.
+              {#if view.inviteExpiresAt}Nykyinen kutsu on voimassa {dayClock(view.inviteExpiresAt, view.now)} asti.{/if}
+              Uusi linkki korvaa vanhan.
+            </p>
+            <div class="row">
+              <button class="btn primary" disabled={busy} onclick={makeInvite}><Icon name="plus" /> Luo kutsulinkki</button>
+              {#if view.inviteExpiresAt}<button class="btn" disabled={busy} onclick={revokeInvite}>Peru kutsu</button>{/if}
+            </div>
+            {#if fresh?.kind === "invite"}
+              <div class="fresh">
+                <p>Linkki näkyy vain nyt:</p>
+                <div class="copyrow">
+                  <input type="text" readonly value={fresh.url} onfocus={(e) => e.currentTarget.select()} aria-label="Kutsulinkki" />
+                  <button class="btn" onclick={() => copy(fresh!.url)}><Icon name={copied ? "check" : "copy"} /> {copied ? "Kopioitu" : "Kopioi"}</button>
+                </div>
+              </div>
+            {/if}
+            <form class="rename" onsubmit={saveName}>
+              <label class="field" for="rn">Ryhmän nimi</label>
+              <div class="copyrow">
+                <input id="rn" type="text" bind:value={rename} maxlength="40" required />
+                <button class="btn" disabled={busy} type="submit">Nimeä uudelleen</button>
+              </div>
+            </form>
+          </section>
+        {/if}
+
+        <section class="exit">
+          <button class="btn" disabled={busy} onclick={leave}><Icon name="door" /> Poistu ryhmästä</button>
+          {#if view.group.kind === "web" && view.group.isOwner}
+            <button class="btn danger" disabled={busy} onclick={destroy}><Icon name="trash" /> Poista ryhmä</button>
+          {/if}
+        </section>
+      </div>
     </div>
-    <p class="muted updated">Päivittyy automaattisesti · {clock(view.now)}</p>
   {:else if !error}
     <p class="muted">Ladataan…</p>
   {/if}
 </main>
 
 <style>
-  h1 {
-    font-size: 1.5rem;
-  }
   h2 {
-    font-size: 1.05rem;
-    margin-bottom: 0.5rem;
-  }
-  .back {
-    margin: 0 0 0.5rem;
-  }
-  .card {
-    margin-top: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
   }
   .members,
   .links {
@@ -262,11 +265,11 @@
   }
   .members li {
     display: grid;
-    grid-template-columns: 1fr auto auto 4.6rem;
+    grid-template-columns: 1fr auto auto 2.5rem;
     gap: 0.75rem;
     align-items: center;
-    padding: 0.4rem 0;
-    border-top: 1px solid var(--border);
+    padding: 0.45rem 0;
+    border-top: 1px solid var(--border-soft);
   }
   .members li:first-child {
     border-top: 0;
@@ -274,9 +277,26 @@
   .who {
     overflow-wrap: anywhere;
   }
+  .tag {
+    display: inline-block;
+    margin-left: 0.35rem;
+    padding: 0 0.35rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.86rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
   .num {
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+    text-align: right;
+  }
+  .strong {
+    font-weight: 700;
+  }
+  .links {
+    margin-top: 0.75rem;
   }
   .links li {
     display: flex;
@@ -291,52 +311,42 @@
     gap: 0.75rem;
     align-items: end;
     flex-wrap: wrap;
+    margin-top: 0.75rem;
   }
-  .inline {
-    display: grid;
-    gap: 0.2rem;
-    font-size: 0.9rem;
-    color: var(--text-secondary);
+  .row .field {
+    min-width: 9rem;
   }
   .fresh {
     margin-top: 0.75rem;
     padding: 0.75rem;
     border: 1px dashed var(--axis);
-    border-radius: 10px;
+    border-radius: 4px;
+    background: var(--surface-1);
     display: grid;
     gap: 0.5rem;
   }
   .fresh p {
     margin: 0;
   }
+  .copyrow {
+    display: flex;
+    gap: 0.5rem;
+  }
   .check {
     display: flex;
-    gap: 0.5rem;
+    gap: 0.6rem;
     align-items: center;
     margin-top: 1rem;
-    color: var(--text-secondary);
-  }
-  .small {
-    padding: 0.2rem 0.6rem;
-    min-height: 36px;
-    font-size: 0.85rem;
   }
   .rename {
+    display: grid;
+    gap: 0.3rem;
+    margin-top: 1rem;
+  }
+  .exit {
     display: flex;
     gap: 0.5rem;
-    margin-top: 1rem;
-  }
-  .danger-zone {
-    display: flex;
-    gap: 0.75rem;
     flex-wrap: wrap;
-  }
-  .danger {
-    border-color: var(--danger);
-    color: var(--danger);
-  }
-  .updated {
-    font-size: 0.85rem;
-    margin-top: 1rem;
+    justify-content: flex-end;
   }
 </style>
