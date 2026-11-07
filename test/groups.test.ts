@@ -140,6 +140,24 @@ describe("Telegram groups keep working", () => {
     expect(services.groups.members(id).map((m) => m.userId).sort()).toEqual([alice.id, bob.id].sort()); // everyone, for the website
   });
 
+  test("the chat id is kept encrypted, only for chats the bot already knows", () => {
+    const { services, db, alice } = world();
+    services.groups.rememberChat(-1009876543210); // nobody has joined: nothing is stored
+    expect(db.query("SELECT count(*) AS n FROM groups").get()).toEqual({ n: 0 });
+
+    services.groups.join(alice.id, -1009876543210, "Kerava");
+    const id = services.groups.listFor(alice.id)[0]!.id;
+    expect(services.groups.telegramChatId(id)).toBeNull(); // joining alone doesn't keep it
+    services.groups.rememberChat(-1009876543210);
+    expect(services.groups.telegramChatId(id)).toBe(-1009876543210);
+    const raw = db.query("SELECT chat_enc FROM groups WHERE id = ?").get(id) as { chat_enc: string };
+    expect(raw.chat_enc).not.toContain("9876543210");
+
+    const web = services.groups.createWeb(alice.id, "Verkko");
+    if (web === "limit") throw new Error("unexpected");
+    expect(services.groups.telegramChatId(web.id)).toBeNull();
+  });
+
   test("hiding on screens is per member and per group", () => {
     const { services, alice } = world();
     services.groups.join(alice.id, -100);

@@ -145,6 +145,10 @@ export interface ScreenView {
   /** Empty for a person. */
   members: Pick<BoardRow, "name" | "permille" | "standardDrinks12h">[];
   expiresAt: number;
+  /** A Telegram group whose photo can be asked for at /api/screen/photo (it may still turn out to have none). */
+  photo: boolean;
+  /** The group's page on the website is /groups/<id> (members only); null for a person's screen. */
+  groupId: string | null;
 }
 
 export interface ApiError {

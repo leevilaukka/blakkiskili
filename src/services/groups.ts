@@ -85,6 +85,24 @@ export class Groups {
     this.bus.emit({ accountId: userId, groupId });
   }
 
+  /**
+   * Keeps the chat id (encrypted) of a group the bot already knows, so the website can fetch the
+   * group's photo for event screens. Does nothing for chats no Kili user has joined.
+   */
+  rememberChat(chatId: number) {
+    this.deps.db
+      .query("UPDATE groups SET chat_enc = ? WHERE id = ? AND kind = 'telegram' AND chat_enc IS NULL")
+      .run(this.deps.crypto.encrypt(String(chatId)), this.deps.crypto.groupKey(chatId));
+  }
+
+  /** The Telegram chat id of a group, when recorded (see rememberChat); only for fetching its photo. */
+  telegramChatId(groupId: string): number | null {
+    const row = this.deps.db.query("SELECT chat_enc FROM groups WHERE id = ? AND kind = 'telegram'").get(groupId) as { chat_enc: string | null } | null;
+    if (!row?.chat_enc) return null;
+    const id = Number(this.deps.crypto.decrypt(row.chat_enc));
+    return Number.isSafeInteger(id) ? id : null;
+  }
+
   leave(userId: string, chatId: number) {
     const groupId = this.deps.crypto.groupKey(chatId);
     this.deps.db.query("DELETE FROM group_members WHERE user_id = ? AND group_id = ?").run(userId, groupId);

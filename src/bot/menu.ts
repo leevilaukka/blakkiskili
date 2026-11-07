@@ -350,10 +350,29 @@ function settingsView(ctx: BotContext, notice = ""): View {
     text: header(S.asetukset.title) + (notice ? notice + "\n\n" : "") + S.asetukset.on_select,
     keyboard: [
       [btn(S.asetukset.muokkaa.button, "am")],
+      ...(ctx.kili.config.web.enabled ? [[btn(S.asetukset.nimettomyys.button, "an")]] : []),
       ...(ctx.kili.config.accountLinking ? [[btn(S.asetukset.linkit.button, "al")]] : []),
       [btn(S.asetukset.data.button, "ax")],
       [btn(S.asetukset.poista.button, "ad")],
       back("s"),
+    ],
+  };
+}
+
+/**
+ * Per group: show as "Nimetön N" on the website's event screens. In private, so choosing it isn't
+ * announced to the group. Buttons carry the first 16 hex characters of the group id (callback
+ * data has 64 bytes); a press only ever matches the user's own groups.
+ */
+export function anonymityView(ctx: BotContext, p: Profile): View {
+  const t = S.asetukset.nimettomyys;
+  const groups = ctx.kili.services.groups.listFor(p.id);
+  return {
+    text: header(S.asetukset.title) + t.on_select + (groups.length ? "" : "\n\n" + t.none),
+    keyboard: [
+      // Button labels are plain text, not HTML: the name goes in as is (fmt would escape it).
+      ...groups.map((g) => [btn((g.hideOnScreen ? t.hidden : t.shown).replace("{name}", g.name ?? t.unnamed), `ant:${g.id.slice(0, 16)}`)]),
+      back("a"),
     ],
   };
 }
@@ -559,6 +578,15 @@ const NODES: Record<string, Handler> = {
     if (ctx.from) await sendExport(ctx, ctx.from.id);
     return settingsView(ctx);
   }),
+  // Nimettömyys näytöillä
+  an: withProfile((ctx, p) => (ctx.kili.config.web.enabled ? anonymityView(ctx, p) : settingsView(ctx))),
+  ant: withProfile((ctx, p, arg) => {
+    if (!ctx.kili.config.web.enabled) return settingsView(ctx);
+    const g = arg && /^[0-9a-f]{16}$/.test(arg) ? ctx.kili.services.groups.listFor(p.id).find((x) => x.id.startsWith(arg)) : undefined;
+    if (g) ctx.kili.services.groups.setHidden(p.id, g.id, !g.hideOnScreen);
+    return anonymityView(ctx, p);
+  }),
+
   // Yhdistetyt palvelut
   al: withProfile((ctx, p) => (ctx.kili.config.accountLinking ? linksView(ctx, p) : settingsView(ctx))),
   alc: withProfile((ctx, p) => {
@@ -667,7 +695,8 @@ const NODES: Record<string, Handler> = {
     ],
   }),
   hfj: () => textNode(S.help.faq.juominen.title, S.help.faq.juominen.text, "hf"),
-  hfr: () => textNode(S.help.faq.ryhmat.title, S.help.faq.ryhmat.text, "hf"),
+  hfr: (ctx) =>
+    textNode(S.help.faq.ryhmat.title, S.help.faq.ryhmat.text + (ctx.kili.config.web.enabled ? S.help.faq.ryhmat.web : ""), "hf"),
   hfk: (ctx) => textNode(S.help.faq.koodi.title, fmt(S.help.faq.koodi.text, contactExtras(ctx.kili.config)), "hf"),
 };
 

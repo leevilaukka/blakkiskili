@@ -37,6 +37,7 @@ import type {
   ScreenView,
 } from "../../shared/api.ts";
 import { buildBoard, memberRef, type Board } from "./boards.ts";
+import { GroupPhotos, ProductPhotos, type PhotoResult } from "./photos.ts";
 import { Hub } from "./sse.ts";
 import { verifyTelegramLogin } from "./telegram.ts";
 
@@ -46,6 +47,10 @@ export interface WebAppOptions {
   botUsername: string;
   /** Public origin, e.g. "https://kili.example.com" (no trailing slash). */
   origin: string;
+  /** Alko's product photos, fetched by the server (see photos.ts); tests pass a fake fetch. */
+  photos?: ProductPhotos;
+  /** Telegram group photos for event screens; tests pass a fake fetch. */
+  groupPhotos?: GroupPhotos;
   /** Live-update timing; tests shorten it. */
   live?: { tickMs?: number; minGapMs?: number; maxTotal?: number; maxPerOwner?: number };
 }
@@ -60,6 +65,10 @@ export function createWebApp(opts: WebAppOptions) {
   const now = () => services.deps.now();
   const signInLimiter = new RateLimiter(10, 60_000, now);
   const apiLimiter = new RateLimiter(120, 60_000, now);
+  // A search shows up to 8 thumbnails, so photos get their own, larger budget.
+  const photoLimiter = new RateLimiter(600, 60_000, now);
+  const photos = opts.photos ?? new ProductPhotos();
+  const groupPhotos = opts.groupPhotos ?? new GroupPhotos({ botToken: opts.botToken });
 
   const json = (data: unknown, status = 200, headers: Record<string, string> = {}) =>
     new Response(JSON.stringify(data), {
@@ -245,6 +254,20 @@ export function createWebApp(opts: WebAppOptions) {
     return json({ products: found.map(toProduct) });
   }
 
+  function photoResponse(photo: PhotoResult, maxAgeS: number): Response {
+    if (photo === "missing") return fail(404, "no_photo");
+    if (photo === "unavailable") return fail(502, "photo_unavailable");
+    return new Response(photo.bytes, {
+      headers: { "content-type": photo.type, "cache-control": `private, max-age=${maxAgeS}` },
+    });
+  }
+
+  async function productPhoto(accountId: string, id: string): Promise<Response> {
+    if (photoLimiter.hit(accountId) !== "ok") return fail(429, "rate_limited");
+    if (!services.products.get(id)) return fail(404, "not_found"); // catalogue products only: not an open proxy
+    return photoResponse(await photos.get(id), 7 * 24 * 3600);
+  }
+
   const config = (): ApiConfig => ({
     botUsername: opts.botUsername,
     catalogue: services.products.ready,
@@ -320,12 +343,14 @@ export function createWebApp(opts: WebAppOptions) {
         chart: b.chart,
         members: b.rows.map(({ name, permille, standardDrinks12h }) => ({ name, permille, standardDrinks12h })),
         expiresAt: access.expiresAt,
+        photo: info.kind === "telegram" && services.groups.telegramChatId(access.groupId) !== null,
+        groupId: access.groupId,
       };
     }
     const p = access.accountId ? services.accounts.get(access.accountId) : null;
     if (!p) return null;
     const b = board(`p:${p.id}`, p.id, () => [personAsMember(p)], false);
-    return { now: now(), title: chartLabel(p), kind: "person", chart: b.chart, members: [], expiresAt: access.expiresAt };
+    return { now: now(), title: chartLabel(p), kind: "person", chart: b.chart, members: [], expiresAt: access.expiresAt, photo: false, groupId: null };
   }
 
   // ---------- live updates ----------
@@ -394,6 +419,7 @@ export function createWebApp(opts: WebAppOptions) {
   // ---------- groups and screens: handlers ----------
 
   const GROUP_PATH = /^\/api\/groups\/([0-9a-f]{32,64})(?:\/([a-z]+)(?:\/([0-9a-f]{1,64}))?)?$/;
+  const PHOTO_PATH = /^\/api\/products\/([0-9A-Za-z]{1,16})\/photo$/;
   const lifetime = (hours: unknown) => (typeof hours === "number" && Number.isFinite(hours) ? hours * HOUR_MS : SCREEN_DEFAULT_TTL_MS);
 
   async function createGroup(p: Profile, req: Request) {
@@ -506,12 +532,17 @@ export function createWebApp(opts: WebAppOptions) {
       if (!access) return fail(404, "invalid_screen");
       return json({ ok: true }, 200, { "set-cookie": screenCookie(data.token, access.expiresAt) });
     }
-    if (path !== "/api/screen" && path !== "/api/screen/events") return null;
+    if (path !== "/api/screen" && path !== "/api/screen/events" && path !== "/api/screen/photo") return null;
     if (req.method !== "GET") return fail(405, "method_not_allowed");
     if (apiLimiter.hit(`screen:${clientIp}`) !== "ok") return fail(429, "rate_limited");
     const token = readCookie(req, screenCookieName);
     const access = token ? services.screens.authenticate(token) : null;
     if (!access) return fail(401, "unauthorized");
+    if (path === "/api/screen/photo") {
+      const chatId = access.groupId ? services.groups.telegramChatId(access.groupId) : null;
+      if (!access.groupId || chatId === null) return fail(404, "no_photo");
+      return photoResponse(await groupPhotos.get(access.groupId, chatId), 3600);
+    }
     if (path === "/api/screen/events") return stream(`s:${access.hash}`, access.hash);
     return json(screenView(access));
   }
@@ -547,6 +578,8 @@ export function createWebApp(opts: WebAppOptions) {
     const cookie = readCookie(req);
     const session = cookie ? services.webSessions.authenticate(cookie) : null;
     if (!session) return fail(401, "unauthorized");
+    const photo = PHOTO_PATH.exec(path);
+    if (photo && method === "GET") return productPhoto(session.accountId, photo[1]!);
     if (apiLimiter.hit(session.accountId) !== "ok") return fail(429, "rate_limited");
     const p = services.accounts.get(session.accountId);
     if (!p) return fail(401, "unauthorized");

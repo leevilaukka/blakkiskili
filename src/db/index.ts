@@ -173,6 +173,12 @@ const MIGRATIONS: string[] = [
   CREATE INDEX screen_tokens_account ON screen_tokens (account_id);
   CREATE INDEX screen_tokens_expires ON screen_tokens (expires_at);
   `,
+
+  /* 10: Telegram group photos on event screens */ `
+  -- AES-GCM encrypted Telegram chat id, only so the website can ask Telegram for the group's photo.
+  -- Recorded when someone says /moro or uses a command in the group; NULL for web groups.
+  ALTER TABLE groups ADD COLUMN chat_enc TEXT;
+  `,
 ];
 
 export function openDatabase(path: string): Database {

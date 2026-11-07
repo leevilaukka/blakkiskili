@@ -1,7 +1,7 @@
 import type { Bot } from "grammy";
 import type { BotContext } from "./context.ts";
 import { contactExtras, isPrivate, termsHtml } from "./context.ts";
-import { importIntro, juoView, lateView, registerView, renderNode, sessionEnergyText, shortPermilles, startView } from "./menu.ts";
+import { anonymityView, importIntro, juoView, lateView, registerView, renderNode, sessionEnergyText, shortPermilles, startView } from "./menu.ts";
 import { sendExport, sendHtml, sendView } from "./ui.ts";
 import { InputFile } from "grammy";
 import { buildPermilleChart, type ChartSeries } from "../lib/chart.ts";
@@ -236,6 +236,8 @@ export const COMMANDS: CommandDef[] = [
       ctx.kili.services.groups.leave(p!.id, ctx.chat!.id);
       await sendHtml(ctx, fmt(S.commands.poistu, { chat_title: chatTitle(ctx) }));
     } },
+  { name: "nimeton", description: "näy ryhmien näyttölinkeissä nimettömänä", scope: "private", needsUser: true,
+    enabled: (c) => c.web.enabled, run: (ctx, p) => sendView(ctx, anonymityView(ctx, p!)) },
   { name: "stats", description: "kulutustilastot juomina, esim. /stats 7", scope: "all", needsUser: false, run: (ctx, p, a) => stats(ctx, p, a, "count") },
   { name: "stats2", description: "kulutustilastot annoksina, esim. /stats2 7", scope: "all", needsUser: false, run: (ctx, p, a) => stats(ctx, p, a, "grams") },
   { name: "juoma", description: "lisää juoma", scope: "private", needsUser: true, run: (ctx, p) => sendView(ctx, juoView(ctx, p!)) },
@@ -258,7 +260,8 @@ export const COMMANDS: CommandDef[] = [
     enabled: (c) => c.web.enabled, run: (ctx, p) => sendWebLogin(ctx, p!) },
   { name: "whoami", description: "näytä omat tietosi", scope: "private", needsUser: true, run: (ctx, p) =>
       sendHtml(ctx, fmt(S.commands.whoami, { name: p!.name, weight: p!.weight, height: p!.height, gender: p!.gender === "mies" ? S.male : S.female, created: dateTime(p!.createdAt) })) },
-  { name: "help", description: "ohjeet", scope: "all", needsUser: false, run: (ctx) => sendHtml(ctx, S.commands.help) },
+  { name: "help", description: "ohjeet", scope: "all", needsUser: false, run: (ctx) =>
+      sendHtml(ctx, fmt(S.commands.help, { web: raw(ctx.kili.config.web.enabled ? S.commands.help_web : "") })) },
   { name: "komennot", description: "kaikki komennot", scope: "all", needsUser: false, run: (ctx) =>
       sendHtml(ctx, "<b>Komennot</b>\n\n" + COMMANDS.filter((c) => !c.name.startsWith("admin") && isEnabled(c, ctx.kili.config)).map((c) => `/${c.name} - ${escapeHtml(c.description)}`).join("\n")) },
   { name: "terms", description: "käyttöehdot", scope: "all", needsUser: false, run: (ctx) => sendHtml(ctx, termsHtml(ctx.kili.config)) },
@@ -301,6 +304,9 @@ export function registerCommands(bot: Bot<BotContext>) {
       if (def.needsUser && !profile) return sendHtml(ctx, priv ? S.user404 : S.user404_group);
       if (def.needsUser && profile && !profile.acceptedTerms) return sendHtml(ctx, S.terms_required);
       await def.run(ctx, profile, typeof ctx.match === "string" ? ctx.match : "");
+      // The group's photo on the website's event screens needs its chat id. After the command, so
+      // a group /moro just created counts too.
+      if (!priv && ctx.chat && ctx.kili.config.web.enabled) services.groups.rememberChat(ctx.chat.id);
     });
   }
 }

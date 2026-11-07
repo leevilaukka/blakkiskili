@@ -25,7 +25,7 @@ export function contentSecurityPolicy(scriptHashes: readonly string[], telegramW
     "default-src 'self'",
     `script-src 'self' ${scriptHashes.join(" ")}${telegramWidget ? " https://telegram.org" : ""}`.trim(),
     "style-src 'self'",
-    "img-src 'self' data: https://images.alko.fi",
+    "img-src 'self' data:", // Alko's photos come through our own /api (see photos.ts)
     "connect-src 'self'",
     `frame-src ${telegramWidget ? "https://oauth.telegram.org" : "'none'"}`,
     "object-src 'none'",

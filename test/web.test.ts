@@ -10,6 +10,9 @@ import { contentSecurityPolicy, inlineScriptHashes, StaticSite } from "../src/we
 import { LOGIN_MAX_AGE_S, verifyTelegramLogin } from "../src/web/telegram.ts";
 import { HOUR_MS, MINUTE_MS } from "../src/lib/units.ts";
 import { LOGIN_LINK_TTL_MS, SESSION_TTL_MS } from "../src/services/websessions.ts";
+import { Products } from "../src/services/products.ts";
+import { ProductPhotos } from "../src/web/photos.ts";
+import { catalogJson } from "./fixtures.ts";
 import { setup, tg } from "./helpers.ts";
 
 const BOT_TOKEN = "123:TEST";
@@ -24,11 +27,11 @@ function signed(fields: Record<string, string | number>, token = BOT_TOKEN) {
   return { ...fields, hash: createHmac("sha256", secret).update(check).digest("hex") };
 }
 
-function world() {
-  const w = setup();
+function world(extra: { products?: Products; photos?: ProductPhotos } = {}) {
+  const w = setup(undefined, [], extra.products);
   const alice = w.services.accounts.register(tg(1), { name: "alice", fullName: "Alice A", weight: 70, height: 170, gender: "nainen" }).profile;
   const bob = w.services.accounts.register(tg(2), { name: "bob", weight: 90, height: 185, gender: "mies" }).profile;
-  const app = createWebApp({ services: w.services, botToken: BOT_TOKEN, botUsername: "kili_bot", origin: ORIGIN });
+  const app = createWebApp({ services: w.services, botToken: BOT_TOKEN, botUsername: "kili_bot", origin: ORIGIN, photos: extra.photos });
   const cookieOf = (accountId: string) => `__Host-kili=${w.services.webSessions.createSession(accountId, null).sessionToken}`;
   const call = (method: string, path: string, opts: { cookie?: string; body?: unknown; origin?: string | null; csrf?: boolean; ip?: string } = {}) => {
     const headers: Record<string, string> = {};
@@ -348,6 +351,58 @@ describe("API: catalogue", () => {
   });
 });
 
+describe("API: product photos", () => {
+  const WEBP = new Uint8Array([0x52, 0x49, 0x46, 0x46, 1, 2, 3, 4]);
+  function photoWorld(answer: (url: string) => Response = () => new Response(WEBP, { headers: { "content-type": "image/webp" } })) {
+    const requests: { url: string; init: RequestInit | undefined }[] = [];
+    const fakeFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      requests.push({ url: String(input), init });
+      return answer(String(input));
+    }) as typeof fetch;
+    const products = new Products();
+    products.load(catalogJson());
+    const w = world({ products, photos: new ProductPhotos({ fetch: fakeFetch }) });
+    return { ...w, requests, cookie: w.cookieOf(w.alice.id) };
+  }
+
+  test("are fetched by the server with nothing about the visitor, and cached", async () => {
+    const { call, cookie, requests } = photoWorld();
+    const res = await call("GET", "/api/products/700022/photo", { cookie, ip: "9.9.9.9" });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("image/webp");
+    expect(res.headers.get("cache-control")).toBe("private, max-age=604800");
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(WEBP);
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.url).toBe("https://images.alko.fi/images/t_products/cdn/700022/kuva.webp");
+    const sent = JSON.stringify(requests[0]!.init);
+    for (const leak of [cookie.split("=")[1]!, "9.9.9.9", ORIGIN, "cookie", "forwarded"]) expect(sent.toLowerCase()).not.toContain(leak.toLowerCase());
+    expect(requests[0]!.init?.referrerPolicy).toBe("no-referrer");
+    expect(requests[0]!.init?.credentials).toBe("omit");
+
+    expect((await call("GET", "/api/products/700022/photo", { cookie })).status).toBe(200);
+    expect(requests).toHaveLength(1); // from memory
+  });
+
+  test("only for catalogue products and signed-in visitors", async () => {
+    const { call, cookie, requests } = photoWorld();
+    expect((await call("GET", "/api/products/999999/photo", { cookie })).status).toBe(404);
+    expect((await call("GET", "/api/products/..%2F..%2Fx/photo", { cookie })).status).toBe(404);
+    expect((await call("GET", "/api/products/700022/photo")).status).toBe(401);
+    expect(requests).toHaveLength(0);
+  });
+
+  test("a product without a photo is a 404 that is remembered; non-images are refused", async () => {
+    const missing = photoWorld(() => new Response(null, { status: 400 }));
+    expect((await missing.call("GET", "/api/products/700022/photo", { cookie: missing.cookie })).status).toBe(404);
+    expect((await missing.call("GET", "/api/products/700022/photo", { cookie: missing.cookie })).status).toBe(404);
+    expect(missing.requests).toHaveLength(1);
+
+    const html = photoWorld(() => new Response("<script>alert(1)</script>", { headers: { "content-type": "text/html" } }));
+    expect((await html.call("GET", "/api/products/700022/photo", { cookie: html.cookie })).status).toBe(502);
+  });
+});
+
 describe("static site", () => {
   const roots: string[] = [];
   afterEach(() => {
@@ -372,6 +427,7 @@ describe("static site", () => {
     expect(page.headers.get("content-security-policy")).toContain("script-src 'self' 'sha256-");
     expect(page.headers.get("content-security-policy")).not.toContain("unsafe-inline");
     expect(page.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+    expect(page.headers.get("content-security-policy")).not.toContain("alko"); // photos come through /api
     expect(page.headers.get("referrer-policy")).toBe("no-referrer");
     expect(page.headers.get("x-content-type-options")).toBe("nosniff");
 

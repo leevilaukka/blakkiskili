@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { findPreset } from "../src/lib/catalog.ts";
 import { HOUR_MS, MINUTE_MS } from "../src/lib/units.ts";
 import { createWebApp } from "../src/web/app.ts";
+import { GroupPhotos } from "../src/web/photos.ts";
 import { setup, tg } from "./helpers.ts";
 
 const ORIGIN = "https://kili.test";
@@ -11,14 +12,14 @@ afterEach(() => {
   for (const a of apps.splice(0)) a.close();
 });
 
-function world() {
+function world(extra: { groupPhotos?: GroupPhotos } = {}) {
   const w = setup();
   const user = (id: number, name: string, full?: string) =>
     w.services.accounts.register(tg(id), { name, fullName: full, weight: 75, height: 178, gender: "mies" }).profile;
   const alice = user(1, "alice", "Alice Aalto");
   const bob = user(2, "bob", "Bob Berg");
   const carol = user(3, "carol", "Carol Cederberg");
-  const app = createWebApp({ services: w.services, botToken: "1:x", botUsername: "b", origin: ORIGIN, live: { tickMs: 1_000_000, minGapMs: 10 } });
+  const app = createWebApp({ services: w.services, botToken: "1:x", botUsername: "b", origin: ORIGIN, live: { tickMs: 1_000_000, minGapMs: 10 }, groupPhotos: extra.groupPhotos });
   apps.push(app);
   const cookies = new Map<string, string>();
   const as = (p: { id: string }) => {
@@ -173,7 +174,56 @@ describe("event screens", () => {
     const view = await w.json(await w.call("GET", "/api/screen", { cookie }));
     expect(view).toMatchObject({ title: "Bileet", kind: "group" });
     expect(view.expiresAt).toBe(link.expiresAt);
-    expect(Object.keys(view).sort()).toEqual(["chart", "expiresAt", "kind", "members", "now", "title"]);
+    expect(Object.keys(view).sort()).toEqual(["chart", "expiresAt", "groupId", "kind", "members", "now", "photo", "title"]);
+    expect(view.photo).toBe(false); // a web group has no Telegram photo
+    expect(view.groupId).toBe(w.services.groups.listFor(w.alice.id)[0]!.id); // for the QR code to the group page
+    expect((await w.call("GET", "/api/screen/photo", { cookie })).status).toBe(404);
+  });
+
+  test("a Telegram group's photo comes from the Bot API through the server, cached", async () => {
+    const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 9, 9, 9]);
+    const requests: { url: string; init?: RequestInit }[] = [];
+    let hasPhoto = true;
+    const fakeFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      requests.push({ url, init });
+      if (url.includes("/getChat?")) return Response.json({ ok: true, result: hasPhoto ? { photo: { small_file_id: "SMALL" } } : {} });
+      if (url.includes("/getFile?")) return Response.json({ ok: true, result: { file_path: "photos/file_1.jpg" } });
+      return new Response(JPEG); // Telegram doesn't say the type: it is read from the bytes
+    }) as typeof fetch;
+    const w = world({ groupPhotos: new GroupPhotos({ botToken: "1:x", fetch: fakeFetch }) });
+    w.services.groups.join(w.alice.id, -1001234567890, "Kerava");
+    w.services.groups.rememberChat(-1001234567890); // the bot does this after a group command
+    const id = w.services.groups.listFor(w.alice.id)[0]!.id;
+    const link = await w.json(await w.call("POST", `/api/groups/${id}/screens`, { as: w.alice, body: {} }));
+    const cookie = (await w.call("POST", "/api/screen/open", { body: { token: link.token } })).headers.get("set-cookie")!.split(";")[0]!;
+
+    expect(await w.json(await w.call("GET", "/api/screen", { cookie }))).toMatchObject({ photo: true });
+    const res = await w.call("GET", "/api/screen/photo", { cookie });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("image/jpeg");
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(JPEG);
+    expect(requests.map((r) => r.url)).toEqual([
+      "https://api.telegram.org/bot1:x/getChat?chat_id=-1001234567890",
+      "https://api.telegram.org/bot1:x/getFile?file_id=SMALL",
+      "https://api.telegram.org/file/bot1:x/photos/file_1.jpg",
+    ]);
+    for (const r of requests) {
+      const sent = JSON.stringify(r.init);
+      for (const leak of [cookie.split("=")[1]!, "1.1.1.1", ORIGIN]) expect(sent).not.toContain(leak);
+    }
+    expect((await w.call("GET", "/api/screen/photo", { cookie })).status).toBe(200);
+    expect(requests).toHaveLength(3); // from memory
+    expect((await w.call("GET", "/api/screen/photo")).status).toBe(401);
+
+    // A group without a photo: 404, and the screen falls back to the bot's picture
+    hasPhoto = false;
+    w.services.groups.join(w.bob.id, -42, "Ei kuvaa");
+    w.services.groups.rememberChat(-42);
+    const other = w.services.groups.listFor(w.bob.id)[0]!.id;
+    const link2 = await w.json(await w.call("POST", `/api/groups/${other}/screens`, { as: w.bob, body: {} }));
+    const cookie2 = (await w.call("POST", "/api/screen/open", { body: { token: link2.token } })).headers.get("set-cookie")!.split(";")[0]!;
+    expect((await w.call("GET", "/api/screen/photo", { cookie: cookie2 })).status).toBe(404);
   });
 
   test("the screen shows nothing without the link, with a wrong one, or after it expires or is revoked", async () => {

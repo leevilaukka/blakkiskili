@@ -295,7 +295,33 @@ describe("bot end-to-end", () => {
     expect(textOf(await h.send(A, "/moro", G))).toContain("Kilta &lt;3 &amp; co");
     expect(h.services.groups.listFor(h.account(A))[0]).toMatchObject({ name: "Kilta <3 & co", kind: "telegram" }); // the website shows it
     expect(textOf(await h.send(A, "/moro"))).toContain("vain ryhmissä");
+    // The chat id (for the group's photo on event screens) is recorded on /moro, and by any
+    // command for groups from before it was kept
+    const gid = h.services.groups.listFor(h.account(A))[0]!.id;
+    expect(h.services.groups.telegramChatId(gid)).toBe(G.id);
+    h.services.deps.db.query("UPDATE groups SET chat_enc = NULL").run();
+
+    // /nimeton: in private, so choosing it isn't announced to the group
+    const hidden = () => h.services.groups.listFor(h.account(A)).find((g) => g.id === gid)!.hideOnScreen;
+    expect(textOf(await h.send(A, "/nimeton", G))).toContain("privaviestinä");
+    const page = await h.send(A, "/nimeton");
+    expect(textOf(page)).toContain("Nimetön 1, 2");
+    const toggle = buttonsOf(page).find((b) => b.text.includes("Kilta <3 & co"))!;
+    expect(toggle.text).toContain("nimellä");
+    expect(toggle.callback_data).toBe(`m:ant:${gid.slice(0, 16)}`);
+    const pressed = await h.press(A, toggle.callback_data);
+    expect(hidden()).toBe(true);
+    expect(buttonsOf(pressed).find((b) => b.text.includes("Kilta"))!.text).toContain("nimettömänä");
+    await h.press(A, toggle.callback_data);
+    expect(hidden()).toBe(false);
+    await h.press(A, "m:ant:0123456789abcdef"); // not one of A's groups: nothing changes
+    await h.press(A, "m:ant:../../x");
+    expect(hidden()).toBe(false);
+    expect(buttonsOf(await h.press(A, "m:a")).some((b) => b.callback_data === "m:an")).toBe(true); // also under Asetukset
+    expect(textOf(await h.send(A, "/help"))).toContain("/nimeton"); // and the help mentions it
+    expect(textOf(await h.press(A, "m:hfr"))).toContain("/nimeton");
     const listing = textOf(await h.send(2002, "/promillet@kili_test_bot", G));
+    expect(h.services.groups.telegramChatId(gid)).toBe(G.id);
     expect(listing).toContain("user1001...");
     expect(textOf(await h.send(A, "/annokset", G))).toMatch(/user1001\.\.\. [\d.]+kpl/);
     expect(textOf(await h.send(A, "/stats2", G))).toContain("Top10 tilastot <b>annoksina</b>");
@@ -754,5 +780,15 @@ describe("/web", () => {
     await registerUser(h, 7003);
     expect(textOf(await h.send(7003, "/web"))).not.toContain("login#t=");
     expect(textOf(await h.send(7003, "/komennot"))).not.toContain("/web");
+    expect(textOf(await h.send(7003, "/komennot"))).not.toContain("/nimeton");
+    expect(textOf(await h.send(7003, "/help"))).not.toContain("/nimeton");
+    expect(textOf(await h.press(7003, "m:hfr"))).not.toContain("/nimeton");
+    expect(textOf(await h.send(7003, "/help"))).not.toContain("{web}");
+
+    // Nor is a group's chat id kept for its photo
+    const G = { id: -100999, title: "Ilman sivua" };
+    await h.send(7003, "/moro", G);
+    await h.send(7003, "/promillet", G);
+    expect(h.services.groups.telegramChatId(h.services.groups.listFor(h.account(7003))[0]!.id)).toBeNull();
   });
 });

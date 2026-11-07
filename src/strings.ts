@@ -26,6 +26,8 @@ export const E = {
   inbox: "📥",
   link: "🔗",
   key: "🔑",
+  tv: "📺",
+  hidden: "🙈",
 } as const;
 
 export const PLATFORM_NAMES = { telegram: "Telegram", discord: "Discord" } as const;
@@ -212,6 +214,15 @@ export const S = {
       changed: "Kuvaajan nimi muutettu!",
     },
     data: { button: E.inbox + " Lataa tietoni" },
+    nimettomyys: {
+      button: E.tv + " Nimettömyys näytöillä",
+      on_select:
+        "Ryhmän näyttölinkki näyttää esimerkiksi tapahtuman tv:ssä ryhmäläisten nimet ja promillet. Voit näkyä siellä nimellä <b>Nimetön 1, 2, …</b> Promillesi näkyvät silti, ja ryhmäläiset näkevät nimesi esim. /promillet-komennolla.\n\nValinta on ryhmäkohtainen, eikä siitä kerrota ryhmään. Napauta ryhmää vaihtaaksesi.",
+      none: "Et ole vielä missään ryhmässä. Sano ryhmässä /moro.",
+      hidden: E.hidden + " {name}: nimettömänä",
+      shown: E.person + " {name}: nimellä",
+      unnamed: "Nimeämätön ryhmä",
+    },
     linkit: {
       button: E.link + " Yhdistetyt palvelut",
       on_select:
@@ -313,6 +324,8 @@ export const S = {
         title: "FAQ: Ryhmät",
         text:
           "<b>Miten voin liittyä ryhmään tai poistua ryhmästä?</b>\nKirjoita ryhmässä /moro, jos haluat liittyä ryhmään. Kirjoita /poistu, jos haluat poistua ryhmästä. Ryhmään liittyneenä sinun promilletasosi näkyy esim. /promillet-komennolla.\n\n<b>Toin vanhat tietoni, pitääkö sanoa /moro uudestaan?</b>\nEi tarvitse, jos toit myös groups.csv-tiedoston: sinut lisätään vanhoihin ryhmiisi automaattisesti, kun niissä käytetään uutta bottia.\n\n<b>Miksi /kuvaaja -kuvassa kaikkien promillet laskee samaa tahtia?</b>\nPromillet kuvaavat alkoholin osuutta koko kehon verestä. Alkoholi palaa elimistössä nopeammin painavammilla ihmisillä, mutta veren määrä kehossa on tällöin myös suhteessa noin saman verran korkeampi. Tällöin promillejen väheneminen kehossa on kaikilla ihmisillä jotakuinkin sama.\n\n<b>Tallentaako Bläkkiskili ryhmän viestit?</b>\n<b>Ei tallenna.</b> Botti näkee ryhmässä vain sille osoitetut komennot.",
+        // Added while the website (and so event screens) is on.
+        web: "\n\n<b>Voinko piilottaa nimeni tapahtuman näytöltä?</b>\nVoit. Ryhmän näyttölinkki näyttää esimerkiksi tapahtuman tv:ssä ryhmäläisten nimet ja promillet. Lähetä minulle privaviestinä /nimeton, niin voit valita ryhmäkohtaisesti, näytkö näytöllä nimellä Nimetön 1, 2, … Promillesi näkyvät silti. Valinnasta ei kerrota ryhmään, ja sen voi tehdä myös verkkosivulla ryhmän sivulla.",
       },
       koodi: {
         button: "Koodi",
@@ -331,7 +344,7 @@ export const S = {
 
   // Added to the privacy text when the website is on.
   privacy_web:
-    "\n\n<b>Verkkosivu</b>\nVerkkosivulle kirjaudutaan Telegramilla tai botin /web-linkillä. Kirjautumisesta tallennetaan istunto: satunnainen tunniste tiivistettynä, joka vanhenee 30 päivässä, jos sivustoa ei käytä. IP-osoitteita ei tallenneta levylle. Sivusto toimii Cloudflaren kautta, joka näkee liikenteen (esimerkiksi IP-osoitteesi) ja voi pitää siitä lokia. Sivusto käyttää vain kirjautumiseen tarvittavaa evästettä, ei seurantaa eikä mainoksia.\n\nRyhmän jäsenet näkevät toistensa kuvaajanimet, promillearviot ja juotujen annosten määrät. Ryhmästä voi luoda <b>näyttölinkin</b>, esimerkiksi tapahtuman tv:tä varten: linkin haltija näkee ryhmän jäsenten nimet ja promillet ilman kirjautumista, kunnes linkki vanhenee (enintään 7 päivässä) tai se perutaan. Jokainen voi valita näkyvänsä näytöillä nimettömänä. Verkossa luodun ryhmän nimi tallennetaan salattuna.",
+    "\n\n<b>Verkkosivu</b>\nVerkkosivulle kirjaudutaan Telegramilla tai botin /web-linkillä. Kirjautumisesta tallennetaan istunto: satunnainen tunniste tiivistettynä, joka vanhenee 30 päivässä, jos sivustoa ei käytä. IP-osoitteita ei tallenneta levylle. Sivusto toimii Cloudflaren kautta, joka näkee liikenteen (esimerkiksi IP-osoitteesi) ja voi pitää siitä lokia. Sivusto käyttää vain kirjautumiseen tarvittavaa evästettä, ei seurantaa eikä mainoksia. Alkon tuotekuvat ja näyttölinkin Telegram-ryhmän kuva haetaan sivuston palvelimen kautta, joten selaimesi ei ota niitä varten yhteyttä Alkoon tai Telegramiin. Kuvia ei tallenneta levylle.\n\nRyhmän jäsenet näkevät toistensa kuvaajanimet, promillearviot ja juotujen annosten määrät. Ryhmästä voi luoda <b>näyttölinkin</b>, esimerkiksi tapahtuman tv:tä varten: linkin haltija näkee ryhmän jäsenten nimet ja promillet ilman kirjautumista, kunnes linkki vanhenee (enintään 7 päivässä) tai se perutaan. Jokainen voi valita näkyvänsä näytöillä nimettömänä (ryhmän sivulla tai botin yksityisviestissä komennolla /nimeton). Näyttölinkki näyttää Telegram-ryhmän kuvan, joten ryhmän Telegram-tunniste tallennetaan salattuna, kun ryhmässä käytetään bottia. Verkossa luodun ryhmän nimi tallennetaan salattuna.",
 
   terms:
     "<b>Käyttöehdot</b>\n\nKäyttämällä Bläkkiskiliä olet hyväksynyt seuraavat käyttöehdot. Bläkkiskilin päätarkoitus on arvioida alkoholin määrää kehossa. Bläkkiskilin toiminta voi muuttua tai pysähtyä milloin vain. Sinun täytyy olla yli 18 vuotta käyttääksesi Bläkkiskiliä. Bläkkiskilin kehittäjät tai ylläpitäjät eivät ole vastuussa mistään suorasta tai epäsuorasta haitasta, jota palvelun käyttäminen voi aiheuttaa. Bläkkiskili on ilmainen käyttää. Ominaisuuksien, kuten promillejen arvioiminen, takia Bläkkiskili tallentaa käyttäjistä erinäisiä tietoja ja käyttää näitä hyväksi laskennassa. Sinuun suoraan linkitettävät tiedot tiivistetään tai salataan ennen tallentamista. Tietoja ei koskaan anneta tai myydä eteenpäin kolmansille osapuolille. Voit ladata tietosi komennolla /data ja poistaa ne milloin tahansa asetuksista.{retention}\n\nBläkkiskilin tuottamat arviot ovat arvioita, eikä niihin voi missään tapauksessa täysin luottaa. Noudata lakia, kun käytät alkoholia.\n\nNämä käyttöehdot voivat muuttua milloin vain ilman erillistä huomautusta. Uusimmat käyttöehdot voi aina lukea /terms-komennolla.",
@@ -382,6 +395,7 @@ export const S = {
     admin_stats:
       "Tilastoja:\nKäyttäjiä on yhteensä {users}kpl, joista 14pv sisällä aktiivisia {active14}, ja 7pv sisällä aktiivisia {active7}.\nRyhmiä on yhteensä {groups}kpl, joista 14pv sisällä aktiivisia {groups14}, ja 7pv sisällä aktiivisia {groups7}. Lisäksi kaikki käyttäjät ovat yhteensä tilastoineet {drinks} juomaa.\nTop10 tilastot:\n\n{list}",
     help:
-      "Bläkkiskili auttaa sinua ja ystäviäsi seuraamaan rippauksesi (lue: promillejesi) tasoa. Aloita lähettämällä minulle privaviestinä /start.\n\nLuo ensimmäiseksi tunnus. Sen jälkeen voit alkaa kellottamaan juomia sisään /start-valikosta. Minut voi myös lisätä ryhmään, jolloin kerron /promillet-komennolla kaikkien ryhmässä olevien rippitasot. Jokaisen ryhmäläisen täytyy kuitenkin sanoa ryhmässä /moro, jotta he pääsevät rippilistaukseen mukaan.\n\nKaikki komennot: /komennot",
+      "Bläkkiskili auttaa sinua ja ystäviäsi seuraamaan rippauksesi (lue: promillejesi) tasoa. Aloita lähettämällä minulle privaviestinä /start.\n\nLuo ensimmäiseksi tunnus. Sen jälkeen voit alkaa kellottamaan juomia sisään /start-valikosta. Minut voi myös lisätä ryhmään, jolloin kerron /promillet-komennolla kaikkien ryhmässä olevien rippitasot. Jokaisen ryhmäläisen täytyy kuitenkin sanoa ryhmässä /moro, jotta he pääsevät rippilistaukseen mukaan.{web}\n\nKaikki komennot: /komennot",
+    help_web: "\n\nRyhmän promillet voi näyttää myös tapahtuman näytöllä verkkosivun näyttölinkillä. Jos et halua nimeäsi näytölle, lähetä minulle privaviestinä /nimeton.",
   },
 } as const;
