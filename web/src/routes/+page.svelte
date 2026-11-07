@@ -71,6 +71,8 @@
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 
   {#if dash}
+   <div class="cols">
+    <div class="left">
     <section class="hero" aria-live="polite">
       <p class="label">Promilleja arviolta</p>
       <p class="value">{permille(dash.permille)}<span class="unit">‰</span></p>
@@ -88,6 +90,7 @@
         <p class="muted">Ei juomia viimeisen vuorokauden ajalta. Kuvaaja ilmestyy, kun lisäät juoman.</p>
       {/if}
     </section>
+    </div>
 
     <section class="card">
       <h2>Tämä ilta</h2>
@@ -110,6 +113,7 @@
         <p class="muted">Ei juomia tänä iltana.</p>
       {/if}
     </section>
+   </div>
   {:else if !error}
     <p class="muted">Ladataan…</p>
   {/if}

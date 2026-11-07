@@ -21,7 +21,7 @@
   let viewportHeight = $state(900);
   const W = $derived(Math.max(width, 300));
   // The big (event screen) chart fills what the window leaves below the heading and legend.
-  const H = $derived(big ? Math.min(Math.max(viewportHeight - 300, 300), 640) : 300);
+  const H = $derived(big ? Math.min(Math.max(viewportHeight - 300, 300), 640) : Math.round(Math.min(Math.max(W * 0.5, 280), 460)));
   const M = $derived({ top: 18, right: 16, bottom: 30, left: 44 });
 
   const floorHour = (t: number) => t - (t % HOUR);

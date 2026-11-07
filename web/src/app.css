@@ -133,9 +133,30 @@ button {
 }
 
 .page {
-  max-width: 44rem;
+  max-width: 72rem;
   margin: 0 auto;
-  padding: 1rem 1rem 4rem;
+  padding: 1rem 1.25rem 4rem;
+}
+
+/* Forms and lists stay narrow, left-aligned under the header. */
+.col {
+  max-width: 44rem;
+}
+
+/* Two columns from desktop width: the main thing (chart) and the lists around it. */
+.cols {
+  display: grid;
+  gap: 1rem;
+  align-items: start;
+}
+.cols > * {
+  min-width: 0;
+}
+@media (min-width: 62rem) {
+  .cols {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: 1.5rem;
+  }
 }
 
 .card {

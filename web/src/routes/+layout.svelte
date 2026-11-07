@@ -42,6 +42,7 @@
 
 {#if session.me && !onScreen}
   <header>
+   <div class="bar">
     <a class="brand" href="/">Bläkkiskili</a>
     <nav aria-label="Päävalikko">
       <a href="/" aria-current={page.url.pathname === "/" ? "page" : undefined}>Etusivu</a>
@@ -50,6 +51,7 @@
       <a href="/settings" aria-current={page.url.pathname === "/settings" ? "page" : undefined}>Asetukset</a>
     </nav>
     <button class="link" onclick={logout}>Kirjaudu ulos</button>
+   </div>
   </header>
 {/if}
 
@@ -63,11 +65,16 @@
 
 <style>
   header {
+    border-bottom: 1px solid var(--border);
+  }
+  /* the same width and side padding as .page, so the logo lines up with the content */
+  .bar {
     display: flex;
     align-items: center;
     gap: 1rem;
-    padding: 0.6rem 1rem;
-    border-bottom: 1px solid var(--border);
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 0.6rem 1.25rem;
     flex-wrap: wrap;
   }
   .brand {
@@ -90,6 +97,20 @@
     background: var(--surface-2);
     color: var(--text-primary);
     font-weight: 600;
+  }
+  /* phones: brand and sign-out on one row, the menu under them */
+  @media (max-width: 40rem) {
+    .bar {
+      gap: 0.25rem 1rem;
+    }
+    .link {
+      order: 2;
+      margin-left: auto;
+    }
+    nav {
+      order: 3;
+      flex-basis: 100%;
+    }
   }
   .link {
     background: none;

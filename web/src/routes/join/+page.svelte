@@ -49,10 +49,12 @@
 <svelte:head><title>Liity ryhmään · Bläkkiskili</title></svelte:head>
 
 <main class="page">
+<div class="col">
   <h1>Liity ryhmään</h1>
   {#if working}<p class="muted">Liitytään…</p>{/if}
   {#if error}
     <p class="error" role="alert">{error}</p>
     <a class="btn" href="/groups">Omat ryhmät</a>
   {/if}
+</div>
 </main>

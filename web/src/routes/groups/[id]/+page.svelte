@@ -125,6 +125,8 @@
     <h1>{view.group.name}</h1>
     <p class="muted">{view.group.memberCount} jäsentä · {view.group.kind === "telegram" ? "Telegram-ryhmä" : "Verkkoryhmä"}</p>
 
+    <div class="cols">
+     <div class="left">
     <section class="card">
       {#if view.chart.lines.length}
         <Chart data={view.chart} />
@@ -151,6 +153,8 @@
       </ul>
     </section>
 
+     </div>
+     <div class="right">
     <section class="card">
       <h2>Näytä ruudulla</h2>
       <p class="muted">
@@ -228,6 +232,8 @@
         <button class="btn danger" disabled={busy} onclick={destroy}>Poista ryhmä</button>
       {/if}
     </section>
+     </div>
+    </div>
     <p class="muted updated">Päivittyy automaattisesti · {clock(view.now)}</p>
   {:else if !error}
     <p class="muted">Ladataan…</p>

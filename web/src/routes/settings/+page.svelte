@@ -31,6 +31,7 @@
 <svelte:head><title>Asetukset · Bläkkiskili</title></svelte:head>
 
 <main class="page">
+<div class="col">
   <h1>Asetukset</h1>
   <p class="muted">Tunnus: {me.name}. Painon, pituuden ja sukupuolen perusteella arvioidaan promillet.</p>
 
@@ -58,6 +59,7 @@
     </div>
     <button class="btn primary" disabled={busy} type="submit">Tallenna</button>
   </form>
+</div>
 </main>
 
 <style>

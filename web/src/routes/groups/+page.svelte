@@ -51,6 +51,7 @@
 <svelte:head><title>Ryhmät · Bläkkiskili</title></svelte:head>
 
 <main class="page">
+<div class="col">
   <h1>Ryhmät</h1>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 
@@ -88,6 +89,7 @@
       <button class="btn" disabled={busy} type="submit">Liity</button>
     </form>
   </section>
+</div>
 </main>
 
 <style>

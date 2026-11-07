@@ -86,6 +86,7 @@
 <svelte:head><title>Juo · Bläkkiskili</title></svelte:head>
 
 <main class="page">
+<div class="col">
   <h1>Lisää juoma</h1>
 
   <div class="status" aria-live="polite">
@@ -149,6 +150,7 @@
       <button class="btn primary" disabled={busy} type="submit">Lisää</button>
     </form>
   </section>
+</div>
 </main>
 
 <style>
