@@ -7,6 +7,8 @@ export interface Change {
   accountId?: string;
   /** A group's membership changed. */
   groupId?: string;
+  /** A screen link was revoked: its open screens must stop. */
+  screenHash?: string;
 }
 
 export class ChangeBus {

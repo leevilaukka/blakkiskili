@@ -90,6 +90,63 @@ export type LogDrinkRequest =
   | { kind: "custom"; cl: number; percent: number }
   | { kind: "repeat" };
 
+// ---------- groups and event screens ----------
+
+export type GroupKind = "telegram" | "web";
+
+export interface GroupSummary {
+  id: string;
+  name: string;
+  kind: GroupKind;
+  memberCount: number;
+  /** May rename, remove members, delete and rotate the invite (web groups only). */
+  isOwner: boolean;
+  /** This member shows as "Nimetön" on shared screens. */
+  hideOnScreen: boolean;
+}
+
+export interface BoardRow {
+  /** Opaque handle of the member inside this group (used to remove them). */
+  ref: string;
+  name: string;
+  permille: number;
+  /** Alcohol drunk in the last 12 hours, in standard drinks. */
+  standardDrinks12h: number;
+  /** Chooses to be shown as "Nimetön" on screens. Only meaningful in the members' own view. */
+  hidden: boolean;
+  isMe: boolean;
+}
+
+export interface ScreenLinkItem {
+  ref: string;
+  createdAt: number;
+  expiresAt: number;
+  /** Created by the viewer (who can therefore revoke it even when not the owner). */
+  mine: boolean;
+}
+
+export interface GroupView {
+  now: number;
+  group: GroupSummary;
+  chart: ChartData;
+  /** Everyone, highest first. */
+  members: BoardRow[];
+  /** When the live invite link expires; null when there is none. Only the owner sees this. */
+  inviteExpiresAt: number | null;
+  screens: ScreenLinkItem[];
+}
+
+/** What an event screen shows: no controls, and hidden members are anonymised. */
+export interface ScreenView {
+  now: number;
+  title: string;
+  kind: "group" | "person";
+  chart: ChartData;
+  /** Empty for a person. */
+  members: Pick<BoardRow, "name" | "permille" | "standardDrinks12h">[];
+  expiresAt: number;
+}
+
 export interface ApiError {
   error: string;
 }

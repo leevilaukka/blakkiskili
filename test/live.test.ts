@@ -56,7 +56,7 @@ describe("Hub", () => {
       tickMs: 1_000_000,
       minGapMs: 20,
       render: (channel) => (channel === "gone" ? null : { channel, version: ++version }),
-      channelsFor: (c) => (c.accountId ? [`u:${c.accountId}`] : []),
+      channelsFor: (c, watched) => (c.accountId ? watched.filter((w) => w === `u:${c.accountId}`) : []),
       ...over,
     });
     return { bus, h };

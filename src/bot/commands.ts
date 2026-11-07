@@ -229,7 +229,7 @@ export const COMMANDS: CommandDef[] = [
   },
   { name: "kuvaaja", description: "promillekuvaaja: 24 h + ennuste", scope: "all", needsUser: false, run: (ctx, p) => chart(ctx, p) },
   { name: "moro", description: "liity ryhmän listauksiin", scope: "group", needsUser: true, run: async (ctx, p) => {
-      ctx.kili.services.groups.join(p!.id, ctx.chat!.id);
+      ctx.kili.services.groups.join(p!.id, ctx.chat!.id, "title" in ctx.chat! ? ctx.chat.title : undefined);
       await sendHtml(ctx, fmt(S.commands.moro, { chat_title: chatTitle(ctx) }));
     } },
   { name: "poistu", description: "poistu ryhmän listauksista", scope: "group", needsUser: true, run: async (ctx, p) => {

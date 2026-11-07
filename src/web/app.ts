@@ -22,7 +22,21 @@ import { alcoholMgFromClPercent, HOUR_MS, isAlcoholAmountOutOfLimits, toStandard
 import { RateLimiter } from "../bot/ratelimit.ts";
 import { EBAC_WINDOW_MS, type Drink } from "../services/drinks.ts";
 import type { Services } from "../services/index.ts";
-import type { Config as ApiConfig, Dashboard, DrinkItem, LogDrinkRequest, Me, ProductItem } from "../../shared/api.ts";
+import { cleanGroupName, type GroupInfo, type Member } from "../services/groups.ts";
+import { SCREEN_DEFAULT_TTL_MS, type ScreenAccess } from "../services/screens.ts";
+import type {
+  Config as ApiConfig,
+  Dashboard,
+  DrinkItem,
+  GroupSummary,
+  GroupView,
+  LogDrinkRequest,
+  Me,
+  ProductItem,
+  ScreenLinkItem,
+  ScreenView,
+} from "../../shared/api.ts";
+import { buildBoard, memberRef, type Board } from "./boards.ts";
 import { Hub } from "./sse.ts";
 import { verifyTelegramLogin } from "./telegram.ts";
 
@@ -56,12 +70,15 @@ export function createWebApp(opts: WebAppOptions) {
 
   const sessionCookie = (token: string, expiresAt: number) =>
     `${cookieName}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor((expiresAt - now()) / 1000)}${secure ? "; Secure" : ""}`;
+  const screenCookieName = secure ? "__Host-kili-screen" : "kili-screen";
+  const screenCookie = (token: string, expiresAt: number) =>
+    `${screenCookieName}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.max(0, Math.floor((expiresAt - now()) / 1000))}${secure ? "; Secure" : ""}`;
   const clearCookie = () => `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure ? "; Secure" : ""}`;
 
-  function readCookie(req: Request): string | null {
+  function readCookie(req: Request, name = cookieName): string | null {
     for (const part of (req.headers.get("cookie") ?? "").split(";")) {
       const eq = part.indexOf("=");
-      if (eq > 0 && part.slice(0, eq).trim() === cookieName) return part.slice(eq + 1).trim() || null;
+      if (eq > 0 && part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim() || null;
     }
     return null;
   }
@@ -242,33 +259,261 @@ export function createWebApp(opts: WebAppOptions) {
     ),
   });
 
+  // ---------- groups and screens: views ----------
+
+  // The same board is shown to everyone watching a group, so it is built once for a moment and
+  // shared; any change announced on the bus drops it.
+  const boards = new Map<string, { at: number; board: Board }>();
+  services.bus.subscribe(() => boards.clear());
+  function board(key: string, groupId: string, members: () => Member[], anonymize: boolean): Board {
+    const t = now();
+    const hit = boards.get(key);
+    if (hit && Math.abs(t - hit.at) < 2000) return hit.board;
+    const built = buildBoard(services, groupId, members(), t, { anonymize });
+    boards.set(key, { at: t, board: built });
+    return built;
+  }
+
+  const summary = (info: GroupInfo, p: Profile, hideOnScreen: boolean): GroupSummary => ({
+    id: info.id,
+    name: info.name ?? "Telegram-ryhmä",
+    kind: info.kind,
+    memberCount: info.memberCount,
+    isOwner: services.groups.ownerOf(info.id) === p.id,
+    hideOnScreen,
+  });
+
+  const screenItems = (links: ReturnType<typeof services.screens.list>, p: Profile): ScreenLinkItem[] =>
+    links.map((l) => ({ ref: l.ref, createdAt: l.createdAt, expiresAt: l.expiresAt, mine: l.createdBy === p.id }));
+
+  function groupView(p: Profile, groupId: string): GroupView | null {
+    const info = services.groups.get(groupId);
+    const mine = services.groups.listFor(p.id).find((g) => g.id === groupId);
+    if (!info || !mine) return null;
+    const b = board(`g:${groupId}`, groupId, () => services.groups.members(groupId), false);
+    const me = memberRef(services, groupId, p.id);
+    const isOwner = services.groups.ownerOf(groupId) === p.id;
+    return {
+      now: now(),
+      group: summary(info, p, mine.hideOnScreen),
+      chart: b.chart,
+      members: b.rows.map((r) => ({ ...r, isMe: r.ref === me })),
+      inviteExpiresAt: isOwner ? services.groups.hasInvite(groupId) : null,
+      screens: screenItems(services.screens.list({ groupId }), p),
+    };
+  }
+
+  /** The account as a one-person group, for the personal screen. */
+  function personAsMember(p: Profile): Member {
+    return { userId: p.id, name: p.name, fullName: p.fullName, chartName: p.chartName, body: p, drinks: services.drinks.since(p.id, now() - EBAC_WINDOW_MS), joinedAt: 0, hideOnScreen: false };
+  }
+
+  function screenView(access: ScreenAccess): ScreenView | null {
+    if (access.groupId) {
+      const info = services.groups.get(access.groupId);
+      if (!info) return null;
+      const b = board(`s:${access.groupId}`, access.groupId, () => services.groups.members(access.groupId!), true);
+      return {
+        now: now(),
+        title: info.name ?? "Ryhmä",
+        kind: "group",
+        chart: b.chart,
+        members: b.rows.map(({ name, permille, standardDrinks12h }) => ({ name, permille, standardDrinks12h })),
+        expiresAt: access.expiresAt,
+      };
+    }
+    const p = access.accountId ? services.accounts.get(access.accountId) : null;
+    if (!p) return null;
+    const b = board(`p:${p.id}`, p.id, () => [personAsMember(p)], false);
+    return { now: now(), title: chartLabel(p), kind: "person", chart: b.chart, members: [], expiresAt: access.expiresAt };
+  }
+
   // ---------- live updates ----------
 
+  // Channels: "u:<account>" a person's dashboard, "g:<group>:<account>" a group page as one of its
+  // members sees it, "s:<token hash>" an event screen.
   const hub = new Hub({
     bus: services.bus,
     ...opts.live,
-    channelsFor: (change) => (change.accountId ? [`u:${change.accountId}`] : []),
+    channelsFor(change, watched) {
+      const groupIds = new Set<string>(change.groupId ? [change.groupId] : []);
+      if (change.accountId && watched.some((w) => !w.startsWith("u:"))) for (const g of services.groups.groupIdsOf(change.accountId)) groupIds.add(g);
+      const out: string[] = [];
+      for (const w of watched) {
+        if (w.startsWith("u:")) {
+          if (w === `u:${change.accountId}`) out.push(w);
+        } else if (w.startsWith("g:")) {
+          const [, groupId, accountId] = w.split(":");
+          if (groupIds.has(groupId!) || accountId === change.accountId) out.push(w);
+        } else if (w.startsWith("s:")) {
+          if (w === `s:${change.screenHash}`) {
+            out.push(w);
+            continue;
+          }
+          const access = services.screens.byHash(w.slice(2));
+          if (access && ((access.groupId && groupIds.has(access.groupId)) || (access.accountId && access.accountId === change.accountId))) out.push(w);
+        }
+      }
+      return out;
+    },
     render(channel) {
-      const p = channel.startsWith("u:") ? services.accounts.get(channel.slice(2)) : null;
-      return p ? dashboard(p) : null;
+      if (channel.startsWith("u:")) {
+        const p = services.accounts.get(channel.slice(2));
+        return p ? dashboard(p) : null;
+      }
+      if (channel.startsWith("g:")) {
+        const [, groupId, accountId] = channel.split(":");
+        const p = accountId ? services.accounts.get(accountId) : null;
+        return p && groupId ? groupView(p, groupId) : null;
+      }
+      if (channel.startsWith("s:")) {
+        const access = services.screens.byHash(channel.slice(2));
+        return access ? screenView(access) : null;
+      }
+      return null;
     },
   });
 
-  function events(p: Profile): Response {
-    if (!hub.hasRoom(p.id)) return fail(429, "too_many_streams");
+  function stream(channel: string, owner: string): Response {
+    if (!hub.hasRoom(owner)) return fail(429, "too_many_streams");
     const encoder = new TextEncoder();
     let stop: (() => void) | null = null;
-    const stream = new ReadableStream<Uint8Array>({
+    const body = new ReadableStream<Uint8Array>({
       start(controller) {
-        stop = hub.subscribe(`u:${p.id}`, p.id, (text) => controller.enqueue(encoder.encode(text)));
+        stop = hub.subscribe(channel, owner, (text) => controller.enqueue(encoder.encode(text)));
       },
       cancel() {
         stop?.();
       },
     });
-    return new Response(stream, {
+    return new Response(body, {
       headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-store", "x-accel-buffering": "no" },
     });
+  }
+
+  // ---------- groups and screens: handlers ----------
+
+  const GROUP_PATH = /^\/api\/groups\/([0-9a-f]{32,64})(?:\/([a-z]+)(?:\/([0-9a-f]{1,64}))?)?$/;
+  const lifetime = (hours: unknown) => (typeof hours === "number" && Number.isFinite(hours) ? hours * HOUR_MS : SCREEN_DEFAULT_TTL_MS);
+
+  async function createGroup(p: Profile, req: Request) {
+    const data = await body(req);
+    const name = cleanGroupName(data?.name);
+    if (!name) return fail(422, "invalid_name");
+    const made = services.groups.createWeb(p.id, name);
+    if (made === "limit") return fail(409, "too_many_groups");
+    return json(summary(made, p, false), 201);
+  }
+
+  async function joinGroup(p: Profile, req: Request) {
+    const data = await body(req);
+    if (!data || typeof data.code !== "string" || data.code.length > 100) return fail(400, "bad_request");
+    const r = services.groups.redeemInvite(data.code, p.id);
+    if (r.ok) return json({ id: r.groupId });
+    if (r.reason === "invalid") return fail(404, "invalid_invite");
+    return fail(409, r.reason === "full" ? "group_full" : "already_member");
+  }
+
+  async function groupAction(p: Profile, req: Request, groupId: string, action: string | undefined, sub: string | undefined) {
+    const method = req.method;
+    const info = services.groups.get(groupId);
+    // Non-members get the same answer as for a group that doesn't exist.
+    if (!info || !services.groups.isMemberOf(p.id, groupId)) return fail(404, "not_found");
+    const owner = services.groups.ownerOf(groupId) === p.id;
+    const needOwner = () => (owner ? null : fail(403, "not_owner"));
+
+    if (!action) {
+      if (method === "GET") return json(groupView(p, groupId));
+      if (method === "PATCH") {
+        const denied = needOwner();
+        if (denied) return denied;
+        const data = await body(req);
+        if (!cleanGroupName(data?.name)) return fail(422, "invalid_name");
+        services.groups.rename(groupId, data!.name as string);
+        return json(groupView(p, groupId));
+      }
+      if (method === "DELETE") {
+        const denied = needOwner();
+        if (denied) return denied;
+        return services.groups.deleteWeb(groupId) ? json({ ok: true }) : fail(409, "telegram_group");
+      }
+    }
+    if (action === "me" && method === "PATCH") {
+      const data = await body(req);
+      if (typeof data?.hideOnScreen !== "boolean") return fail(400, "bad_request");
+      services.groups.setHidden(p.id, groupId, data.hideOnScreen);
+      return json(groupView(p, groupId));
+    }
+    if (action === "leave" && method === "POST") {
+      services.groups.leaveGroup(p.id, groupId);
+      return json({ ok: true });
+    }
+    if (action === "members" && sub && method === "DELETE") {
+      const denied = needOwner();
+      if (denied) return denied;
+      const target = services.groups.members(groupId).find((m) => memberRef(services, groupId, m.userId) === sub);
+      if (!target) return fail(404, "not_found");
+      if (target.userId === p.id) return fail(400, "use_leave");
+      services.groups.leaveGroup(target.userId, groupId);
+      return json({ ok: true });
+    }
+    if (action === "invite") {
+      if (info.kind !== "web") return fail(409, "telegram_group"); // people join those by saying /moro in the chat
+      const denied = needOwner();
+      if (denied) return denied;
+      if (method === "POST") return json(services.groups.createInvite(groupId, p.id));
+      if (method === "DELETE") {
+        services.groups.revokeInvite(groupId);
+        return json({ ok: true });
+      }
+    }
+    if (action === "screens") {
+      if (method === "POST" && !sub) {
+        const data = await body(req);
+        const made = services.screens.create({ groupId }, p.id, lifetime(data?.hours));
+        return made === "limit" ? fail(409, "too_many_screens") : json(made, 201);
+      }
+      if (method === "DELETE" && sub) {
+        const link = services.screens.list({ groupId }).find((l) => l.ref === sub);
+        if (!link) return fail(404, "not_found");
+        if (!owner && link.createdBy !== p.id) return fail(403, "not_owner");
+        services.screens.revoke({ groupId }, sub);
+        return json({ ok: true });
+      }
+    }
+    if (action === "events" && method === "GET") return stream(`g:${groupId}:${p.id}`, p.id);
+    return fail(404, "not_found");
+  }
+
+  async function personalScreens(p: Profile, req: Request, ref: string | undefined) {
+    if (req.method === "GET" && !ref) return json({ screens: screenItems(services.screens.list({ accountId: p.id }), p) });
+    if (req.method === "POST" && !ref) {
+      const data = await body(req);
+      const made = services.screens.create({ accountId: p.id }, p.id, lifetime(data?.hours));
+      return made === "limit" ? fail(409, "too_many_screens") : json(made, 201);
+    }
+    if (req.method === "DELETE" && ref) return services.screens.revoke({ accountId: p.id }, ref) ? json({ ok: true }) : fail(404, "not_found");
+    return fail(404, "not_found");
+  }
+
+  /** Event screens: authorised by the link's token (kept in a cookie after /api/screen/open), not a session. */
+  async function screenRoutes(req: Request, path: string, clientIp: string): Promise<Response | null> {
+    if (path === "/api/screen/open" && req.method === "POST") {
+      if (signInLimiter.hit(clientIp) !== "ok") return fail(429, "rate_limited");
+      const data = await body(req);
+      if (!data || typeof data.token !== "string" || data.token.length > 200) return fail(400, "bad_request");
+      const access = services.screens.authenticate(data.token);
+      if (!access) return fail(404, "invalid_screen");
+      return json({ ok: true }, 200, { "set-cookie": screenCookie(data.token, access.expiresAt) });
+    }
+    if (path !== "/api/screen" && path !== "/api/screen/events") return null;
+    if (req.method !== "GET") return fail(405, "method_not_allowed");
+    if (apiLimiter.hit(`screen:${clientIp}`) !== "ok") return fail(429, "rate_limited");
+    const token = readCookie(req, screenCookieName);
+    const access = token ? services.screens.authenticate(token) : null;
+    if (!access) return fail(401, "unauthorized");
+    if (path === "/api/screen/events") return stream(`s:${access.hash}`, access.hash);
+    return json(screenView(access));
   }
 
   // ---------- routing ----------
@@ -295,6 +540,9 @@ export function createWebApp(opts: WebAppOptions) {
       return linkSignIn(req);
     }
 
+    const screen = await screenRoutes(req, path, clientIp);
+    if (screen) return screen;
+
     // Everything below needs a session.
     const cookie = readCookie(req);
     const session = cookie ? services.webSessions.authenticate(cookie) : null;
@@ -312,7 +560,14 @@ export function createWebApp(opts: WebAppOptions) {
       if (method === "PATCH") return patchMe(p, req);
     }
     if (path === "/api/dashboard" && method === "GET") return json(dashboard(p));
-    if (path === "/api/events" && method === "GET") return events(p);
+    if (path === "/api/events" && method === "GET") return stream(`u:${p.id}`, p.id);
+    if (path === "/api/groups" && method === "GET") return json({ groups: services.groups.listFor(p.id).map((g) => summary(g, p, g.hideOnScreen)) });
+    if (path === "/api/groups" && method === "POST") return createGroup(p, req);
+    if (path === "/api/groups/join" && method === "POST") return joinGroup(p, req);
+    const screens = /^\/api\/screens(?:\/([0-9a-f]{16}))?$/.exec(path);
+    if (screens) return personalScreens(p, req, screens[1]);
+    const group = GROUP_PATH.exec(path);
+    if (group) return groupAction(p, req, group[1]!, group[2], group[3]);
     if (path === "/api/products" && method === "GET") return search(p, url);
     if (path === "/api/drinks" && method === "POST") return logDrink(p, req);
     if (path === "/api/drinks/undo" && method === "POST") {

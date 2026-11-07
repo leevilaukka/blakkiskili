@@ -19,6 +19,7 @@ import { Identities } from "./identities.ts";
 import { Barcodes } from "./barcodes.ts";
 import { WebSessions } from "./websessions.ts";
 import { ChangeBus } from "./changebus.ts";
+import { Screens } from "./screens.ts";
 
 export interface Deps {
   db: Database;
@@ -48,7 +49,8 @@ export function createServices(deps: Deps, opts: ServiceOptions = {}) {
   const products = opts.products ?? new Products();
   const barcodes = opts.barcodes ?? new Barcodes();
   const webSessions = new WebSessions(deps);
-  return { identities, accounts, drinks, groups, stats, importer, pending, inactivity, announcements, products, barcodes, webSessions, bus, deps };
+  const screens = new Screens(deps, bus);
+  return { identities, accounts, drinks, groups, stats, importer, pending, inactivity, announcements, products, barcodes, webSessions, screens, bus, deps };
 }
 
 export type Services = ReturnType<typeof createServices>;

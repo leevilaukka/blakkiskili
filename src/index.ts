@@ -66,12 +66,12 @@ if (products.enabled) {
 }
 if (config.web.enabled) {
   jobs.push({
-    name: "web session cleanup",
+    name: "web cleanup",
     everyMs: 6 * 3600_000,
     firstDelayMs: 30_000,
     run: () => {
-      const n = services.webSessions.prune();
-      if (n > 0) console.log(`Web: removed ${n} expired session(s) and login link(s)`);
+      const n = services.webSessions.prune() + services.screens.prune() + services.groups.prune();
+      if (n > 0) console.log(`Web: removed ${n} expired session(s), link(s), invite(s) or empty group(s)`);
     },
   });
 }

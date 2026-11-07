@@ -138,6 +138,41 @@ const MIGRATIONS: string[] = [
   ) STRICT;
   CREATE INDEX web_login_links_expires ON web_login_links (expires_at);
   `,
+
+  /* 9: web groups and screen links */ `
+  -- Groups made on the website ('web') next to the Telegram chats ('telegram', id = HMAC of the
+  -- chat id). The name is encrypted like other names; Telegram groups get theirs from the chat
+  -- title when someone says /moro. owner_id is NULL when the owner's account was deleted: the
+  -- earliest member then counts as the owner.
+  ALTER TABLE groups ADD COLUMN name_enc TEXT;
+  ALTER TABLE groups ADD COLUMN kind TEXT NOT NULL DEFAULT 'telegram' CHECK (kind IN ('telegram', 'web'));
+  ALTER TABLE groups ADD COLUMN owner_id TEXT REFERENCES users(id) ON DELETE SET NULL;
+  -- A member can appear as "Nimetön" on shared screens.
+  ALTER TABLE group_members ADD COLUMN hide_on_screen INTEGER NOT NULL DEFAULT 0 CHECK (hide_on_screen IN (0, 1));
+
+  -- Invite links of web groups: only the hash of the code is stored, one live invite per group.
+  CREATE TABLE group_invites (
+    code_hash  TEXT PRIMARY KEY,                 -- Crypto.webTokenKey
+    group_id   TEXT NOT NULL UNIQUE REFERENCES groups(id) ON DELETE CASCADE,
+    created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    expires_at INTEGER NOT NULL                  -- epoch ms
+  ) STRICT;
+
+  -- Read-only links for event screens: show one group's (or one person's) live chart without
+  -- signing in. Revocable, expiring, only the hash of the token is stored.
+  CREATE TABLE screen_tokens (
+    token_hash TEXT PRIMARY KEY,                 -- Crypto.webTokenKey
+    group_id   TEXT REFERENCES groups(id) ON DELETE CASCADE,
+    account_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+    created_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,                 -- epoch ms
+    expires_at INTEGER NOT NULL,                 -- epoch ms
+    CHECK ((group_id IS NULL) != (account_id IS NULL))
+  ) STRICT;
+  CREATE INDEX screen_tokens_group ON screen_tokens (group_id);
+  CREATE INDEX screen_tokens_account ON screen_tokens (account_id);
+  CREATE INDEX screen_tokens_expires ON screen_tokens (expires_at);
+  `,
 ];
 
 export function openDatabase(path: string): Database {

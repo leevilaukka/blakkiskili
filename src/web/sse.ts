@@ -14,8 +14,8 @@ export interface HubOptions {
   bus: ChangeBus;
   /** The data to send for a channel; null when it no longer exists (viewers are told to stop). */
   render: (channel: string) => unknown | null;
-  /** Channels whose data a change affects. */
-  channelsFor: (change: Change) => string[];
+  /** Which of the channels people are watching right now a change affects. */
+  channelsFor: (change: Change, watched: readonly string[]) => string[];
   tickMs?: number;
   minGapMs?: number;
   /** Open streams in total, and per owner (an account, or a screen token). */
@@ -51,7 +51,8 @@ export class Hub {
     this.maxTotal = opts.maxTotal ?? 500;
     this.maxPerOwner = opts.maxPerOwner ?? 5;
     this.unsubscribe = opts.bus.subscribe((change) => {
-      for (const channel of opts.channelsFor(change)) this.notify(channel);
+      if (this.channels.size === 0) return;
+      for (const channel of opts.channelsFor(change, [...this.channels.keys()])) this.notify(channel);
     });
   }
 

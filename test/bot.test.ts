@@ -293,6 +293,7 @@ describe("bot end-to-end", () => {
     h.clock.now += 45 * 60_000;
     const G = { id: -100777, title: "Kilta <3 & co" };
     expect(textOf(await h.send(A, "/moro", G))).toContain("Kilta &lt;3 &amp; co");
+    expect(h.services.groups.listFor(h.account(A))[0]).toMatchObject({ name: "Kilta <3 & co", kind: "telegram" }); // the website shows it
     expect(textOf(await h.send(A, "/moro"))).toContain("vain ryhmissä");
     const listing = textOf(await h.send(2002, "/promillet@kili_test_bot", G));
     expect(listing).toContain("user1001...");
