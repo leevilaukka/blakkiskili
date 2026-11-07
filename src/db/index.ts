@@ -114,6 +114,30 @@ const MIGRATIONS: string[] = [
   -- bot did) or 'username' (the name shown in group listings: @username, else full name).
   ALTER TABLE users ADD COLUMN chart_name TEXT NOT NULL DEFAULT 'full' CHECK (chart_name IN ('full', 'username'));
   `,
+
+  /* 8: website sessions */ `
+  -- Browser sessions of the website. Only the HMAC of the random token is stored, so a leaked
+  -- database can't be used to sign in. They end with the account (cascade) or when revoked.
+  CREATE TABLE web_sessions (
+    token_hash   TEXT PRIMARY KEY,               -- Crypto.webTokenKey
+    account_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    identity_id  TEXT REFERENCES identities(id) ON DELETE CASCADE,  -- the login it came from
+    created_at   INTEGER NOT NULL,               -- epoch ms
+    last_seen_at INTEGER NOT NULL,               -- epoch ms
+    expires_at   INTEGER NOT NULL                -- epoch ms, slides forward while in use
+  ) STRICT;
+  CREATE INDEX web_sessions_account ON web_sessions (account_id);
+  CREATE INDEX web_sessions_expires ON web_sessions (expires_at);
+
+  -- Single-use links the bot's /web command sends, redeemed for a session.
+  CREATE TABLE web_login_links (
+    token_hash  TEXT PRIMARY KEY,                -- Crypto.webTokenKey
+    account_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    identity_id TEXT REFERENCES identities(id) ON DELETE CASCADE,
+    expires_at  INTEGER NOT NULL                 -- epoch ms
+  ) STRICT;
+  CREATE INDEX web_login_links_expires ON web_login_links (expires_at);
+  `,
 ];
 
 export function openDatabase(path: string): Database {

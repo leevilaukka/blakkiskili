@@ -25,6 +25,7 @@ const config: Config = {
   inactivity: { deleteAfterDays: 730, warnDaysBefore: 30 },
   backup: { everyMinutes: 60 },
   accountLinking: false,
+  web: { enabled: true, origin: "https://kili.test", port: 0, distDir: "./web/build" },
 };
 
 interface Call {
@@ -705,5 +706,38 @@ describe("barcodes", () => {
     await registerUser(h, 6005);
     expect(textOf(await h.send(6005, BEER_EAN))).toContain("Mitä?");
     expect(textOf(await h.sendPhoto(6005, "x"))).toContain("eivät ole käytössä");
+  });
+});
+
+describe("/web", () => {
+  test("gives a login link that signs the account in, once", async () => {
+    const h = harness(undefined, [], undefined, { web: { enabled: true, origin: "https://kili.test", port: 0, distDir: "" } });
+    expect(textOf(await h.send(7001, "/web"))).toContain("Luo tunnus"); // needs an account
+    await registerUser(h, 7001);
+
+    const reply = textOf(await h.send(7001, "/web"));
+    const url = /href="(https:\/\/kili\.test\/login#t=[\w-]+)"/.exec(reply)?.[1];
+    expect(url).toBeDefined();
+    expect(reply).toContain("vanhenee 10 minuutissa");
+    const token = url!.split("#t=")[1]!;
+    const session = h.services.webSessions.redeemLoginLink(token);
+    expect(session).not.toBeNull();
+    expect(h.services.webSessions.authenticate(session!.sessionToken)?.accountId).toBe(h.account(7001));
+    expect(h.services.webSessions.redeemLoginLink(token)).toBeNull();
+  });
+
+  test("on plain http (development) the URL is shown as text, because Telegram drops localhost links", async () => {
+    const h = harness(undefined, [], undefined, { web: { enabled: true, origin: "http://localhost:8081", port: 0, distDir: "" } });
+    await registerUser(h, 7002);
+    const reply = textOf(await h.send(7002, "/web"));
+    expect(reply).toMatch(/<code>http:\/\/localhost:8081\/login#t=[\w-]+<\/code>/);
+    expect(reply).not.toContain("<a ");
+  });
+
+  test("does not exist while the website is off", async () => {
+    const h = harness(undefined, [], undefined, { web: { enabled: false, origin: "", port: 0, distDir: "" } });
+    await registerUser(h, 7003);
+    expect(textOf(await h.send(7003, "/web"))).not.toContain("login#t=");
+    expect(textOf(await h.send(7003, "/komennot"))).not.toContain("/web");
   });
 });

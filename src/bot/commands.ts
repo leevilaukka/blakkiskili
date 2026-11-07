@@ -10,7 +10,8 @@ import { EBAC_WINDOW_MS } from "../services/drinks.ts";
 import { S, randomDrinkResponse } from "../strings.ts";
 import { KALJA033, KALJA05, type DrinkPreset } from "../lib/catalog.ts";
 import { dateTime, drinkList, escapeHtml, fmt, hoursMinutes, num, raw } from "../lib/format.ts";
-import { DAY_MS, parseIntStrict, roundTo, STANDARD_DRINK_GRAMS } from "../lib/units.ts";
+import { DAY_MS, MINUTE_MS, parseIntStrict, roundTo, STANDARD_DRINK_GRAMS } from "../lib/units.ts";
+import { LOGIN_LINK_TTL_MS } from "../services/websessions.ts";
 import { chartLabel, type Profile } from "../services/accounts.ts";
 import type { Config } from "../config.ts";
 import type { InlineKeyboardButton } from "grammy/types";
@@ -253,6 +254,8 @@ export const COMMANDS: CommandDef[] = [
   { name: "data", description: "lataa omat tietosi", scope: "private", needsUser: false, run: (ctx) => sendExport(ctx, ctx.from!.id) },
   { name: "yhdista", description: "yhdistä tunnus toisesta palvelusta koodilla", scope: "private", needsUser: false,
     enabled: (c) => c.accountLinking, run: (ctx, _p, args) => redeemLinkCode(ctx, args) },
+  { name: "web", description: "kirjaudu verkkosivulle", scope: "private", needsUser: true,
+    enabled: (c) => c.web.enabled, run: (ctx, p) => sendWebLogin(ctx, p!) },
   { name: "whoami", description: "näytä omat tietosi", scope: "private", needsUser: true, run: (ctx, p) =>
       sendHtml(ctx, fmt(S.commands.whoami, { name: p!.name, weight: p!.weight, height: p!.height, gender: p!.gender === "mies" ? S.male : S.female, created: dateTime(p!.createdAt) })) },
   { name: "help", description: "ohjeet", scope: "all", needsUser: false, run: (ctx) => sendHtml(ctx, S.commands.help) },
@@ -314,6 +317,20 @@ async function redeemLinkCode(ctx: BotContext, args: string) {
   const profile = services.accounts.get(r.accountId)!;
   ctx.kili.profile = profile;
   return sendHtml(ctx, fmt(t.done, { name: profile.name }));
+}
+
+/**
+ * /web: a single-use link that signs this account in on the website. The token is in the URL
+ * fragment, which browsers never send to servers, so it doesn't end up in any access log.
+ */
+async function sendWebLogin(ctx: BotContext, p: Profile) {
+  const { services, config, identityId } = ctx.kili;
+  const { token } = services.webSessions.createLoginLink(p.id, identityId);
+  const url = `${config.web.origin}/login#t=${token}`;
+  // Telegram drops links to localhost (and other plain-http hosts) from HTML, which leaves only
+  // the link text. For those (development) show the URL itself, to copy into a browser.
+  const link = url.startsWith("https://") ? raw(`<a href="${escapeHtml(url)}">Avaa Bläkkiskili</a>`) : raw(`<code>${escapeHtml(url)}</code>`);
+  return sendHtml(ctx, fmt(S.commands.web, { link, minutes: LOGIN_LINK_TTL_MS / MINUTE_MS }));
 }
 
 /** Commands shown in Telegram's "/" menu. */

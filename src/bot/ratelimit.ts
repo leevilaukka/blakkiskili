@@ -1,5 +1,6 @@
 // Per-user flood protection: stops a script or a stuck client from hammering the bot and
-// stuffing the database. Kept in memory only (keyed by Telegram id, never persisted).
+// stuffing the database. Kept in memory only (keyed by Telegram id in the bot, by account or
+// IP address on the website; never persisted).
 
 import type { MiddlewareFn } from "grammy";
 import type { BotContext } from "./context.ts";
@@ -7,7 +8,7 @@ import type { BotContext } from "./context.ts";
 export type Verdict = "ok" | "warn" | "drop";
 
 export class RateLimiter {
-  private readonly windows = new Map<number, { start: number; count: number }>();
+  private readonly windows = new Map<string | number, { start: number; count: number }>();
 
   constructor(
     private readonly limit: number,
@@ -16,7 +17,7 @@ export class RateLimiter {
   ) {}
 
   /** "warn" is returned once, on the first update over the limit in a window. */
-  hit(key: number): Verdict {
+  hit(key: string | number): Verdict {
     const t = this.now();
     let w = this.windows.get(key);
     if (!w || t - w.start >= this.windowMs) {

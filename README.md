@@ -44,6 +44,17 @@ bun test                      # unit + end-to-end tests (fake Telegram API)
 bun run typecheck
 ```
 
+### Website (development)
+
+The website is a SvelteKit single-page app in `web/`, served by the bot's own process (`src/web/`). It is off unless `WEB_ENABLED=1`.
+
+```sh
+bun run web:build             # build web/ into web/build (installs web/ dependencies)
+bun run web:demo              # try the UI with a throwaway database and a demo user, no Telegram needed
+```
+
+With the real dev bot: set `WEB_ENABLED=1` and `WEB_ORIGIN=http://localhost:8081` in `.env`, run `bun run dev`, send the bot `/web` and open the link it gives (it is shown as text because Telegram does not link `localhost`). For hot reload run `bun run web:dev` (port 5173, forwards `/api` to the bot) and use `WEB_ORIGIN=http://localhost:5173`. Telegram's login button only works on the registered domain; locally use `/web`. `bun run web:check` type-checks the app.
+
 ### Production (VPS, Docker)
 
 Follow **[deploy/RUNBOOK.md](deploy/RUNBOOK.md)**. It covers secrets, the server ([cloud-init](deploy/cloud-init.yml)), off-site backups, the restore drill and incident response. In short:

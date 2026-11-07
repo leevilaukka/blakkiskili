@@ -8,3 +8,6 @@ backups
 backup.env
 restore
 deploy
+web/node_modules
+web/.svelte-kit
+web/build

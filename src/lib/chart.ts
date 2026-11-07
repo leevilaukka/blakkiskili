@@ -9,6 +9,9 @@
 
 import { calculateEbac, type BodyProfile, type DrinkSample } from "./alcomath.ts";
 import { hhmm, longDate, num } from "./format.ts";
+import type { ChartData, ChartLine } from "../../shared/api.ts";
+
+export type { ChartData, ChartLine };
 
 const pm = (v: number) => `${v.toFixed(2)}‰`;
 import { HOUR_MS } from "./units.ts";
@@ -113,6 +116,31 @@ export function assignColors(ids: readonly string[]): Map<string, string> {
     out.set(id, PAGE_COLORS[slot]!);
   }
   return out;
+}
+
+/**
+ * The same numbers buildPermilleChart draws (same window, step and colours), as JSON. Used by
+ * the website so its chart and the bot's picture agree.
+ */
+export function buildChartData(series: readonly ChartSeries[], now: number): ChartData {
+  const from = floorHour(now - PAST_MS);
+  const to = ceilHour(now + FORECAST_MS);
+  const colors = assignColors(series.map((s) => s.id));
+  const lines = series
+    .map((s) => {
+      const points = sample(s, from, to, now);
+      return {
+        id: s.id,
+        name: s.name,
+        color: colors.get(s.id)!,
+        current: points.find((p) => p.t === now)!.v,
+        peak: Math.max(...points.map((p) => p.v)),
+        points: points.map((p): [number, number] => [p.t, Math.round(p.v * 1000) / 1000]),
+      };
+    })
+    .filter((l) => l.peak > EPS)
+    .sort((a, b) => b.peak - a.peak);
+  return { now, from, to, lines };
 }
 
 function niceStep(max: number): number {

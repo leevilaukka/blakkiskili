@@ -20,6 +20,8 @@ export interface Crypto {
   groupKey(telegramChatId: number): string;
   /** Lookup key for a one-time account-linking code. */
   linkCodeKey(code: string): string;
+  /** Lookup key for a website token (session, login link, screen link). Only the hash is stored. */
+  webTokenKey(token: string): string;
   encrypt(plain: string): string;
   decrypt(token: string): string;
 }
@@ -41,6 +43,7 @@ export function createCrypto(appSecret: string): Crypto {
     identityKey: (platform, id) => hmac(platform === "telegram" ? "user" : `${platform}-user`, id),
     groupKey: (id) => hmac("group", id),
     linkCodeKey: (code) => hmac("link-code", code),
+    webTokenKey: (token) => hmac("web-token", token),
     encrypt(plain) {
       const iv = randomBytes(12);
       const cipher = createCipheriv("aes-256-gcm", dataKey, iv);

@@ -1,0 +1,180 @@
+/* Tokens by role. Light values are the bot chart's; dark values are the dataviz palette's dark
+   steps, validated against #1a1a19 (see Chart.svelte). Colour never carries meaning alone. */
+:root {
+  color-scheme: light;
+  --surface-1: #fcfcfb;
+  --surface-2: #f0efec;
+  --border: #e1e0d9;
+  --axis: #c3c2b7;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #6f6d67;
+  --accent: #2a78d6;
+  --accent-ink: #ffffff;
+  --danger: #b3261e;
+
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #6250d6;
+  --series-8: #e34948;
+  --series-9: #8c564b;
+  --series-10: #17becf;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --surface-2: #262625;
+    --border: #353533;
+    --axis: #4a4946;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --text-muted: #9b9990;
+    --accent: #3987e5;
+    --accent-ink: #0b0b0b;
+    --danger: #f2877f;
+
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
+    --series-8: #e66767;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.45;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--surface-1);
+}
+
+#app {
+  display: contents;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.2;
+  margin: 0;
+}
+
+a {
+  color: var(--accent);
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.page {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 1rem 1rem 4rem;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem;
+  background: var(--surface-1);
+}
+
+.muted {
+  color: var(--text-secondary);
+}
+
+.btn {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 10px;
+  padding: 0.55rem 0.9rem;
+  min-height: 44px;
+}
+
+.btn:hover {
+  border-color: var(--axis);
+}
+
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.error {
+  color: var(--danger);
+}
+
+input[type="text"],
+input[type="number"],
+input[type="search"],
+select {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+  background: var(--surface-1);
+  min-height: 44px;
+  width: 100%;
+}
+
+/* SvelteKit's route announcer hides itself with an inline style attribute, which our strict
+   Content-Security-Policy (style-src 'self') blocks. Same visually-hidden rule, in the stylesheet. */
+#svelte-announcer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

@@ -108,6 +108,11 @@ export class Drinks {
     return last;
   }
 
+  /** Deletes one of the user's drinks by id. False if it doesn't exist or belongs to someone else. */
+  delete(userId: string, drinkId: number): boolean {
+    return this.deps.db.query("DELETE FROM drinks WHERE user_id = ? AND id = ?").run(userId, drinkId).changes > 0;
+  }
+
   /** Drinks since `sinceMs`, ascending. */
   since(userId: string, sinceMs: number): Drink[] {
     return (
@@ -146,11 +151,8 @@ export class Drinks {
     ).map((r) => r.product_id);
   }
 
-  /**
-   * Energy of the current session: the latest drinks with no pause of `SESSION_GAP_MS` between
-   * them (or since the last one). Null when there is no session going on.
-   */
-  sessionEnergy(userId: string, now = this.deps.now()): Energy | null {
+  /** The current session: the latest drinks with no pause of `SESSION_GAP_MS` between them (or since the last one), oldest first. */
+  session(userId: string, now = this.deps.now()): Drink[] {
     const recent = this.since(userId, now - EBAC_WINDOW_MS);
     let edge = now;
     const session: Drink[] = [];
@@ -160,6 +162,12 @@ export class Drinks {
       session.push(d);
       edge = d.createdAt;
     }
+    return session.reverse();
+  }
+
+  /** Energy of the current session. Null when there is no session going on. */
+  sessionEnergy(userId: string, now = this.deps.now()): Energy | null {
+    const session = this.session(userId, now);
     if (session.length === 0) return null;
     return {
       kcal: session.reduce((sum, d) => sum + (d.kcal ?? 0), 0),
