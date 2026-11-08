@@ -115,3 +115,41 @@ Delete `restore/` when done. It contains the whole database.
 **Backups failing** (healthchecks email or admin DM): check `docker compose logs backup`. Usual causes are an expired or rotated key, a full bucket, or the bot being down, which shows as "snapshot is older than…".
 
 **Lost `APP_SECRET`:** the data can't be recovered, by design. Start fresh, and tell users they can re-import their `/data` exports.
+
+## 7. Moving to a new server
+
+For changing providers or replacing the VPS while the old one still works. If the old server is dead or compromised, use the real restore in §4 instead.
+
+The only state on the server is `data/kili.sqlite` and the env files. Nothing else is tied to the server: the bot uses long polling, so it has no IP or DNS in Telegram, and the backups and healthchecks.io are off-site. Expect 10–15 minutes of downtime; Telegram holds updates for 24 h, so no messages are lost.
+
+**Never run both servers at once.** Two bots polling get `409 Conflict` and updates bounce between them, and two backup containers write to one restic repository. Everything on the old server stops before anything starts on the new one.
+
+1. **Provision** the new server with §1 steps 1–4. Stay in the EU (§1 and the privacy text in `src/strings.ts` assume it). Arm works too: the image is built for amd64 and arm64. Leave room for the `mem_limit`s in `docker-compose.yml` plus the OS (about 1.5 GB RAM); there is no swap.
+2. **Tailscale:** rename the old machine first (admin console → *Edit machine name* → `blakkiskili-old`), otherwise the new one comes up as `blakkiskili-1`. Then follow §1 step 5 on the new server, including the `tag:blakkiskili` tag; the existing policy rules then cover it.
+3. **Prepare, but don't start:**
+   ```sh
+   ssh kili@blakkiskili
+   git clone <repo-url> ~/blakkiskili && cd ~/blakkiskili
+   mkdir -m 700 data backups && sudo chown 1000:1000 data backups
+   ```
+   Copy the env files from your own machine. They go straight from one server to the other and are never printed. **Keep the same `APP_SECRET`**: a new one makes all data unreadable.
+   ```sh
+   for f in .env backup.env; do
+     ssh kili@blakkiskili-old "cat ~/blakkiskili/$f" | ssh kili@blakkiskili "umask 077; cat > ~/blakkiskili/$f"
+   done
+   ```
+4. **Cut over:**
+   ```sh
+   # old server: stop everything, then take a consistent single-file copy
+   ssh kili@blakkiskili-old 'cd ~/blakkiskili && docker compose down && umask 077 && sudo sqlite3 data/kili.sqlite ".backup /home/kili/kili-move.sqlite" && sudo chown kili: ~/kili-move.sqlite'
+   # copy it across
+   ssh kili@blakkiskili-old 'cat ~/kili-move.sqlite' | ssh kili@blakkiskili 'umask 077; cat > ~/kili-move.sqlite'
+   # new server: check, put in place, start
+   ssh kili@blakkiskili
+   sqlite3 ~/kili-move.sqlite "PRAGMA integrity_check; SELECT count(*) FROM users;"
+   cd ~/blakkiskili && sudo install -o 1000 -g 1000 -m 600 ~/kili-move.sqlite data/kili.sqlite
+   docker compose pull && docker compose up -d
+   ```
+   Don't migrate from the restic backup when the old server works: it is uploaded only every 6 h, so up to 6 h of drinks would be lost.
+5. **Check:** the logs show `started (long polling)`; `/promillet` shows recent drinks; after the first snapshot, `docker compose restart backup` logs `backup ok`. Then do the §4 restore drill on the new server.
+6. **Clean up:** `rm ~/kili-move.sqlite` on both servers (it is the whole database). Keep the old server powered off for a few days as a fallback, then delete it **with its disks and snapshots** in the provider console (it still holds the database and `APP_SECRET`), remove `blakkiskili-old` from the tailnet, and close the old hosting account if nothing else uses it.
