@@ -36,7 +36,7 @@ jobs:
       - name: Test
         run: bun test
 
-      - name: Website: install, check and build
+      - name: "Website: install, check and build"
         working-directory: web
         run: |
           bun install --frozen-lockfile

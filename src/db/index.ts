@@ -179,6 +179,39 @@ const MIGRATIONS: string[] = [
   -- Recorded when someone says /moro or uses a command in the group; NULL for web groups.
   ALTER TABLE groups ADD COLUMN chat_enc TEXT;
   `,
+
+  /* 11: user-added barcode products */ `
+  -- Products outside Alko's catalogue (grocery-store beers, imports) that users have added for a
+  -- barcode Alko doesn't know. Shared: every user scanning the barcode gets the product. Kept in
+  -- the bot only, never sent to Alkometriikka. added_by lets the adder fix it; NULL once that
+  -- account is deleted (admins can still edit).
+  CREATE TABLE custom_products (
+    ean        TEXT PRIMARY KEY,                 -- normalised EAN-13 or EAN-8
+    kind       TEXT NOT NULL CHECK (kind IN ('olut', 'viini', 'kuohu', 'vakeva')),
+    name       TEXT NOT NULL,
+    size_l     REAL NOT NULL CHECK (size_l > 0), -- one container
+    abv        REAL NOT NULL CHECK (abv > 0 AND abv < 100),
+    kcal100    REAL CHECK (kcal100 >= 0),        -- energy per 100 ml, NULL when unknown
+    added_by   TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL,                 -- epoch ms
+    updated_at INTEGER NOT NULL                  -- epoch ms
+  ) STRICT;
+  CREATE INDEX custom_products_added_by ON custom_products (added_by);
+  `,
+
+  /* 12: error reports on user-added products */ `
+  -- "Ilmoita virheestä": a user tells the admins a user-added product is wrong. One open report per
+  -- user and product (reporting again replaces the message). Gone when an admin marks it handled,
+  -- the product is deleted, or the reporter's account is deleted. Admins see the message, not who sent it.
+  CREATE TABLE custom_product_reports (
+    ean         TEXT NOT NULL REFERENCES custom_products(ean) ON DELETE CASCADE,
+    reported_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    message     TEXT NOT NULL,
+    created_at  INTEGER NOT NULL,                -- epoch ms
+    PRIMARY KEY (ean, reported_by)
+  ) STRICT;
+  CREATE INDEX custom_product_reports_by ON custom_product_reports (reported_by);
+  `,
 ];
 
 export function openDatabase(path: string): Database {

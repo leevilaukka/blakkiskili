@@ -1,13 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { findPreset } from "../src/lib/catalog.ts";
 import { HOUR_MS, MINUTE_MS } from "../src/lib/units.ts";
-import { createWebApp } from "../src/web/app.ts";
 import { GroupPhotos } from "../src/web/photos.ts";
-import { setup, tg } from "./helpers.ts";
+import { serveTestApp, setup, tg } from "./helpers.ts";
 
 const ORIGIN = "https://kili.test";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const apps: ReturnType<typeof createWebApp>[] = [];
+const apps: ReturnType<typeof serveTestApp>[] = [];
 afterEach(() => {
   for (const a of apps.splice(0)) a.close();
 });
@@ -19,7 +18,7 @@ function world(extra: { groupPhotos?: GroupPhotos } = {}) {
   const alice = user(1, "alice", "Alice Aalto");
   const bob = user(2, "bob", "Bob Berg");
   const carol = user(3, "carol", "Carol Cederberg");
-  const app = createWebApp({ services: w.services, botToken: "1:x", botUsername: "b", origin: ORIGIN, live: { tickMs: 1_000_000, minGapMs: 10 }, groupPhotos: extra.groupPhotos });
+  const app = serveTestApp({ services: w.services, botToken: "1:x", botUsername: "b", origin: ORIGIN, live: { tickMs: 1_000_000, minGapMs: 10 }, groupPhotos: extra.groupPhotos });
   apps.push(app);
   const cookies = new Map<string, string>();
   const as = (p: { id: string }) => {

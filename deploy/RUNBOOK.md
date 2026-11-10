@@ -114,6 +114,8 @@ Delete `restore/` when done. It contains the whole database.
 
 **Backups failing** (healthchecks email or admin DM): check `docker compose logs backup`. Usual causes are an expired or rotated key, a full bucket, or the bot being down, which shows as "snapshot is older than…".
 
+**A wrong or offensive user-added barcode product:** users add products for barcodes Alko doesn't know, and everyone sees them. As an admin (in `ADMIN_IDS`), send the barcode to the bot and press 🗑 Poista tuote (or ✏️ Muokkaa tuotetta). Additions and deletions are logged (`docker compose logs kili | grep "Custom barcode"`). To list them all: `docker compose exec kili bun -e 'import {Database} from "bun:sqlite"; console.table(new Database("/app/data/kili.sqlite").query("SELECT ean, kind, name, size_l, abv, created_at FROM custom_products ORDER BY created_at DESC").all())'`
+
 **Lost `APP_SECRET`:** the data can't be recovered, by design. Start fresh, and tell users they can re-import their `/data` exports.
 
 ## 7. Website (Cloudflare Tunnel)

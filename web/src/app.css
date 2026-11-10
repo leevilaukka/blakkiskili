@@ -428,6 +428,7 @@ button {
 input[type="text"],
 input[type="number"],
 input[type="search"],
+input[type="date"],
 select {
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -452,6 +453,7 @@ input[type="checkbox"] {
   input[type="text"],
   input[type="number"],
   input[type="search"],
+  input[type="date"],
   select {
     font-size: 16px;
     min-height: 44px;

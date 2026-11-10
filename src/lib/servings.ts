@@ -141,6 +141,57 @@ export function mergeServings(variantsRepFirst: readonly CatalogProduct[]): Serv
   return out.sort((a, b) => a.litres - b.litres);
 }
 
+// ---------- user-added products (custom barcodes) ----------
+
+export const CUSTOM_KINDS = ["olut", "viini", "kuohu", "vakeva"] as const;
+export type CustomKind = (typeof CUSTOM_KINDS)[number];
+export const isCustomKind = (s: string): s is CustomKind => (CUSTOM_KINDS as readonly string[]).includes(s);
+
+/** A product a user added for a barcode Alko doesn't know (services/customproducts.ts). */
+export interface CustomProductData {
+  ean: string;
+  kind: CustomKind;
+  name: string;
+  sizeL: number; // one can or bottle
+  abv: number;
+  kcal100: number | null;
+}
+
+/** Drink ids of user-added products: "e" + the barcode. Alko product numbers are digits only. */
+export const customDrinkId = (ean: string) => `e${ean}`;
+export const eanOfCustomDrinkId = (id: string): string | null => (/^e\d{8}(\d{5})?$/.test(id) ? id.slice(1) : null);
+/** Only real Alko product numbers go into drinks.product_id. */
+export const isAlkoProductId = (id: string) => /^\d{1,10}$/.test(id);
+
+const KIND_TYPES: Record<CustomKind, Pick<CatalogProduct, "type" | "subtype">> = {
+  olut: { type: "Panimotuotteet", subtype: null },
+  viini: { type: "Viinit", subtype: null },
+  kuohu: { type: "Viinit", subtype: "kuohuviinit" },
+  vakeva: { type: "Väkevät", subtype: null },
+};
+
+/** A user-added product in catalogue form, so it gets the same servings as an Alko product of its kind. */
+export function customCatalogDrink(c: CustomProductData): CatalogDrink {
+  // Pack words would make servingsFor divide the size, which is already one container.
+  const name = cleanName(c.name);
+  const product: CatalogProduct = {
+    id: customDrinkId(c.ean),
+    name,
+    maker: null,
+    sizeL: c.sizeL,
+    abv: c.abv,
+    ...KIND_TYPES[c.kind],
+    packaging: null,
+    selection: null,
+    status: null,
+    price: null,
+    kcal100: c.kcal100,
+    country: null,
+    ean: c.ean,
+  };
+  return { id: product.id, name, product, variants: [product], servings: mergeServings([product]) };
+}
+
 /** What gets stored as the drink description, e.g. "🍺 Karhu 4,6 (33 cl)". */
 export function servingDescription(drink: CatalogDrink, s: Serving): string {
   const name = [...drink.name].length > 60 ? [...drink.name].slice(0, 59).join("") + "…" : drink.name;

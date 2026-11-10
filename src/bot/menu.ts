@@ -3,7 +3,7 @@
 // View. Nodes that expect typed input set a Pending state; any other navigation clears it.
 
 import type { BotContext } from "./context.ts";
-import { contactExtras, displayName, fullName, retentionText, termsHtml, webPrivacyText } from "./context.ts";
+import { contactExtras, displayName, fullName, isAdmin, retentionText, termsHtml, webPrivacyText } from "./context.ts";
 import { back, btn, editView, sendExport, type View } from "./ui.ts";
 import { PLATFORM_NAMES, S, randomDrinkResponse } from "../strings.ts";
 import { formatLinkCode, LINK_CODE_TTL_MS } from "../services/identities.ts";
@@ -17,7 +17,13 @@ import type { Gender } from "../lib/alcomath.ts";
 import type { InlineKeyboardButton } from "grammy/types";
 import {
   cl,
+  CUSTOM_KINDS,
+  customCatalogDrink,
+  customDrinkId,
   customServing,
+  eanOfCustomDrinkId,
+  isAlkoProductId,
+  isCustomKind,
   emojiFor,
   euros,
   packCount,
@@ -30,6 +36,7 @@ import {
   type Serving,
 } from "../lib/servings.ts";
 import type { Energy } from "../services/drinks.ts";
+import type { CustomProduct } from "../services/customproducts.ts";
 
 type Handler = (ctx: BotContext, arg: string | undefined) => View | Promise<View>;
 
@@ -176,8 +183,18 @@ export function searchResultsView(ctx: BotContext, profile: Profile, text: strin
 /** Logs a catalogue serving and returns the description that was stored. */
 export function logServing(ctx: BotContext, profile: Profile, drink: CatalogDrink, serving: Serving): string {
   const description = servingDescription(drink, serving);
-  ctx.kili.services.drinks.add(profile.id, serving.mg, description, { productId: serving.productId, kcal: serving.kcal });
+  // drinks.product_id is an Alko product number; user-added products have none.
+  const productId = isAlkoProductId(serving.productId) ? serving.productId : null;
+  ctx.kili.services.drinks.add(profile.id, serving.mg, description, { productId, kcal: serving.kcal });
   return description;
+}
+
+/** A drink by id: an Alko product from the catalogue, or a user-added barcode product ("e<ean>"). */
+export function findDrink(ctx: BotContext, id: string): CatalogDrink | undefined {
+  const ean = eanOfCustomDrinkId(id);
+  if (!ean) return ctx.kili.services.products.get(id);
+  const custom = ctx.kili.services.customProducts.get(ean);
+  return custom ? customCatalogDrink(custom) : undefined;
 }
 
 const goneView = (): View => ({
@@ -187,17 +204,24 @@ const goneView = (): View => ({
 
 /** A product: one button per usual serving, plus a custom amount. */
 export function productView(ctx: BotContext, drinkId: string, notice = ""): View {
-  const { products } = ctx.kili.services;
-  const drink = products.get(drinkId);
+  const drink = findDrink(ctx, drinkId);
   if (!drink) return goneView();
+  const ean = eanOfCustomDrinkId(drink.id);
+  const custom = ean ? ctx.kili.services.customProducts.get(ean) : null;
+  const editable = custom && canEditCustom(ctx, custom);
   return {
     text:
       header(S.search.title) +
       (notice ? notice + "\n\n" : "") +
-      fmt(S.search.product, { name: `${emojiFor(drink.product)} ${drink.name}`, details: raw(productDetails(ctx, drink)) }),
+      fmt(S.search.product, {
+        name: `${emojiFor(drink.product)} ${drink.name}`,
+        details: raw(custom ? customDetails(custom) : productDetails(ctx, drink)),
+      }),
     keyboard: [
       ...drink.servings.map((sv) => [btn(servingButtonText(sv), `ps:${drink.id}:${sv.key}`)]),
       [btn(S.search.custom_button, `pc:${drink.id}`)],
+      ...(editable ? [[btn(S.custom.edit_button, `bn:${custom.ean}`), btn(S.custom.delete_button, `bd:${custom.ean}`)]] : []),
+      ...(custom && !editable ? [[btn(S.custom.report_button, `br:${custom.ean}`)]] : []),
       [btn(S.search.more, "jh")],
       back("j"),
     ],
@@ -208,23 +232,110 @@ export function productView(ctx: BotContext, drinkId: string, notice = ""): View
 
 /** What a scanned or typed barcode leads to: its product, or why there isn't one. */
 export async function barcodeView(ctx: BotContext, input: string): Promise<View> {
-  const { barcodes, products } = ctx.kili.services;
+  const { barcodes, products, customProducts } = ctx.kili.services;
   const ean = normalizeEan(input);
-  const message = (text: string): View => ({ text: header(S.barcode.title) + text, keyboard: [[btn(S.search.button, "jh")], back("j")] });
+  const message = (text: string, canAdd = false): View => ({
+    text: header(S.barcode.title) + text,
+    keyboard: [...(canAdd && ean ? [[btn(S.custom.add_button, `bn:${ean}`)]] : []), [btn(S.search.button, "jh")], back("j")],
+  });
   if (!ean) return message(S.barcode.invalid);
 
-  // Alkometriikka's catalogue knows the barcodes it has seen; the API Worker asks Alko for the rest.
+  // Alkometriikka's catalogue knows the barcodes it has seen. Next come the products users have
+  // added here, and only then is the API Worker asked (it asks Alko).
   let productId = products.productIdByEan(ean) ?? null;
   if (!productId) {
+    if (customProducts.get(ean)) return productView(ctx, customDrinkId(ean), fmt(S.barcode.found_custom, { ean }));
     const hit = await barcodes.resolve(ean);
     if (!hit.ok) return message(fmt(hit.reason === "rate-limited" ? S.barcode.rate_limited : S.barcode.unavailable, { ean }));
     productId = hit.productId;
   }
-  if (!productId) return message(fmt(S.barcode.unknown, { ean }));
+  if (!productId) return message(fmt(S.barcode.unknown, { ean }), true);
   if (products.get(productId)) return productView(ctx, productId, fmt(S.barcode.found, { ean }));
   const skipped = products.notDrinkable(productId);
   if (skipped) return message(fmt(S.barcode.alcohol_free, { ean, name: skipped.name }));
-  return message(fmt(S.barcode.gone, { ean }));
+  // Discontinued at Alko, but maybe still sold elsewhere.
+  return message(fmt(S.barcode.gone, { ean }), true);
+}
+
+// ---------- User-added barcode products ----------
+
+export const canEditCustom = (ctx: BotContext, p: CustomProduct) =>
+  !!ctx.kili.profile && ctx.kili.services.customProducts.canEdit(p, ctx.kili.profile.id, isAdmin(ctx));
+
+/** Lines under a user-added product's name (HTML). */
+function customDetails(p: CustomProduct): string {
+  const lines = [fmt(S.custom.details, { kind: S.custom.kind_names[p.kind], abv: num(p.abv) })];
+  if (p.kcal100 !== null) lines.push(`${num(p.kcal100)} kcal / 100 ml`);
+  lines.push(fmt(S.custom.added_by_users, { ean: p.ean }));
+  return lines.join("\n");
+}
+
+const customHeader = (editing: boolean) => header(editing ? S.custom.title_edit : S.custom.title_add);
+
+/** "Nyt: …" under a prompt when editing an existing product. */
+const currentValue = (value: string | null | undefined) => raw(value ? fmt(S.custom.current, { value }) : "");
+
+/** Step 1 of adding (or editing) a product for a barcode: what kind of drink it is. */
+function customKindView(ctx: BotContext, ean: string): View {
+  const existing = ctx.kili.services.customProducts.get(ean);
+  const kind = (k: (typeof CUSTOM_KINDS)[number]) => btn(S.custom.kinds[k], `bk:${ean}:${k}`);
+  return {
+    text:
+      customHeader(!!existing) +
+      (existing ? fmt(S.custom.kind_prompt_edit, { ean, name: existing.name }) : fmt(S.custom.kind_prompt, { ean })),
+    keyboard: [[kind("olut")], [kind("viini"), kind("kuohu")], [kind("vakeva")], back("j")],
+  };
+}
+
+/** The typed steps of adding a product: name, then size and ABV, then energy (skippable). */
+export function customStepView(ctx: BotContext, ean: string, step: "name" | "amount" | "kcal", error = ""): View {
+  const existing = ctx.kili.services.customProducts.get(ean);
+  const prefix = error ? error + "\n\n" : "";
+  const keyboard = [...(step === "kcal" ? [[btn(S.custom.skip_button, "bs")]] : []), back("j")];
+  const prompt =
+    step === "name"
+      ? fmt(S.custom.name_prompt, { current: currentValue(existing?.name) })
+      : step === "amount"
+        ? fmt(S.custom.amount_prompt, { current: currentValue(existing && `${cl(existing.sizeL)} cl ${num(existing.abv)} %`) })
+        : fmt(S.custom.kcal_prompt, { current: currentValue(existing?.kcal100 != null ? `${num(existing.kcal100)} kcal` : null) });
+  return { text: customHeader(!!existing) + prefix + prompt, keyboard };
+}
+
+/** Saves the product typed in the flow and opens it, or explains why it couldn't be saved. */
+export function saveCustomProduct(
+  ctx: BotContext,
+  profile: Profile,
+  data: { ean: string; kind: (typeof CUSTOM_KINDS)[number]; name: string; sizeL: number; abv: number; kcal100: number | null },
+): View {
+  const { products, customProducts } = ctx.kili.services;
+  // The catalogue may have learnt the barcode meanwhile; it always wins.
+  const alkoId = products.productIdByEan(data.ean);
+  if (alkoId && products.get(alkoId)) return productView(ctx, alkoId, fmt(S.custom.in_catalogue, { ean: data.ean }));
+  const r = customProducts.save(data, profile.id, isAdmin(ctx));
+  if (!r.ok) {
+    if (r.reason === "not_allowed") return productView(ctx, customDrinkId(data.ean), S.custom.not_allowed);
+    return juoView(ctx, profile, S.custom.no_serving); // the flow validates first; not expected
+  }
+  if (r.created) console.log(`Custom barcode product added: ${r.product.ean} ${JSON.stringify(r.product.name)}`);
+  return productView(ctx, customDrinkId(data.ean), r.created ? fmt(S.custom.saved, { ean: data.ean }) : S.custom.updated);
+}
+
+/** Why the add/edit flow can't go on for this barcode (Alko knows it, or not the user's product), or null. */
+function customBlockedView(ctx: BotContext, ean: string): View | null {
+  const { products, customProducts } = ctx.kili.services;
+  const alkoId = products.productIdByEan(ean);
+  if (alkoId && products.get(alkoId)) return productView(ctx, alkoId, fmt(S.custom.in_catalogue, { ean }));
+  const existing = customProducts.get(ean);
+  if (existing && !canEditCustom(ctx, existing)) return productView(ctx, customDrinkId(ean), S.custom.not_allowed);
+  return null;
+}
+
+/** "Ilmoita virheestä": asks what is wrong with a user-added product. */
+export function reportView(p: CustomProduct, error = ""): View {
+  return {
+    text: header(S.custom.title_report) + (error ? error + "\n\n" : "") + fmt(S.custom.report_prompt, { name: p.name, ean: p.ean }),
+    keyboard: [back(`p:${customDrinkId(p.ean)}`)],
+  };
 }
 
 export function customAmountView(drink: CatalogDrink, error = ""): View {
@@ -420,7 +531,7 @@ const textNode = (title: string, text: string, parent: string): View => ({
 // ---------- node table ----------
 
 /** Nodes that continue the current pending flow instead of cancelling it. */
-const KEEPS_PENDING = new Set(["jks", "r:g", "r:t", "i:y"]);
+const KEEPS_PENDING = new Set(["jks", "r:g", "r:t", "i:y", "bs"]);
 
 const withProfile =
   (h: (ctx: BotContext, p: Profile, arg: string | undefined) => View | Promise<View>): Handler =>
@@ -457,17 +568,66 @@ const NODES: Record<string, Handler> = {
   p: withProfile((ctx, p, arg) => productView(ctx, arg ?? "")),
   ps: withProfile((ctx, p, arg) => {
     const [drinkId, key] = (arg ?? "").split(":");
-    const drink = ctx.kili.services.products.get(drinkId ?? "");
+    const drink = findDrink(ctx, drinkId ?? "");
     const serving = drink && resolveServing(drink, key ?? "");
     if (!drink || !serving) return goneView();
     return drankView(ctx, p, logServing(ctx, p, drink, serving));
   }),
   // ✏️ Muu määrä: the next message is the amount
   pc: withProfile((ctx, p, arg) => {
-    const drink = ctx.kili.services.products.get(arg ?? "");
+    const drink = findDrink(ctx, arg ?? "");
     if (!drink) return goneView();
     ctx.kili.services.pending.set(ctx.kili.identityId!, { kind: "productAmount", drinkId: drink.id });
     return customAmountView(drink);
+  }),
+  // ➕ Lisää tuote / ✏️ Muokkaa tuotetta (user-added barcode products): pick the kind of drink
+  bn: withProfile((ctx, p, arg) => {
+    const ean = normalizeEan(arg ?? "");
+    if (!ean) return juoView(ctx, p);
+    return customBlockedView(ctx, ean) ?? customKindView(ctx, ean);
+  }),
+  // The kind was picked: the next message is the name
+  bk: withProfile((ctx, p, arg) => {
+    const [rawEan, kind] = (arg ?? "").split(":");
+    const ean = normalizeEan(rawEan ?? "");
+    if (!ean || !kind || !isCustomKind(kind)) return juoView(ctx, p);
+    const blocked = customBlockedView(ctx, ean);
+    if (blocked) return blocked;
+    ctx.kili.services.pending.set(ctx.kili.identityId!, { kind: "customProduct", ean, productKind: kind, step: "name" });
+    return customStepView(ctx, ean, "name");
+  }),
+  // Ohita: no energy given. When editing, the old value stays.
+  bs: withProfile((ctx, p) => {
+    const { pending, customProducts } = ctx.kili.services;
+    const state = pending.get(ctx.kili.identityId!);
+    pending.clear(ctx.kili.identityId!);
+    if (state?.kind !== "customProduct" || state.step !== "kcal" || !state.name || !state.sizeL || !state.abv) return juoView(ctx, p);
+    const { ean, productKind: kind, name, sizeL, abv } = state;
+    return saveCustomProduct(ctx, p, { ean, kind, name, sizeL, abv, kcal100: customProducts.get(ean)?.kcal100 ?? null });
+  }),
+  bd: withProfile((ctx, p, arg) => {
+    const product = ctx.kili.services.customProducts.get(arg ?? "");
+    if (!product) return juoView(ctx, p, S.custom.gone);
+    if (!canEditCustom(ctx, product)) return productView(ctx, customDrinkId(product.ean), S.custom.not_allowed);
+    return {
+      text: header(S.custom.title_edit) + fmt(S.custom.delete_confirm, { ean: product.ean, name: product.name }),
+      keyboard: [[btn(S.yes, `bdy:${product.ean}`), btn(S.no, `p:${customDrinkId(product.ean)}`)]],
+    };
+  }),
+  bdy: withProfile((ctx, p, arg) => {
+    const { customProducts } = ctx.kili.services;
+    const product = customProducts.get(arg ?? "");
+    if (!product) return juoView(ctx, p, S.custom.gone);
+    if (!customProducts.delete(product.ean, p.id, isAdmin(ctx))) return productView(ctx, customDrinkId(product.ean), S.custom.not_allowed);
+    console.log(`Custom barcode product deleted: ${product.ean} ${JSON.stringify(product.name)}`);
+    return juoView(ctx, p, S.custom.deleted);
+  }),
+  // ⚠️ Ilmoita virheestä: the next message is the report
+  br: withProfile((ctx, p, arg) => {
+    const product = ctx.kili.services.customProducts.get(arg ?? "");
+    if (!product) return juoView(ctx, p, S.custom.gone);
+    ctx.kili.services.pending.set(ctx.kili.identityId!, { kind: "productReport", ean: product.ean });
+    return reportView(product);
   }),
   jo: withProfile((ctx, p) => {
     ctx.kili.services.pending.set(ctx.kili.identityId!, { kind: "customDrink" });

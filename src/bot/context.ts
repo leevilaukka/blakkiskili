@@ -32,6 +32,9 @@ export function fullName(from: User): string {
 
 export const isPrivate = (ctx: Context) => ctx.chat?.type === "private";
 
+/** Whether the sender is in ADMIN_IDS. */
+export const isAdmin = (ctx: BotContext) => !!ctx.from && ctx.kili.config.adminIds.includes(ctx.from.id);
+
 /** Numbers used in the retention sentence and the warning message. */
 export function retentionParams(config: Config) {
   return {

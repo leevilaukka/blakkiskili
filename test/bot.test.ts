@@ -728,6 +728,145 @@ describe("barcodes", () => {
     expect(textOf(await h.sendPhoto(6004, "photoB"))).toContain("Alko ei tunne viivakoodia");
   });
 
+  test("a barcode Alko doesn't know can be given a product, which then opens for everyone", async () => {
+    const { h, worker } = barcodeHarness();
+    await registerUser(h, 6101);
+    await registerUser(h, 6102);
+
+    const unknown = await h.send(6101, UNKNOWN_EAN);
+    expect(buttonsOf(unknown).map((b) => b.callback_data)).toContain(`m:bn:${UNKNOWN_EAN}`);
+    expect(textOf(await h.press(6101, `m:bn:${UNKNOWN_EAN}`))).toContain("Mikä juoma");
+    expect(textOf(await h.press(6101, `m:bk:${UNKNOWN_EAN}:olut`))).toContain("tuotteen nimi");
+    expect(textOf(await h.send(6101, "   "))).toContain("1–60 merkkiä");
+    expect(textOf(await h.send(6101, "Kauppakalja <IVA> & co"))).toContain("koko ja alkoholiprosentti");
+    expect(textOf(await h.send(6101, "33cl"))).toContain("En ymmärtänyt");
+    expect(textOf(await h.send(6101, "33cl 0.5%"))).toContain("1–99 %");
+    expect(textOf(await h.send(6101, "10l 5%"))).toContain("1 cl – 5 l");
+    expect(textOf(await h.send(6101, "0,5l 4.7%"))).toContain("energiamäärä");
+    expect(textOf(await h.send(6101, "paljon"))).toContain("0–999");
+    const saved = await h.send(6101, "43 kcal");
+    expect(textOf(saved)).toContain("avaa sen nyt kaikille");
+    expect(textOf(saved)).toContain("Kauppakalja &lt;IVA&gt; &amp; co");
+    expect(textOf(saved)).toContain("43 kcal / 100 ml");
+    expect(h.services.pending.get(h.crypto.identityKey("telegram", 6101))).toBeNull();
+
+    // Another user scans it: the product opens without asking the Worker, with no edit buttons.
+    const before = worker.requests.length;
+    const scan = await h.send(6102, UNKNOWN_EAN);
+    expect(textOf(scan)).toContain("käyttäjien lisäämälle tuotteelle");
+    expect(worker.requests.length).toBe(before);
+    const id = `e${UNKNOWN_EAN}`;
+    const serving = buttonsOf(scan).find((b) => b.callback_data.startsWith(`m:ps:${id}:`))!;
+    expect(serving.text).toContain("50 cl");
+    expect(buttonsOf(scan).some((b) => b.callback_data.startsWith("m:bn:"))).toBe(false);
+
+    await h.press(6102, serving.callback_data);
+    const drink = h.services.drinks.last(h.account(6102))!;
+    expect(drink.description).toBe("🍺 Kauppakalja <IVA> & co (50 cl)");
+    expect(drink.productId).toBeNull();
+    expect(drink.kcal).toBe(215);
+
+    // A custom amount works too.
+    await h.press(6102, `m:pc:${id}`);
+    await h.send(6102, "33 cl");
+    expect(h.services.drinks.last(h.account(6102))!.description).toBe("🍺 Kauppakalja <IVA> & co (33 cl)");
+  });
+
+  test("only the one who added a product, or an admin, can change or delete it", async () => {
+    const { h } = barcodeHarness();
+    const ADMIN = 1;
+    for (const id of [6201, 6202, ADMIN]) await registerUser(h, id);
+    await h.press(6201, `m:bk:${UNKNOWN_EAN}:viini`);
+    await h.send(6201, "Kotiviini");
+    await h.send(6201, "75cl 12%");
+    const saved = await h.press(6201, "m:bs");
+    expect(textOf(saved)).toContain("Kotiviini");
+    expect(buttonsOf(saved).map((b) => b.text)).toEqual(expect.arrayContaining(["12 cl · 0.9 annosta", "16 cl · 1.3 annosta", "75 cl · 5.9 annosta"]));
+    expect(buttonsOf(saved).map((b) => b.callback_data)).toContain(`m:bn:${UNKNOWN_EAN}`);
+
+    // Someone else can't, whether by button or by typing the steps.
+    expect(textOf(await h.press(6202, `m:bn:${UNKNOWN_EAN}`))).toContain("Vain tuotteen lisääjä");
+    expect(textOf(await h.press(6202, `m:bk:${UNKNOWN_EAN}:olut`))).toContain("Vain tuotteen lisääjä");
+    expect(textOf(await h.press(6202, `m:bdy:${UNKNOWN_EAN}`))).toContain("Vain tuotteen lisääjä");
+    expect(h.services.customProducts.get(UNKNOWN_EAN)?.name).toBe("Kotiviini");
+
+    // The adder edits; skipping energy keeps the old value.
+    await h.press(6201, `m:bn:${UNKNOWN_EAN}`);
+    await h.press(6201, `m:bk:${UNKNOWN_EAN}:kuohu`);
+    expect(textOf(await h.send(6201, "Kotikuohu"))).toContain("Nyt: <b>75 cl 12 %</b>");
+    await h.send(6201, "75cl 11%");
+    expect(textOf(await h.press(6201, "m:bs"))).toContain("Tuote päivitetty");
+    const p = h.services.customProducts.get(UNKNOWN_EAN)!;
+    expect([p.name, p.kind, p.abv, p.kcal100, p.addedBy]).toEqual(["Kotikuohu", "kuohu", 11, null, h.account(6201)]);
+
+    // /data lists it; sending the file back to /tuo explains it needn't be imported.
+    const files = h.services.accounts.exportCsv(h.account(6201), 6201)!;
+    const csv = files.find((f) => f.filename === "barcodes.csv")!.csv;
+    expect(csv).toContain(`${UNKNOWN_EAN},kuohu,Kotikuohu,75,11,,`);
+    expect(h.services.importer.import(csv, 6201, "x")).toEqual({ ok: false, reason: "barcodes" });
+    expect(h.services.accounts.exportCsv(h.account(6202), 6202)!.some((f) => f.filename === "barcodes.csv")).toBe(false);
+
+    // When the adder's account goes, the product stays; an admin can still delete it.
+    h.services.accounts.delete(h.account(6201));
+    expect(h.services.customProducts.get(UNKNOWN_EAN)?.addedBy).toBeNull();
+    expect(textOf(await h.press(ADMIN, `m:bd:${UNKNOWN_EAN}`))).toContain("Poistetaanko");
+    expect(textOf(await h.press(ADMIN, `m:bdy:${UNKNOWN_EAN}`))).toContain("Tuote poistettu");
+    expect(h.services.customProducts.get(UNKNOWN_EAN)).toBeNull();
+    expect(textOf(await h.send(6202, UNKNOWN_EAN))).toContain("Alko ei tunne viivakoodia");
+  });
+
+  test("others can report an error in a user-added product to the admins", async () => {
+    const { h } = barcodeHarness();
+    const ADMIN = 1;
+    for (const id of [6401, 6402, ADMIN]) await registerUser(h, id);
+    await h.press(6401, `m:bk:${UNKNOWN_EAN}:olut`);
+    await h.send(6401, "Kauppakalja");
+    await h.send(6401, "33cl 4.5%");
+    const own = await h.press(6401, "m:bs");
+    // The adder and admins can fix it themselves: no report button for them.
+    expect(buttonsOf(own).some((b) => b.callback_data.startsWith("m:br:"))).toBe(false);
+    expect(buttonsOf(await h.send(ADMIN, UNKNOWN_EAN)).some((b) => b.callback_data.startsWith("m:br:"))).toBe(false);
+
+    const scan = await h.send(6402, UNKNOWN_EAN);
+    expect(buttonsOf(scan).map((b) => b.callback_data)).toContain(`m:br:${UNKNOWN_EAN}`);
+    expect(textOf(await h.press(6402, `m:br:${UNKNOWN_EAN}`))).toContain("Mikä tuotteessa <b>Kauppakalja</b>");
+    expect(textOf(await h.send(6402, "x".repeat(301)))).toContain("enintään 300 merkkiä");
+    const before = h.calls.length;
+    const sent = await h.send(6402, "Prosentti on <5,5> eikä 4,5");
+    expect(textOf(sent)).toContain("Ilmoitus lähetettiin ylläpitäjille");
+    expect(h.services.pending.get(h.crypto.identityKey("telegram", 6402))).toBeNull();
+    await Bun.sleep(0);
+    const toAdmin = h.calls.slice(before).filter((c) => c.method === "sendMessage" && c.payload.chat_id === ADMIN);
+    expect(toAdmin.length).toBe(1);
+    expect(toAdmin[0]!.payload.text).toContain("Prosentti on &lt;5,5&gt; eikä 4,5");
+    expect(toAdmin[0]!.payload.text).toContain(UNKNOWN_EAN);
+    expect(toAdmin[0]!.payload.text).not.toContain("user6402");
+
+    // Reporting again replaces the message without bothering the admins again.
+    await h.press(6402, `m:br:${UNKNOWN_EAN}`);
+    const again = h.calls.length;
+    await h.send(6402, "Ja koko on 50 cl");
+    await Bun.sleep(0);
+    expect(h.calls.slice(again).some((c) => c.payload.chat_id === ADMIN)).toBe(false);
+    expect(h.services.customProducts.reported()[0]!.reports.map((r) => r.message)).toEqual(["Ja koko on 50 cl"]);
+
+    // /data lists it, and it goes with the account.
+    const csv = h.services.accounts.exportCsv(h.account(6402), 6402)!.find((f) => f.filename === "product_reports.csv")!.csv;
+    expect(csv).toContain(`${UNKNOWN_EAN},Ja koko on 50 cl,`);
+    expect(h.services.importer.import(csv, 6402, "x")).toEqual({ ok: false, reason: "reports" });
+    h.services.accounts.delete(h.account(6402));
+    expect(h.services.customProducts.reported()).toEqual([]);
+  });
+
+  test("barcodes Alko knows can't be given a custom product", async () => {
+    const { h } = barcodeHarness();
+    await registerUser(h, 6301);
+    expect(buttonsOf(await h.send(6301, BEER_EAN)).some((b) => b.callback_data.startsWith("m:bn:"))).toBe(false);
+    expect(textOf(await h.press(6301, `m:bk:${BEER_EAN}:olut`))).toContain("löytyy Alkon valikoimasta");
+    expect(h.services.pending.get(h.crypto.identityKey("telegram", 6301))).toBeNull();
+    expect(buttonsOf(await h.send(6301, ALCOHOL_FREE_EAN)).some((b) => b.callback_data.startsWith("m:bn:"))).toBe(false);
+  });
+
   test("barcodes only work with the catalogue or the Worker", async () => {
     const h = harness();
     await registerUser(h, 6005);

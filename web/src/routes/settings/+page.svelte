@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { goto } from "$app/navigation";
+  import { onMount } from "svelte";
   import type { ChartName, Gender } from "../../../../shared/api.ts";
   import { api, errorText } from "#lib/api.ts";
   import Icon from "#lib/Icon.svelte";
@@ -12,6 +14,29 @@
   let message = $state("");
   let error = $state("");
   let busy = $state(false);
+
+  // Browsers signed in to this account (this one included); null until known.
+  let sessions = $state<number | null>(null);
+  let outBusy = $state(false);
+  let outError = $state("");
+
+  onMount(async () => {
+    sessions = await api.sessions().then((r) => r.count, () => null);
+  });
+
+  async function logoutEverywhere() {
+    if (!confirm("Kirjaudutaanko ulos kaikilta laitteilta, myös tältä?")) return;
+    outBusy = true;
+    outError = "";
+    try {
+      await api.logoutEverywhere();
+      session.me = null;
+      goto("/login");
+    } catch (err) {
+      outError = errorText(err);
+      outBusy = false;
+    }
+  }
 
   async function save(e: SubmitEvent) {
     e.preventDefault();
@@ -65,6 +90,20 @@
       </div>
     </div>
   </form>
+
+  <section class="card panel">
+    <h2>Kirjautumiset</h2>
+    <p class="muted">
+      {#if sessions !== null}
+        Sivustolle on kirjauduttu tällä tunnuksella {sessions === 1 ? "yhdellä selaimella (tällä)" : `${sessions} selaimella`}.
+      {/if}
+      Jos olet kirjautunut esimerkiksi kaverin puhelimella tai kadotit laitteen, voit kirjautua ulos kaikkialta. Ryhmien näyttölinkit eivät ole kirjautumisia, joten ne pysyvät voimassa: ne perutaan ryhmän sivulla.
+    </p>
+    <div class="foot">
+      <button class="btn danger" disabled={outBusy} onclick={logoutEverywhere}><Icon name="logout" /> Kirjaudu ulos kaikkialta</button>
+      {#if outError}<p class="error" role="alert">{outError}</p>{/if}
+    </div>
+  </section>
 </div>
 </main>
 
@@ -99,7 +138,11 @@
     align-items: center;
     gap: 1rem;
   }
-  .status p {
+  .status p,
+  .foot .error {
     margin: 0;
+  }
+  form {
+    margin-bottom: 1rem;
   }
 </style>

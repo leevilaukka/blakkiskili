@@ -9,7 +9,7 @@ import { createCrypto } from "./lib/ids.ts";
 import { createServices } from "./services/index.ts";
 import { ALLOWED_UPDATES, createBot, publishCommandMenus } from "./bot/index.ts";
 import { runInactivityJob } from "./bot/inactivity.ts";
-import { createAdminAlerts } from "./bot/admin.ts";
+import { createAdminAlerts, notifyAdmins } from "./bot/admin.ts";
 import { writeSnapshot } from "./ops/backup.ts";
 import { startJobs, type Job } from "./ops/scheduler.ts";
 import { Products } from "./services/products.ts";
@@ -95,7 +95,12 @@ const stopJobs = startJobs(jobs, (job, err) => {
 let web: ReturnType<typeof startWebServer> | undefined;
 if (config.web.enabled) {
   try {
-    web = startWebServer({ config, services, botUsername: bot.botInfo.username });
+    web = startWebServer({
+      config,
+      services,
+      botUsername: bot.botInfo.username,
+      notifyAdmins: (html) => notifyAdmins(bot.api, config.adminIds, html),
+    });
   } catch (e) {
     console.error("Web: could not start, continuing without the website:", e);
     await alert("website", `Could not start: ${e instanceof Error ? e.message : String(e)}`);

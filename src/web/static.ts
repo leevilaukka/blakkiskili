@@ -23,7 +23,9 @@ export function inlineScriptHashes(html: string): string[] {
 export function contentSecurityPolicy(scriptHashes: readonly string[], telegramWidget: boolean): string {
   return [
     "default-src 'self'",
-    `script-src 'self' ${scriptHashes.join(" ")}${telegramWidget ? " https://telegram.org" : ""}`.trim(),
+    // 'wasm-unsafe-eval' lets the barcode scanner compile its WebAssembly decoder (served from
+    // here); it does not allow eval() or any other JavaScript from strings.
+    `script-src 'self' ${scriptHashes.join(" ")} 'wasm-unsafe-eval'${telegramWidget ? " https://telegram.org" : ""}`.replace(/ +/g, " "),
     "style-src 'self'",
     "img-src 'self' data:", // Alko's photos come through our own /api (see photos.ts)
     "connect-src 'self'",
@@ -40,7 +42,8 @@ const BASE_HEADERS: Record<string, string> = {
   // Screen links carry a secret in the URL: never send it on as a referrer.
   "referrer-policy": "no-referrer",
   "cross-origin-opener-policy": "same-origin",
-  "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=()",
+  // The camera is for the barcode scanner on our own pages only.
+  "permissions-policy": "camera=(self), microphone=(), geolocation=(), payment=()",
 };
 
 export function withSecurityHeaders(res: Response, csp?: string): Response {

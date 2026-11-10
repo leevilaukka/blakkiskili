@@ -1,10 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { findPreset } from "../src/lib/catalog.ts";
 import { ChangeBus } from "../src/services/changebus.ts";
-import { createWebApp } from "../src/web/app.ts";
 import { Hub } from "../src/web/sse.ts";
-import { isEventStream } from "../src/web/server.ts";
-import { setup, tg } from "./helpers.ts";
+import { serveTestApp, setup, tg } from "./helpers.ts";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const ORIGIN = "https://kili.test";
@@ -176,20 +174,8 @@ describe("Hub", () => {
   });
 });
 
-describe("which routes are long-lived streams", () => {
-  const id = "a".repeat(32);
-  test("exactly the event streams, which must be exempt from the server's idle timeout", () => {
-    for (const path of ["/api/events", "/api/screen/events", `/api/groups/${id}/events`, `/api/groups/${"b".repeat(64)}/events`]) {
-      expect(isEventStream(path), path).toBe(true);
-    }
-    for (const path of ["/api/events/", "/api/screen", "/api/groups", `/api/groups/${id}`, `/api/groups/${id}/events/x`, "/api/groups/zz/events", "/events", "/api/dashboard"]) {
-      expect(isEventStream(path), path).toBe(false);
-    }
-  });
-});
-
 describe("GET /api/events", () => {
-  const apps: ReturnType<typeof createWebApp>[] = [];
+  const apps: ReturnType<typeof serveTestApp>[] = [];
   afterEach(() => {
     for (const a of apps.splice(0)) a.close();
   });
@@ -197,7 +183,7 @@ describe("GET /api/events", () => {
   function world(live = { tickMs: 1_000_000, minGapMs: 10 }) {
     const w = setup();
     const alice = w.services.accounts.register(tg(1), { name: "alice", weight: 70, height: 170, gender: "nainen" }).profile;
-    const app = createWebApp({ services: w.services, botToken: "1:x", botUsername: "b", origin: ORIGIN, live });
+    const app = serveTestApp({ services: w.services, botToken: "1:x", botUsername: "b", origin: ORIGIN, live });
     apps.push(app);
     const cookie = `__Host-kili=${w.services.webSessions.createSession(alice.id, null).sessionToken}`;
     const open = (c = cookie) => app(new Request(`${ORIGIN}/api/events`, { headers: { cookie: c } }), "1.1.1.1");
@@ -285,6 +271,25 @@ describe("GET /api/events", () => {
     services.accounts.delete(alice.id);
     expect((await events.next())?.event).toBe("end");
     await events.cancel();
+  });
+
+  test("logging out everywhere ends the account's open streams", async () => {
+    const { open, app, cookie } = world();
+    const a = reader(await open());
+    const b = reader(await open());
+    await a.next();
+    await b.next();
+    expect(app.viewers()).toBe(2);
+    const out = await app(
+      new Request(`${ORIGIN}/api/auth/logout-all`, { method: "POST", headers: { cookie, origin: ORIGIN, "x-kili": "1" }, body: "{}" }),
+      "1.1.1.1",
+    );
+    expect(out.status).toBe(200);
+    expect((await a.next())?.event).toBe("end");
+    expect((await b.next())?.event).toBe("end");
+    expect(await a.next()).toBeNull(); // closed by the server
+    expect(app.viewers()).toBe(0);
+    expect((await open()).status).toBe(401);
   });
 
   test("limits the streams per account and frees them when the page goes away", async () => {

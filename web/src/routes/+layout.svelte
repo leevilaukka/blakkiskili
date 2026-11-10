@@ -16,9 +16,12 @@
   // The logo is the way home, as on Alkometriikka; these are the header buttons after it.
   const nav: { href: string; label: string; icon: IconName }[] = [
     { href: "/log", label: "Juo", icon: "plus" },
+    { href: "/logbook", label: "Päiväkirja", icon: "book" },
     { href: "/groups", label: "Ryhmät", icon: "users" },
     { href: "/settings", label: "Asetukset", icon: "settings" },
   ];
+  // Only for admins (ADMIN_IDS); the API answers 404 to everyone else anyway.
+  const links = $derived(session.me?.admin ? [...nav, { href: "/admin", label: "Ylläpito", icon: "shield" as IconName }] : nav);
   const current = (href: string) => page.url.pathname === href || page.url.pathname.startsWith(`${href}/`);
 
   onMount(async () => {
@@ -50,13 +53,13 @@
 <svelte:head><title>Bläkkiskili</title></svelte:head>
 
 {#if session.me && !onScreen}
-  <header class="top">
+  <header class="top" class:crowded={links.length > nav.length}>
     <a class="brand" href="/" aria-label="Bläkkiskili, etusivu">
       <img src="/kili-head-96.jpg" alt="" width="40" height="40" />
       <span class="word">Bläkkiskili</span>
     </a>
     <nav aria-label="Päävalikko">
-      {#each nav as item (item.href)}
+      {#each links as item (item.href)}
         <a class="btn" href={item.href} aria-current={current(item.href) ? "page" : undefined} aria-label={item.label}>
           <span class="label">{item.label}</span><Icon name={item.icon} />
         </a>
@@ -138,8 +141,14 @@
       font-size: 1.45rem;
     }
   }
-  @media (max-width: 21rem) {
+  /* Where the wordmark no longer fits beside the buttons (one more of them for admins). */
+  @media (max-width: 25rem) {
     .word {
+      display: none;
+    }
+  }
+  @media (max-width: 28rem) {
+    .crowded .word {
       display: none;
     }
   }

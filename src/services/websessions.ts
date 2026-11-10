@@ -84,9 +84,18 @@ export class WebSessions {
     this.deps.db.query("DELETE FROM web_sessions WHERE token_hash = ?").run(this.deps.crypto.webTokenKey(sessionToken));
   }
 
-  /** Signs the account out everywhere. */
-  revokeAll(accountId: string) {
-    this.deps.db.query("DELETE FROM web_sessions WHERE account_id = ?").run(accountId);
+  /** Signs the account out everywhere. Returns how many sessions ended. */
+  revokeAll(accountId: string): number {
+    return this.deps.db.query("DELETE FROM web_sessions WHERE account_id = ?").run(accountId).changes;
+  }
+
+  /** How many live sessions (browsers) the account has. */
+  count(accountId: string): number {
+    return (
+      this.deps.db
+        .query("SELECT count(*) AS n FROM web_sessions WHERE account_id = ? AND expires_at > ?")
+        .get(accountId, this.deps.now()) as { n: number }
+    ).n;
   }
 
   /** Deletes expired sessions and login links. */

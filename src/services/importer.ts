@@ -15,7 +15,7 @@ export type ImportResult =
   | { ok: true; kind: "user"; created: boolean }
   | { ok: true; kind: "drinks"; inserted: number; duplicates: number; invalid: number }
   | { ok: true; kind: "groups"; groups: number }
-  | { ok: false; reason: "unknown_format" | "not_yours" | "empty" | "invalid_profile" | "no_account" | "parse_error" };
+  | { ok: false; reason: "unknown_format" | "not_yours" | "empty" | "invalid_profile" | "no_account" | "parse_error" | "barcodes" | "reports" };
 
 export function detectKind(columns: readonly string[]): CsvKind | null {
   const has = (...c: string[]) => c.every((x) => columns.includes(x));
@@ -56,6 +56,9 @@ export class Importer {
       return { ok: false, reason: "parse_error" };
     }
     const kind = detectKind(parsed.columns);
+    // barcodes.csv from our /data: those products are shared and still in the bot.
+    if (!kind && parsed.columns.includes("ean") && parsed.columns.includes("abv")) return { ok: false, reason: "barcodes" };
+    if (!kind && parsed.columns.includes("ean") && parsed.columns.includes("message")) return { ok: false, reason: "reports" };
     if (!kind) return { ok: false, reason: "unknown_format" };
     if (parsed.rows.length === 0) return { ok: false, reason: "empty" };
 

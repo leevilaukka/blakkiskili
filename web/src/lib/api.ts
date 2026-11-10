@@ -3,9 +3,13 @@
 // cross-site form can't), and the browser adds the Origin header on its own.
 
 import type {
+  AdminView,
+  BarcodeResult,
   Config,
+  CustomProductRequest,
   Dashboard,
   DrinkItem,
+  DrinkLog,
   GroupSummary,
   GroupView,
   LogDrinkRequest,
@@ -13,6 +17,7 @@ import type {
   ProductItem,
   ScreenLinkItem,
   ScreenView,
+  SessionsInfo,
 } from "../../../shared/api.ts";
 
 export class ApiError extends Error {
@@ -45,12 +50,32 @@ export const api = {
   patchMe: (changes: Partial<Pick<Me, "chartName" | "weight" | "height" | "gender">>) => request<Me>("PATCH", "/api/me", changes),
   dashboard: () => request<Dashboard>("GET", "/api/dashboard"),
   products: (q: string) => request<{ products: ProductItem[] }>("GET", `/api/products?q=${encodeURIComponent(q)}`),
+  barcode: (ean: string) => request<BarcodeResult>("GET", `/api/barcodes/${encodeURIComponent(ean)}`),
+  saveCustomProduct: (ean: string, product: CustomProductRequest) =>
+    request<BarcodeResult>("PUT", `/api/barcodes/${encodeURIComponent(ean)}/product`, product),
+  deleteCustomProduct: (ean: string) => request<{ ok: true }>("DELETE", `/api/barcodes/${encodeURIComponent(ean)}/product`),
+  /** "Ilmoita virheestä" on a user-added product. */
+  reportCustomProduct: (ean: string, message: string) =>
+    request<{ ok: true }>("POST", `/api/barcodes/${encodeURIComponent(ean)}/report`, { message }),
   log: (drink: LogDrinkRequest) => request<DrinkItem>("POST", "/api/drinks", drink),
+  /** The logbook; see DrinkLog for the parameters. */
+  drinks: (filter: { from?: number; to?: number; q?: string; before?: string; limit?: number }) => {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(filter)) if (v !== undefined && v !== "") params.set(k, String(v));
+    return request<DrinkLog>("GET", `/api/drinks?${params}`);
+  },
+  lastDrink: () => request<{ drink: DrinkItem | null }>("GET", "/api/drinks/last"),
   undo: () => request<DrinkItem>("POST", "/api/drinks/undo", {}),
   remove: (id: number) => request<{ ok: true }>("DELETE", `/api/drinks/${id}`),
   signInWithTelegram: (widgetData: unknown) => request<{ ok: true }>("POST", "/api/auth/telegram", widgetData),
   signInWithLink: (token: string) => request<{ ok: true }>("POST", "/api/auth/link", { token }),
   logout: () => request<{ ok: true }>("POST", "/api/auth/logout", {}),
+  logoutEverywhere: () => request<{ ok: true; sessions: number }>("POST", "/api/auth/logout-all", {}),
+  sessions: () => request<SessionsInfo>("GET", "/api/auth/sessions"),
+
+  admin: () => request<AdminView>("GET", "/api/admin"),
+  adminDeleteProduct: (ean: string) => request<{ ok: true }>("DELETE", `/api/admin/products/${ean}`),
+  adminClearReports: (ean: string) => request<{ ok: true }>("DELETE", `/api/admin/products/${ean}/reports`),
 
   groups: () => request<{ groups: GroupSummary[] }>("GET", "/api/groups"),
   createGroup: (name: string) => request<GroupSummary>("POST", "/api/groups", { name }),
@@ -104,6 +129,20 @@ export function errorText(e: unknown): string {
     use_leave: "Poistu ryhmästä omalla painikkeella.",
     invalid_screen: "Näyttölinkki on vanhentunut tai peruttu.",
     not_found: "Ei löytynyt.",
+    invalid_barcode: "Viivakoodi ei kelpaa. Tarkista numerot.",
+    barcode_rate_limited: "Viivakoodeja on haettu juuri paljon. Kokeile hetken päästä uudelleen.",
+    barcode_unavailable: "Viivakoodin haku ei onnistunut juuri nyt. Kokeile myöhemmin uudelleen.",
+    barcodes_off: "Viivakoodit eivät ole käytössä.",
+    invalid_kind: "Valitse, mikä juoma on kyseessä.",
+    invalid_product_name: "Nimen pitää olla 1–60 merkkiä.",
+    invalid_size: "Koon pitää olla 1 cl – 5 l.",
+    invalid_abv: "Alkoholiprosentin pitää olla 1–99 %.",
+    invalid_kcal: "Energian pitää olla 0–999 kcal / 100 ml, tai jätä kenttä tyhjäksi.",
+    no_serving: "Tästä ei saa järkevän kokoista annosta. Tarkista koko ja prosentti.",
+    in_catalogue: "Viivakoodi löytyy Alkon valikoimasta, joten sille ei voi lisätä omaa tuotetta.",
+    not_allowed: "Vain tuotteen lisääjä tai ylläpitäjä voi muuttaa sitä.",
+    invalid_report: "Kirjoita viesti, enintään 300 merkkiä.",
+    too_many_reports: "Sinulla on jo monta käsittelemätöntä ilmoitusta. Kokeile uudelleen, kun ylläpitäjät ovat käsitelleet niitä.",
     network: "Yhteys palvelimeen ei toimi.",
   };
   return texts[code] ?? "Jokin meni pieleen. Yritä uudelleen.";

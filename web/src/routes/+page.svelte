@@ -32,7 +32,13 @@
       error = "";
       lastUpdate = Date.now();
     });
-    source.addEventListener("end", () => source.close());
+    // The account signed out everywhere (or was deleted): find out which and leave.
+    source.addEventListener("end", async () => {
+      source.close();
+      await api.me().catch((e) => {
+        if (e instanceof ApiError && e.status === 401) session.me = null;
+      });
+    });
     source.onerror = async () => {
       // The browser reconnects by itself; only check whether the session is the reason.
       try {
@@ -126,6 +132,7 @@
             <p class="muted empty">Ei juomia tänä iltana.</p>
           {/if}
         </div>
+        <a class="all" href="/logbook">Kaikki juomat päiväkirjassa <Icon name="chevron-right" /></a>
       </section>
     </div>
   {:else if !error}
@@ -223,5 +230,11 @@
   }
   .desc {
     overflow-wrap: anywhere;
+  }
+  .all {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    justify-self: end;
   }
 </style>

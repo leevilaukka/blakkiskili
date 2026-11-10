@@ -1,9 +1,11 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import type { Config, LogDrinkRequest, ProductItem } from "../../../../shared/api.ts";
+  import type { Config, DrinkItem, LogDrinkRequest, ProductItem } from "../../../../shared/api.ts";
   import { api, errorText } from "#lib/api.ts";
   import { decimal1 } from "#lib/format.ts";
+  import BarcodePanel from "#lib/BarcodePanel.svelte";
   import Icon from "#lib/Icon.svelte";
+  import ProductCard from "#lib/ProductCard.svelte";
 
   let config = $state<Config | null>(null);
   let products = $state<ProductItem[]>([]);
@@ -11,11 +13,11 @@
   let message = $state("");
   let error = $state("");
   let busy = $state(false);
+  /** What "Toista" logs again; null when there is nothing, undefined until known. */
+  let last = $state<DrinkItem | null | undefined>(undefined);
   let cl = $state("");
   let percent = $state("");
   let timer: ReturnType<typeof setTimeout> | undefined;
-  /** Products whose photo failed (none at Alko, or offline): they keep the emoji. */
-  let noPhoto = $state<Record<string, true>>({});
 
   const categories = [
     { id: "miedot", title: "Miedot" },
@@ -31,7 +33,16 @@
     }
   }
 
+  async function loadLast() {
+    try {
+      last = (await api.lastDrink()).drink;
+    } catch {
+      last = undefined; // the button still works; it just doesn't say what
+    }
+  }
+
   onMount(async () => {
+    void loadLast();
     try {
       config = await api.config();
       if (config.catalogue) await search();
@@ -51,6 +62,7 @@
     try {
       const added = await api.log(drink);
       message = `Lisätty: ${added.description}`;
+      last = added;
       if (config?.catalogue && drink.kind === "product") await search(); // recents move to the top
     } catch (e) {
       error = errorText(e);
@@ -66,6 +78,7 @@
     try {
       const undone = await api.undo();
       message = `Peruttu: ${undone.description}`;
+      await loadLast();
     } catch (e) {
       error = errorText(e);
       message = "";
@@ -92,11 +105,13 @@
 <div class="col">
   <div class="head">
     <h1>Lisää juoma</h1>
-    <p class="lead">Hae Alkon valikoimasta, valitse valmis juoma tai kirjoita oma. Juoma merkitään tähän hetkeen.</p>
+    <p class="lead">Hae Alkon valikoimasta nimellä tai viivakoodilla, valitse valmis juoma tai kirjoita oma. Juoma merkitään tähän hetkeen.</p>
   </div>
 
   <div class="actions">
-    <button class="btn" disabled={busy} onclick={() => log({ kind: "repeat" })}><Icon name="repeat" /> Toista viimeisin</button>
+    <button class="btn repeat" disabled={busy || last === null} onclick={() => log({ kind: "repeat" })} title={last ? `Toista: ${last.description}` : undefined}>
+      <Icon name="repeat" /> <span class="label">{last ? `Toista: ${last.description}` : "Toista viimeisin"}</span>
+    </button>
     <button class="btn" disabled={busy} onclick={undo}><Icon name="undo" /> Kumoa viimeisin</button>
   </div>
 
@@ -104,48 +119,6 @@
     {#if message}<p class="notice"><Icon name="check" /> <span>{message} · <a href="/">Näytä etusivu</a></span></p>{/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
   </div>
-
-  {#if config?.catalogue}
-    <section class="card panel">
-      <h2>Hae Alkon tuotteista</h2>
-      <div class="search">
-        <Icon name="search" />
-        <label class="sr-only" for="q">Hae juomaa</label>
-        <input id="q" type="search" placeholder="Esim. karhu, jaloviina, prosecco" bind:value={query} oninput={onInput} autocomplete="off" />
-      </div>
-      {#if products.length}
-        <ul class="products">
-          {#each products as p (p.id)}
-            <li>
-              <!-- Through our server, so the browser never contacts Alko (src/web/photos.ts) -->
-              <div class="thumb" aria-hidden="true">
-                <span class="emoji">{p.emoji}</span>
-                {#if !noPhoto[p.id]}
-                  <img src="/api/products/{encodeURIComponent(p.id)}/photo" alt="" loading="lazy" decoding="async" width="160" height="192" onerror={() => (noPhoto[p.id] = true)} />
-                {/if}
-              </div>
-              <div class="info">
-              <p class="pname">
-                <span class="title">{p.name}</span>
-                <span class="abv">{p.abv.toString().replace(".", ",")} %</span>
-              </p>
-              {#if p.maker}<p class="maker">{p.maker}</p>{/if}
-              <div class="servings">
-                {#each p.servings as s (s.key)}
-                  <button class="btn small" disabled={busy} onclick={() => log({ kind: "product", productId: p.id, serving: s.key })}>
-                    {s.label} <span class="muted">{decimal1(s.standardDrinks)} ann.</span>
-                  </button>
-                {/each}
-              </div>
-              </div>
-            </li>
-          {/each}
-        </ul>
-      {:else if query.trim()}
-        <p class="muted">Ei tuloksia.</p>
-      {/if}
-    </section>
-  {/if}
 
   {#if config}
     {#each categories as cat}
@@ -160,6 +133,33 @@
         </div>
       </section>
     {/each}
+  {/if}
+
+  {#if config?.catalogue}
+    <section class="card panel">
+      <h2>Hae Alkon tuotteista</h2>
+      <div class="search">
+        <Icon name="search" />
+        <label class="sr-only" for="q">Hae juomaa</label>
+        <input id="q" type="search" placeholder="Esim. karhu, jaloviina, prosecco" bind:value={query} oninput={onInput} autocomplete="off" />
+      </div>
+      {#if products.length}
+        <ul class="products">
+          {#each products as p (p.id)}
+            <li><ProductCard product={p} {busy} onLog={(serving) => log({ kind: "product", productId: p.id, serving })} /></li>
+          {/each}
+        </ul>
+      {:else if query.trim()}
+        <p class="muted">Ei tuloksia.</p>
+      {/if}
+    </section>
+  {/if}
+
+  {#if config?.barcodes}
+    <section class="card panel">
+      <h2>Viivakoodi</h2>
+      <BarcodePanel {busy} {log} />
+    </section>
   {/if}
 
   <section class="card panel">
@@ -178,6 +178,15 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
+  }
+  /* A long drink name is cut short rather than widening the page (the title has it in full). */
+  .repeat {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .repeat .label {
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .status {
     min-height: 1rem;
@@ -212,63 +221,11 @@
     background: var(--surface-1);
   }
   .products li {
-    display: flex;
-    gap: 0.9rem;
     padding: 0.75rem 0.9rem;
     border-top: 1px solid var(--border-soft);
   }
-  /* Alko's photos are white-backed bottles; the box stays white in dark mode too, like Alkometriikka's */
-  .thumb {
-    position: relative;
-    flex: none;
-    display: grid;
-    place-items: center;
-    width: 3.5rem;
-    height: 4.2rem;
-    border-radius: 4px;
-    background: #fff;
-    overflow: hidden;
-  }
-  .thumb .emoji {
-    font-size: 1.6rem;
-  }
-  .thumb img {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    background: #fff;
-  }
-  .info {
-    flex: 1;
-    min-width: 0;
-  }
-  .maker {
-    margin: -0.35rem 0 0.5rem;
-    color: var(--text-secondary);
-    font-size: 0.93rem;
-  }
   .products li:first-child {
     border-top: 0;
-  }
-  .pname {
-    display: flex;
-    align-items: baseline;
-    gap: 0.4rem;
-    margin: 0 0 0.5rem;
-  }
-  .title {
-    font-weight: 700;
-  }
-  .abv {
-    color: var(--text-secondary);
-    white-space: nowrap;
-  }
-  .servings {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem;
   }
   .presets {
     display: grid;

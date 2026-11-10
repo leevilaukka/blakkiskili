@@ -28,6 +28,7 @@ export interface HubOptions {
 interface Viewer {
   owner: string;
   send: (text: string) => void;
+  close?: () => void;
 }
 
 interface Channel {
@@ -69,10 +70,13 @@ export class Hub {
     return this.total < this.maxTotal && (this.perOwner.get(owner) ?? 0) < this.maxPerOwner;
   }
 
-  /** Starts sending to `send`, beginning with the current data. Returns how to stop, or null when full. */
-  subscribe(channel: string, owner: string, send: (text: string) => void): (() => void) | null {
+  /**
+   * Starts sending to `send`, beginning with the current data. `close` ends the response (used by
+   * endOwner). Returns how to stop, or null when full.
+   */
+  subscribe(channel: string, owner: string, send: (text: string) => void, close?: () => void): (() => void) | null {
     if (!this.hasRoom(owner)) return null;
-    const viewer: Viewer = { owner, send };
+    const viewer: Viewer = { owner, send, close };
     let ch = this.channels.get(channel);
     if (!ch) this.channels.set(channel, (ch = { viewers: new Set(), lastPush: 0 }));
     ch.viewers.add(viewer);
@@ -83,6 +87,25 @@ export class Hub {
 
     this.deliver(channel, viewer);
     return () => this.remove(channel, viewer);
+  }
+
+  /** Tells every stream of `owner` to stop and closes them (the account signed out everywhere). */
+  endOwner(owner: string): number {
+    let ended = 0;
+    for (const [channel, ch] of [...this.channels]) {
+      for (const v of [...ch.viewers]) {
+        if (v.owner !== owner) continue;
+        this.remove(channel, v);
+        ended += 1;
+        try {
+          v.send("event: end\ndata: {}\n\n");
+          v.close?.();
+        } catch {
+          // already closed
+        }
+      }
+    }
+    return ended;
   }
 
   /** Stops everything (timers and the bus listener). */

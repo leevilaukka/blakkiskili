@@ -17,6 +17,7 @@ import { ANNOUNCEMENTS, type Announcement } from "../announcements.ts";
 import { Products } from "./products.ts";
 import { Identities } from "./identities.ts";
 import { Barcodes } from "./barcodes.ts";
+import { CustomProducts } from "./customproducts.ts";
 import { WebSessions } from "./websessions.ts";
 import { ChangeBus } from "./changebus.ts";
 import { Screens } from "./screens.ts";
@@ -48,9 +49,10 @@ export function createServices(deps: Deps, opts: ServiceOptions = {}) {
   const announcements = new Announcements(deps, opts.announcements ?? ANNOUNCEMENTS);
   const products = opts.products ?? new Products();
   const barcodes = opts.barcodes ?? new Barcodes();
+  const customProducts = new CustomProducts(deps);
   const webSessions = new WebSessions(deps);
   const screens = new Screens(deps, bus);
-  return { identities, accounts, drinks, groups, stats, importer, pending, inactivity, announcements, products, barcodes, webSessions, screens, bus, deps };
+  return { identities, accounts, drinks, groups, stats, importer, pending, inactivity, announcements, products, barcodes, customProducts, webSessions, screens, bus, deps };
 }
 
 export type Services = ReturnType<typeof createServices>;
