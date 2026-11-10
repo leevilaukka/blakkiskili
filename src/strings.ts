@@ -1,6 +1,7 @@
 // User-facing texts (Finnish), ported from the original app/strings.js and converted to
 // Telegram HTML. Placeholders are filled with fmt(), which escapes values.
 // Texts about the operator, privacy and code were rewritten for v2: review them before launch.
+// Copyright (C) 2017 Joonas Ulmanen, GPL-3.0-or-later; ported and modified November 2026.
 
 export const E = {
   beers: "🍻",
@@ -380,7 +381,7 @@ export const S = {
         button: "Koodi",
         title: "FAQ: Koodi",
         text:
-          "<b>Miten Bläkkiskili on koodattu?</b>\nBläkkiskili on kirjoitettu TypeScriptillä Bun-ajoympäristöllä ja grammY-kirjastolla, tietokantana SQLite. Se perustuu Joonas Ulmasen (@ultsi) alkuperäiseen Bläkkisvuoheen (https://gitlab.com/ultsi-projects/blakkisvuohi), mutta ei ole sen tekijän ylläpitämä. Bläkkiskili on lisensoitu GPLv3:lla.{source}{maintainer}",
+          "<b>Miten Bläkkiskili on koodattu?</b>\nBläkkiskili on kirjoitettu TypeScriptillä Bun-ajoympäristöllä ja grammY-kirjastolla, tietokantana SQLite. Se perustuu Joonas Ulmasen (@ultsi) alkuperäiseen Bläkkisvuoheen (https://gitlab.com/ultsi-projects/blakkisvuohi), mutta ei ole sen tekijän ylläpitämä. Bläkkiskili on lisensoitu GPLv3:lla tai sen uudemmalla versiolla.{source}{maintainer}",
       },
     },
     privacy: {
@@ -407,7 +408,7 @@ export const S = {
   announcement: "📣 <b>Tiedote {date}</b>\n{text}",
 
   about:
-    "<b>Bläkkiskili</b> arvioi veren alkoholipitoisuutta juomiesi perusteella. Se perustuu Joonas Ulmasen (@ultsi) alkuperäiseen Bläkkisvuoheen (https://gitlab.com/ultsi-projects/blakkisvuohi), mutta ei ole alkuperäisen tekijän ylläpitämä. Bläkkiskili on vapaata ohjelmistoa GPLv3-lisenssillä.\n\nAlkon tuotetiedot tulevat <a href=\"https://alkometriikka.fi\">Alkometriikasta</a>.{source}{maintainer}\n\nKäyttöehdot: /terms",
+    "<b>Bläkkiskili</b> arvioi veren alkoholipitoisuutta juomiesi perusteella. Se perustuu Joonas Ulmasen (@ultsi) alkuperäiseen Bläkkisvuoheen (https://gitlab.com/ultsi-projects/blakkisvuohi), mutta ei ole alkuperäisen tekijän ylläpitämä. Bläkkiskili on vapaata ohjelmistoa GPLv3-lisenssillä tai sen uudemmalla versiolla.\n\nAlkon tuotetiedot tulevat <a href=\"https://alkometriikka.fi\">Alkometriikasta</a>.{source}{maintainer}\n\nKäyttöehdot: /terms",
 
   commands: {
     moro: "Rippaa rauhassa kera {chat_title} -kavereiden.",

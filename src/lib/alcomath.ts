@@ -1,7 +1,8 @@
 /*
     Alcohol related math, ported as-is from the original Bläkkisvuohi app/lib/alcomath.js
-    (Copyright (C) 2017 Joonas Ulmanen, GPL-3.0). Behaviour is kept identical on purpose so
-    that estimates match what the group is used to; only `now` is injectable for testing.
+    (Copyright (C) 2017 Joonas Ulmanen, GPL-3.0-or-later). Ported to TypeScript and modified
+    in November 2026. Behaviour is kept identical on purpose so that estimates match what the
+    users are used to; only `now` is injectable for testing.
 
     Variation of the Widmark equation, from "The Estimation of Blood Alcohol Concentration"
     (DOI: 10.1385/Forensic Sci. Med. Pathol.:3:1:33), with absorption taken into account:

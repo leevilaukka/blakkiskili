@@ -1,4 +1,5 @@
 // Alcohol unit helpers and limits, ported from the original app/constants.js.
+// Copyright (C) 2017 Joonas Ulmanen, GPL-3.0-or-later; ported and modified November 2026.
 
 export const ETHANOL_GRAMS_PER_LITRE = 789.24;
 export const MINUTE_MS = 60 * 1000;

@@ -1,5 +1,6 @@
 // Drink presets shown in the /start → Juo menu. Ported from app/commands/start/juo.js.
 // This is the natural place to plug in an external product catalogue later (e.g. Alkometriikka).
+// Copyright (C) 2017 Joonas Ulmanen, GPL-3.0-or-later; ported and modified November 2026.
 
 import { alcoholMg } from "./units.ts";
 

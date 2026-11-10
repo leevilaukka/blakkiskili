@@ -1,6 +1,7 @@
 // The /start inline menu, ported from the original v4 menu tree (app/commands/start*.js).
 // Each node is addressed by a short id in callback data ("m:<node>[:<arg>]") and renders a
 // View. Nodes that expect typed input set a Pending state; any other navigation clears it.
+// Copyright (C) 2017 Joonas Ulmanen, GPL-3.0-or-later; ported and modified November 2026.
 
 import type { BotContext } from "./context.ts";
 import { contactExtras, displayName, fullName, isAdmin, retentionText, termsHtml, webPrivacyText } from "./context.ts";
