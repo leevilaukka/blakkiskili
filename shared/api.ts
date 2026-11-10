@@ -121,7 +121,7 @@ export type LogDrinkRequest =
 
 // ---------- barcodes ----------
 
-export type CustomKind = "olut" | "viini" | "kuohu" | "vakeva";
+export type CustomKind = "olut" | "viini" | "kuohu" | "vakeva" | "muu";
 
 /** A product users added for a barcode Alko doesn't know. Shared by everyone. */
 export interface CustomProductItem {

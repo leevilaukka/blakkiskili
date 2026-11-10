@@ -196,7 +196,7 @@ export const S = {
     kind_prompt:
       "Lisäät tuotteen viivakoodille <code>{ean}</code>. Tuote näkyy kaikille, jotka lukevat saman viivakoodin, joten kirjoita tiedot pakkauksesta.\n\nMikä juoma on kyseessä?",
     kind_prompt_edit: "Muokkaat viivakoodin <code>{ean}</code> tuotetta <b>{name}</b>.\n\nMikä juoma on kyseessä?",
-    kinds: { olut: "🍺 Olut, siideri tai lonkero", viini: "🍷 Viini", kuohu: "🥂 Kuohuviini", vakeva: "🥃 Väkevä" },
+    kinds: { olut: "🍺 Olut, siideri tai lonkero", viini: "🍷 Viini", kuohu: "🥂 Kuohuviini", vakeva: "🥃 Väkevä", muu: "🍹 Muu (sekoitus, valmisjuoma…)" },
     name_prompt: "Kirjoita tuotteen nimi, esim. <code>Lapin Kulta IVA</code>.{current}",
     name_error: "Nimen pitää olla 1–60 merkkiä.",
     amount_prompt:
@@ -218,7 +218,7 @@ export const S = {
     deleted: "Tuote poistettu.",
     details: "{kind} · {abv} %",
     added_by_users: "Käyttäjän lisäämä tuote, ei Alkon valikoimassa. Viivakoodi <code>{ean}</code>",
-    kind_names: { olut: "Olut, siideri tai lonkero", viini: "Viini", kuohu: "Kuohuviini", vakeva: "Väkevä" },
+    kind_names: { olut: "Olut, siideri tai lonkero", viini: "Viini", kuohu: "Kuohuviini", vakeva: "Väkevä", muu: "Muu" },
     // "Ilmoita virheestä": for everyone who can't edit the product themselves.
     report_button: "⚠️ Ilmoita virheestä",
     title_report: "Ilmoita virheestä",

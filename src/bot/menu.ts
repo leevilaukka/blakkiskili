@@ -284,7 +284,7 @@ function customKindView(ctx: BotContext, ean: string): View {
     text:
       customHeader(!!existing) +
       (existing ? fmt(S.custom.kind_prompt_edit, { ean, name: existing.name }) : fmt(S.custom.kind_prompt, { ean })),
-    keyboard: [[kind("olut")], [kind("viini"), kind("kuohu")], [kind("vakeva")], back("j")],
+    keyboard: [[kind("olut")], [kind("viini"), kind("kuohu")], [kind("vakeva"), kind("muu")], back("j")],
   };
 }
 

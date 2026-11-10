@@ -12,7 +12,7 @@
   let busy = $state(false);
   let filter = $state("");
 
-  const KINDS: Record<AdminProduct["kind"], string> = { olut: "Olut", viini: "Viini", kuohu: "Kuohuviini", vakeva: "Väkevä" };
+  const KINDS: Record<AdminProduct["kind"], string> = { olut: "Olut", viini: "Viini", kuohu: "Kuohuviini", vakeva: "Väkevä", muu: "Muu" };
   const n = new Intl.NumberFormat("fi-FI");
   const date = (ms: number) => new Date(ms).toLocaleDateString("fi-FI", { day: "numeric", month: "numeric", year: "numeric" });
 

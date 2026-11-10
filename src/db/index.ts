@@ -212,6 +212,39 @@ const MIGRATIONS: string[] = [
   ) STRICT;
   CREATE INDEX custom_product_reports_by ON custom_product_reports (reported_by);
   `,
+
+  /* 13: "muu" kind for user-added products (mixed drinks, RTDs) */ `
+  -- The kind CHECK can't be altered, so the table is rebuilt. The reports are set aside first
+  -- because dropping custom_products would cascade-delete them.
+  CREATE TEMP TABLE reports_keep AS SELECT * FROM custom_product_reports;
+  DROP TABLE custom_product_reports;
+  ALTER TABLE custom_products RENAME TO custom_products_old;
+  DROP INDEX custom_products_added_by;
+  CREATE TABLE custom_products (
+    ean        TEXT PRIMARY KEY,
+    kind       TEXT NOT NULL CHECK (kind IN ('olut', 'viini', 'kuohu', 'vakeva', 'muu')),
+    name       TEXT NOT NULL,
+    size_l     REAL NOT NULL CHECK (size_l > 0),
+    abv        REAL NOT NULL CHECK (abv > 0 AND abv < 100),
+    kcal100    REAL CHECK (kcal100 >= 0),
+    added_by   TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  ) STRICT;
+  INSERT INTO custom_products SELECT * FROM custom_products_old;
+  DROP TABLE custom_products_old;
+  CREATE INDEX custom_products_added_by ON custom_products (added_by);
+  CREATE TABLE custom_product_reports (
+    ean         TEXT NOT NULL REFERENCES custom_products(ean) ON DELETE CASCADE,
+    reported_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    message     TEXT NOT NULL,
+    created_at  INTEGER NOT NULL,
+    PRIMARY KEY (ean, reported_by)
+  ) STRICT;
+  CREATE INDEX custom_product_reports_by ON custom_product_reports (reported_by);
+  INSERT INTO custom_product_reports SELECT * FROM reports_keep;
+  DROP TABLE reports_keep;
+  `,
 ];
 
 export function openDatabase(path: string): Database {

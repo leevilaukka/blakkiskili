@@ -70,6 +70,7 @@ export function cleanName(name: string): string {
 export function emojiFor(p: Pick<CatalogProduct, "type" | "subtype">): string {
   if (p.type === "Panimotuotteet") return "🍺";
   if (p.type === "Väkevät") return "🥃";
+  if (p.type === "Muut") return "🍹";
   if ((p.subtype ?? "").startsWith("kuohuviinit")) return "🥂";
   return "🍷";
 }
@@ -143,7 +144,7 @@ export function mergeServings(variantsRepFirst: readonly CatalogProduct[]): Serv
 
 // ---------- user-added products (custom barcodes) ----------
 
-export const CUSTOM_KINDS = ["olut", "viini", "kuohu", "vakeva"] as const;
+export const CUSTOM_KINDS = ["olut", "viini", "kuohu", "vakeva", "muu"] as const;
 export type CustomKind = (typeof CUSTOM_KINDS)[number];
 export const isCustomKind = (s: string): s is CustomKind => (CUSTOM_KINDS as readonly string[]).includes(s);
 
@@ -168,6 +169,7 @@ const KIND_TYPES: Record<CustomKind, Pick<CatalogProduct, "type" | "subtype">> =
   viini: { type: "Viinit", subtype: null },
   kuohu: { type: "Viinit", subtype: "kuohuviinit" },
   vakeva: { type: "Väkevät", subtype: null },
+  muu: { type: "Muut", subtype: null }, // mixed drinks, RTDs: one container, or glasses when large
 };
 
 /** A user-added product in catalogue form, so it gets the same servings as an Alko product of its kind. */

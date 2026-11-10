@@ -14,6 +14,7 @@
     viini: "Viini",
     kuohu: "Kuohuviini",
     vakeva: "Väkevä",
+    muu: "Muu",
   };
   const num = (n: number) => String(Math.round(n * 100) / 100).replace(".", ",");
 

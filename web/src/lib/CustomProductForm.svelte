@@ -16,6 +16,7 @@
     { id: "viini", label: "🍷 Viini" },
     { id: "kuohu", label: "🥂 Kuohuviini" },
     { id: "vakeva", label: "🥃 Väkevä" },
+    { id: "muu", label: "🍹 Muu (juomasekoitus, valmisjuoma…)" },
   ];
 
   const text = (n: number | null | undefined) => (n == null ? "" : String(Math.round(n * 100) / 100).replace(".", ","));
