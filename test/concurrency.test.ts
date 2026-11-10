@@ -19,6 +19,7 @@ const config: Config = {
   inactivity: { deleteAfterDays: 730, warnDaysBefore: 30 },
   backup: { everyMinutes: 60 },
   accountLinking: false,
+  web: { enabled: false, origin: "", port: 0, distDir: "./web/build" },
 };
 
 const command = (id: number, from: number, text: string): Update =>

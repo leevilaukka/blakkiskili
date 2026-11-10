@@ -9,11 +9,12 @@ import { createCrypto } from "./lib/ids.ts";
 import { createServices } from "./services/index.ts";
 import { ALLOWED_UPDATES, createBot, publishCommandMenus } from "./bot/index.ts";
 import { runInactivityJob } from "./bot/inactivity.ts";
-import { createAdminAlerts } from "./bot/admin.ts";
+import { createAdminAlerts, notifyAdmins } from "./bot/admin.ts";
 import { writeSnapshot } from "./ops/backup.ts";
 import { startJobs, type Job } from "./ops/scheduler.ts";
 import { Products } from "./services/products.ts";
 import { Barcodes } from "./services/barcodes.ts";
+import { startWebServer } from "./web/server.ts";
 
 // Everything this process creates (database, WAL, snapshots) is readable by its owner only.
 process.umask(0o077);
@@ -63,6 +64,17 @@ if (products.enabled) {
 } else {
   console.log("ALKOMETRIIKKA_URL is empty: product search is disabled.");
 }
+if (config.web.enabled) {
+  jobs.push({
+    name: "web cleanup",
+    everyMs: 6 * 3600_000,
+    firstDelayMs: 30_000,
+    run: () => {
+      const n = services.webSessions.prune() + services.screens.prune() + services.groups.prune();
+      if (n > 0) console.log(`Web: removed ${n} expired session(s), link(s), invite(s) or empty group(s)`);
+    },
+  });
+}
 if (config.inactivity.deleteAfterDays > 0) {
   jobs.push({
     name: "inactivity cleanup",
@@ -79,9 +91,26 @@ const stopJobs = startJobs(jobs, (job, err) => {
   void alert(job, err instanceof Error ? err.message : String(err));
 });
 
+// The website must never take the bot down: if it can't start, say so and carry on without it.
+let web: ReturnType<typeof startWebServer> | undefined;
+if (config.web.enabled) {
+  try {
+    web = startWebServer({
+      config,
+      services,
+      botUsername: bot.botInfo.username,
+      notifyAdmins: (html) => notifyAdmins(bot.api, config.adminIds, html),
+    });
+  } catch (e) {
+    console.error("Web: could not start, continuing without the website:", e);
+    await alert("website", `Could not start: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
 let runner: RunnerHandle | undefined;
 const shutdown = async () => {
   stopJobs();
+  await web?.shutdown();
   // Lets updates that are being handled finish before the database closes
   await (runner?.isRunning() ? runner.stop() : bot.stop()).catch(() => {});
   db.close();

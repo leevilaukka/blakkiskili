@@ -9,7 +9,11 @@
     "start": "bun src/index.ts",
     "dev": "bun --watch src/index.ts",
     "test": "bun test",
-    "typecheck": "bun check"
+    "typecheck": "bun check",
+    "web:dev": "cd web && bun run dev",
+    "web:build": "cd web && bun install && bun run build",
+    "web:check": "cd web && bun run check",
+    "web:demo": "bun scripts/web-demo.ts"
   },
   "dependencies": {
     "@grammyjs/runner": "^2.0.3",

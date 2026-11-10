@@ -1,6 +1,7 @@
 import { calculateEbac, type Ebac } from "../lib/alcomath.ts";
 import { DAY_MS, HOUR_MS } from "../lib/units.ts";
 import type { Accounts, Profile } from "./accounts.ts";
+import { ChangeBus } from "./changebus.ts";
 import type { Deps } from "./index.ts";
 
 export interface Drink {
@@ -50,10 +51,51 @@ export interface LateDrink {
   mg: number;
 }
 
+/** Which drinks the logbook shows: `from` inclusive, `to` exclusive, `q` a substring of the description. */
+export interface DrinkFilter {
+  from?: number;
+  to?: number;
+  q?: string;
+}
+
+/** Where the previous logbook page ended (newest first). */
+export interface DrinkCursor {
+  at: number;
+  id: number;
+}
+
+export interface DrinkTotals {
+  count: number;
+  alcoholMg: number;
+  energy: Energy;
+  /** Drinking sessions among the matching drinks (no pause of `SESSION_GAP_MS`). */
+  sessions: number;
+}
+
+function filterSql(userId: string, f: DrinkFilter): { where: string; params: (string | number)[] } {
+  const clauses = ["user_id = ?"];
+  const params: (string | number)[] = [userId];
+  if (f.from !== undefined) {
+    clauses.push("created_at >= ?");
+    params.push(f.from);
+  }
+  if (f.to !== undefined) {
+    clauses.push("created_at < ?");
+    params.push(f.to);
+  }
+  if (f.q) {
+    // LIKE is case-insensitive for ASCII only, which covers most product names.
+    clauses.push("description LIKE ? ESCAPE '\\'");
+    params.push(`%${f.q.replace(/[\\%_]/g, "\\$&")}%`);
+  }
+  return { where: clauses.join(" AND "), params };
+}
+
 export class Drinks {
   constructor(
     private readonly deps: Deps,
     private readonly accounts: Accounts,
+    private readonly bus = new ChangeBus(),
   ) {}
 
   add(
@@ -71,7 +113,10 @@ export class Drinks {
     // would hit the natural-key constraint; nudge it by a millisecond instead.
     for (let t = opts.at ?? this.deps.now(); ; t += 1) {
       const row = insert.get(userId, mg, description, t, opts.productId ?? null, kcal) as DrinkRow | null;
-      if (row) return toDrink(row);
+      if (row) {
+        this.bus.emit({ accountId: userId });
+        return toDrink(row);
+      }
     }
   }
 
@@ -104,8 +149,18 @@ export class Drinks {
   /** Deletes the most recent drink. Returns it, or null if there was none. */
   undoLast(userId: string): Drink | null {
     const last = this.last(userId);
-    if (last) this.deps.db.query("DELETE FROM drinks WHERE id = ?").run(last.id);
+    if (last) {
+      this.deps.db.query("DELETE FROM drinks WHERE id = ?").run(last.id);
+      this.bus.emit({ accountId: userId });
+    }
     return last;
+  }
+
+  /** Deletes one of the user's drinks by id. False if it doesn't exist or belongs to someone else. */
+  delete(userId: string, drinkId: number): boolean {
+    const deleted = this.deps.db.query("DELETE FROM drinks WHERE user_id = ? AND id = ?").run(userId, drinkId).changes > 0;
+    if (deleted) this.bus.emit({ accountId: userId });
+    return deleted;
   }
 
   /** Drinks since `sinceMs`, ascending. */
@@ -115,6 +170,39 @@ export class Drinks {
         .query("SELECT * FROM drinks WHERE user_id = ? AND created_at > ? ORDER BY created_at, id")
         .all(userId, sinceMs) as DrinkRow[]
     ).map(toDrink);
+  }
+
+  /** The logbook: matching drinks newest first, `limit` at a time, continuing after `before`. */
+  page(userId: string, filter: DrinkFilter, limit: number, before?: DrinkCursor): Drink[] {
+    const { where, params } = filterSql(userId, filter);
+    const after = before ? " AND (created_at < ? OR (created_at = ? AND id < ?))" : "";
+    const afterParams = before ? [before.at, before.at, before.id] : [];
+    return (
+      this.deps.db
+        .query(`SELECT * FROM drinks WHERE ${where}${after} ORDER BY created_at DESC, id DESC LIMIT ?`)
+        .all(...params, ...afterParams, limit) as DrinkRow[]
+    ).map(toDrink);
+  }
+
+  /** Totals over every drink the filter matches, not just one page. */
+  totals(userId: string, filter: DrinkFilter): DrinkTotals {
+    const { where, params } = filterSql(userId, filter);
+    const row = this.deps.db
+      .query(
+        `SELECT count(*) AS count, coalesce(sum(alcohol_mg), 0) AS mg, coalesce(sum(kcal), 0) AS kcal, count(*) - count(kcal) AS unknown
+         FROM drinks WHERE ${where}`,
+      )
+      .get(...params) as { count: number; mg: number; kcal: number; unknown: number };
+    const times = this.deps.db
+      .query(`SELECT created_at FROM drinks WHERE ${where} ORDER BY created_at`)
+      .values(...params) as [number][];
+    let sessions = 0;
+    let prev = -Infinity;
+    for (const [t] of times) {
+      if (t - prev > SESSION_GAP_MS) sessions += 1;
+      prev = t;
+    }
+    return { count: row.count, alcoholMg: row.mg, energy: { kcal: row.kcal, unknown: row.unknown }, sessions };
   }
 
   /** Latest `n` drinks with distinct descriptions, newest first (quick buttons). */
@@ -146,11 +234,8 @@ export class Drinks {
     ).map((r) => r.product_id);
   }
 
-  /**
-   * Energy of the current session: the latest drinks with no pause of `SESSION_GAP_MS` between
-   * them (or since the last one). Null when there is no session going on.
-   */
-  sessionEnergy(userId: string, now = this.deps.now()): Energy | null {
+  /** The current session: the latest drinks with no pause of `SESSION_GAP_MS` between them (or since the last one), oldest first. */
+  session(userId: string, now = this.deps.now()): Drink[] {
     const recent = this.since(userId, now - EBAC_WINDOW_MS);
     let edge = now;
     const session: Drink[] = [];
@@ -160,6 +245,12 @@ export class Drinks {
       session.push(d);
       edge = d.createdAt;
     }
+    return session.reverse();
+  }
+
+  /** Energy of the current session. Null when there is no session going on. */
+  sessionEnergy(userId: string, now = this.deps.now()): Energy | null {
+    const session = this.session(userId, now);
     if (session.length === 0) return null;
     return {
       kcal: session.reduce((sum, d) => sum + (d.kcal ?? 0), 0),

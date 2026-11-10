@@ -26,6 +26,8 @@ export const E = {
   inbox: "📥",
   link: "🔗",
   key: "🔑",
+  tv: "📺",
+  hidden: "🙈",
 } as const;
 
 export const PLATFORM_NAMES = { telegram: "Telegram", discord: "Discord" } as const;
@@ -170,15 +172,62 @@ export const S = {
   barcode: {
     title: "Viivakoodi",
     found: "Viivakoodi <code>{ean}</code> kuuluu tälle tuotteelle.",
-    gone: "Viivakoodi <code>{ean}</code> kuuluu tuotteelle, jota ei enää löydy valikoimasta.",
+    gone: "Viivakoodi <code>{ean}</code> kuuluu tuotteelle, jota ei enää löydy Alkon valikoimasta. Jos tuotetta myydään muualla, voit lisätä sen itse.",
+    found_custom: "Viivakoodi <code>{ean}</code> kuuluu tälle käyttäjien lisäämälle tuotteelle.",
     alcohol_free: "Viivakoodi <code>{ean}</code> kuuluu tuotteelle <b>{name}</b>, mutta se on alkoholiton (alle 1 %), joten sitä ei voi merkitä juomaksi.",
-    unknown: "Alko ei tunne viivakoodia <code>{ean}</code>. Voit hakea tuotetta nimellä.",
+    unknown: "Alko ei tunne viivakoodia <code>{ean}</code>. Voit hakea tuotetta nimellä, tai jos se on esimerkiksi kaupan tuote, lisätä sen itse.",
     invalid: "En tunnistanut viivakoodia. Lähetä numerot tai selkeä kuva viivakoodista.",
     no_code_in_photo: "En löytänyt kuvasta viivakoodia. Yritä uudelleen lähempää ja tasaisessa valossa, tai kirjoita numerot.",
     photo_failed: "Kuvan lukeminen epäonnistui. Kirjoita viivakoodin numerot.",
     off: "Viivakoodit eivät ole käytössä.",
     rate_limited: "Viivakoodeja on haettu juuri paljon. Kokeile hetken päästä uudelleen.",
     unavailable: "Viivakoodin <code>{ean}</code> haku ei onnistunut juuri nyt. Kokeile myöhemmin uudelleen.",
+  },
+
+  // Products users add for barcodes Alko doesn't know. Shared with everyone, kept in the bot only.
+  custom: {
+    add_button: "➕ Lisää tuote",
+    edit_button: "✏️ Muokkaa tuotetta",
+    delete_button: E.trash + " Poista tuote",
+    skip_button: "Ohita",
+    title_add: "Lisää tuote",
+    title_edit: "Muokkaa tuotetta",
+    kind_prompt:
+      "Lisäät tuotteen viivakoodille <code>{ean}</code>. Tuote näkyy kaikille, jotka lukevat saman viivakoodin, joten kirjoita tiedot pakkauksesta.\n\nMikä juoma on kyseessä?",
+    kind_prompt_edit: "Muokkaat viivakoodin <code>{ean}</code> tuotetta <b>{name}</b>.\n\nMikä juoma on kyseessä?",
+    kinds: { olut: "🍺 Olut, siideri tai lonkero", viini: "🍷 Viini", kuohu: "🥂 Kuohuviini", vakeva: "🥃 Väkevä" },
+    name_prompt: "Kirjoita tuotteen nimi, esim. <code>Lapin Kulta IVA</code>.{current}",
+    name_error: "Nimen pitää olla 1–60 merkkiä.",
+    amount_prompt:
+      "Kirjoita yhden tölkin tai pullon koko ja alkoholiprosentti, esim. <code>33cl 4.5%</code> tai <code>0,5l 5.3</code>.{current}",
+    amount_error: "En ymmärtänyt. Kirjoita koko ja prosentti, esim. <code>33cl 4.5%</code>.",
+    size_error: "Koon pitää olla 1 cl – 5 l.",
+    abv_error: "Alkoholiprosentin pitää olla 1–99 %.",
+    no_serving: "Tästä ei saa järkevän kokoista annosta. Tarkista koko ja prosentti.",
+    kcal_prompt:
+      "Jos pakkauksessa on energiamäärä, kirjoita se kilokaloreina 100 millilitraa kohden, esim. <code>43</code>. Muuten paina Ohita.{current}",
+    kcal_error: "Kirjoita kilokalorit 100 ml:aa kohden numerona (0–999), tai paina Ohita.",
+    current: "\n\nNyt: <b>{value}</b>",
+    saved: "Tuote tallennettu. Viivakoodi <code>{ean}</code> avaa sen nyt kaikille.",
+    updated: "Tuote päivitetty.",
+    not_allowed: "Vain tuotteen lisääjä tai ylläpitäjä voi muuttaa sitä.",
+    in_catalogue: "Viivakoodi <code>{ean}</code> löytyy Alkon valikoimasta, joten sille ei voi lisätä omaa tuotetta.",
+    gone: "Tuotetta ei enää ole. Lue viivakoodi uudelleen.",
+    delete_confirm: "Poistetaanko viivakoodin <code>{ean}</code> tuote <b>{name}</b> kaikilta? Jo merkityt juomat säilyvät.",
+    deleted: "Tuote poistettu.",
+    details: "{kind} · {abv} %",
+    added_by_users: "Käyttäjän lisäämä tuote, ei Alkon valikoimassa. Viivakoodi <code>{ean}</code>",
+    kind_names: { olut: "Olut, siideri tai lonkero", viini: "Viini", kuohu: "Kuohuviini", vakeva: "Väkevä" },
+    // "Ilmoita virheestä": for everyone who can't edit the product themselves.
+    report_button: "⚠️ Ilmoita virheestä",
+    title_report: "Ilmoita virheestä",
+    report_prompt:
+      "Mikä tuotteessa <b>{name}</b> (viivakoodi <code>{ean}</code>) on vialla? Kirjoita lyhyesti, esim. <code>prosentti on 5,5 eikä 4,5</code>. Viesti menee ylläpitäjille, jotka korjaavat tuotteen.",
+    report_error: "Kirjoita viesti, enintään 300 merkkiä.",
+    report_sent: "Kiitos! Ilmoitus lähetettiin ylläpitäjille.",
+    report_too_many: "Sinulla on jo monta käsittelemätöntä ilmoitusta. Kokeile uudelleen, kun ylläpitäjät ovat käsitelleet niitä.",
+    report_admin:
+      "⚠️ <b>Virheilmoitus käyttäjän lisäämästä tuotteesta</b>\n\n<b>{name}</b>\n{kind} · {size} cl · {abv} %\nViivakoodi <code>{ean}</code>\n\n<b>Viesti:</b> {message}\n\nKorjaa tuote skannaamalla viivakoodi botille tai verkkosivulla. Ilmoitukset kuitataan ylläpitosivulla.",
   },
 
   asetukset: {
@@ -212,6 +261,15 @@ export const S = {
       changed: "Kuvaajan nimi muutettu!",
     },
     data: { button: E.inbox + " Lataa tietoni" },
+    nimettomyys: {
+      button: E.tv + " Nimettömyys näytöillä",
+      on_select:
+        "Ryhmän näyttölinkki näyttää esimerkiksi tapahtuman tv:ssä ryhmäläisten nimet ja promillet. Voit näkyä siellä nimellä <b>Nimetön 1, 2, …</b> Promillesi näkyvät silti, ja ryhmäläiset näkevät nimesi esim. /promillet-komennolla.\n\nValinta on ryhmäkohtainen, eikä siitä kerrota ryhmään. Napauta ryhmää vaihtaaksesi.",
+      none: "Et ole vielä missään ryhmässä. Sano ryhmässä /moro.",
+      hidden: E.hidden + " {name}: nimettömänä",
+      shown: E.person + " {name}: nimellä",
+      unnamed: "Nimeämätön ryhmä",
+    },
     linkit: {
       button: E.link + " Yhdistetyt palvelut",
       on_select:
@@ -285,6 +343,8 @@ export const S = {
     invalid_profile: "user.csv:n tiedot (paino, pituus tai sukupuoli) eivät kelpaa. Luo tunnus käsin valitsemalla Luo tunnus, ja tuo sitten drinks.csv.",
     no_account: "Luo ensin tunnus (tai lähetä user.csv), niin voin tuoda juomat.",
     parse_error: "Tiedoston lukeminen epäonnistui. Onko se varmasti CSV-tiedosto?",
+    barcodes: "barcodes.csv:tä ei tarvitse tuoda: lisäämäsi viivakoodituotteet ovat jo botissa kaikkien käytössä.",
+    reports: "product_reports.csv:tä ei voi tuoda: se listaa vain virheilmoitukset, joita ylläpitäjät eivät ole vielä käsitelleet.",
     too_big: "Tiedosto on liian suuri.",
   },
 
@@ -306,13 +366,15 @@ export const S = {
         button: "Juominen",
         title: "FAQ: Juominen",
         text:
-          "<b>Kannattaako juoma merkata avatessa vai viimeistellessä?</b>\nJuomat kannattaa merkata silloin, kun ne avaa. Promillearvioinnissa oletetaan juoman imeytyvän 99-prosenttisesti 30 minuutissa. Lisäksi avatessa juoman muistaa merkata paremmin.\n\n<b>Kuinka tarkka promillejen arviointi on?</b>\nNoin 1.5‰ asti hyvin tarkka, jonka jälkeen laskukaava alkaa heittämään. Laskenta on sama kuin alkuperäisessä Bläkkisvuohessa.\n\n<b>Unohdin lisätä juomat, mitä nyt?</b>\nKäytä /jalkikellotus-komentoa, tai /start-valikosta löytyvää Jälkikellotus-nappulaa.\n\n<b>Voinko hakea juoman viivakoodilla?</b>\nVoit. Lähetä minulle privaviestinä kuva Alkon tuotteen viivakoodista tai kirjoita viivakoodin numerot, niin avaan tuotteen ja voit merkitä juoman suoraan. Vain viivakoodin numero lähetetään Alkometriikalle, ei mitään sinuun liittyvää. Vanhoja, Alkon valikoimasta poistuneita tuotteita ei välttämättä löydy.",
+          "<b>Kannattaako juoma merkata avatessa vai viimeistellessä?</b>\nJuomat kannattaa merkata silloin, kun ne avaa. Promillearvioinnissa oletetaan juoman imeytyvän 99-prosenttisesti 30 minuutissa. Lisäksi avatessa juoman muistaa merkata paremmin.\n\n<b>Kuinka tarkka promillejen arviointi on?</b>\nNoin 1.5‰ asti hyvin tarkka, jonka jälkeen laskukaava alkaa heittämään. Laskenta on sama kuin alkuperäisessä Bläkkisvuohessa.\n\n<b>Unohdin lisätä juomat, mitä nyt?</b>\nKäytä /jalkikellotus-komentoa, tai /start-valikosta löytyvää Jälkikellotus-nappulaa.\n\n<b>Voinko hakea juoman viivakoodilla?</b>\nVoit. Lähetä minulle privaviestinä kuva Alkon tuotteen viivakoodista tai kirjoita viivakoodin numerot, niin avaan tuotteen ja voit merkitä juoman suoraan. Vain viivakoodin numero lähetetään Alkometriikalle, ei mitään sinuun liittyvää. Vanhoja, Alkon valikoimasta poistuneita tuotteita ei välttämättä löydy.\n\n<b>Entä tuotteet, joita Alko ei myy?</b>\nJos Alko ei tunne viivakoodia (esimerkiksi kaupan oluet ja siiderit), voit lisätä tuotteen itse: nimi, koko ja vahvuus. Lisätty tuote avautuu samalla viivakoodilla kaikille käyttäjille. Tuotteet tallennetaan vain tähän bottiin, ei Alkometriikalle. Jos jonkun muun lisäämässä tuotteessa on virhe, paina tuotteen kohdalla <b>Ilmoita virheestä</b>, niin ylläpitäjät korjaavat sen.",
       },
       ryhmat: {
         button: "Ryhmät",
         title: "FAQ: Ryhmät",
         text:
           "<b>Miten voin liittyä ryhmään tai poistua ryhmästä?</b>\nKirjoita ryhmässä /moro, jos haluat liittyä ryhmään. Kirjoita /poistu, jos haluat poistua ryhmästä. Ryhmään liittyneenä sinun promilletasosi näkyy esim. /promillet-komennolla.\n\n<b>Toin vanhat tietoni, pitääkö sanoa /moro uudestaan?</b>\nEi tarvitse, jos toit myös groups.csv-tiedoston: sinut lisätään vanhoihin ryhmiisi automaattisesti, kun niissä käytetään uutta bottia.\n\n<b>Miksi /kuvaaja -kuvassa kaikkien promillet laskee samaa tahtia?</b>\nPromillet kuvaavat alkoholin osuutta koko kehon verestä. Alkoholi palaa elimistössä nopeammin painavammilla ihmisillä, mutta veren määrä kehossa on tällöin myös suhteessa noin saman verran korkeampi. Tällöin promillejen väheneminen kehossa on kaikilla ihmisillä jotakuinkin sama.\n\n<b>Tallentaako Bläkkiskili ryhmän viestit?</b>\n<b>Ei tallenna.</b> Botti näkee ryhmässä vain sille osoitetut komennot.",
+        // Added while the website (and so event screens) is on.
+        web: "\n\n<b>Voinko piilottaa nimeni tapahtuman näytöltä?</b>\nVoit. Ryhmän näyttölinkki näyttää esimerkiksi tapahtuman tv:ssä ryhmäläisten nimet ja promillet. Lähetä minulle privaviestinä /nimeton, niin voit valita ryhmäkohtaisesti, näytkö näytöllä nimellä Nimetön 1, 2, … Promillesi näkyvät silti. Valinnasta ei kerrota ryhmään, ja sen voi tehdä myös verkkosivulla ryhmän sivulla.",
       },
       koodi: {
         button: "Koodi",
@@ -325,9 +387,13 @@ export const S = {
       button: "Yksityisyys",
       title: "Help: Yksityisyys",
       text:
-        "<b>Mitä tietoja kerätään?</b>\n- Telegramiin määritelty nimimerkki ja koko nimi (etu- ja sukunimi, salattuna)\n- Tiiviste (HMAC) Telegram-tilisi tunnisteesta (ja muiden tunnukseen yhdistämiesi palveluiden tunnisteista), sekä tunnisteet salattuna poistovaroituksen lähettämistä varten\n- Paino, pituus ja sukupuoli\n- Merkattujen juomien alkoholimäärät, nimet ja juomisajat, arvioitu energiamäärä (kun se tiedetään), sekä Alkon valikoimasta valituille juomille tuotenumero\n- Kun haet tuotetta viivakoodilla, vain viivakoodin numero lähetetään Alkometriikalle, joka kysyy sen Alkolta. Mitään sinuun liittyvää ei lähetetä, eikä kuvia tallenneta\n- Tiivisteet liittymiesi ryhmien tunnisteista\n\nRyhmien viestejä, puhelinnumeroa tai muita tietoja ei tallenneta.\n\n<b>Voinko saada tai poistaa tietoni?</b>\nKyllä. /data lähettää kaikki tietosi CSV-tiedostoina, ja Asetukset → Poista tunnus poistaa kaiken sinuun liittyvän tiedon heti.{retention}\n\n<b>Varmuuskopiot</b>\nTietokannasta otetaan salattuja varmuuskopioita EU:ssa sijaitsevaan tallennustilaan. Poistetut tiedot häviävät myös varmuuskopioista viimeistään noin kolmen kuukauden kuluttua.{maintainer}",
+        "<b>Mitä tietoja kerätään?</b>\n- Telegramiin määritelty nimimerkki ja koko nimi (etu- ja sukunimi, salattuna)\n- Tiiviste (HMAC) Telegram-tilisi tunnisteesta (ja muiden tunnukseen yhdistämiesi palveluiden tunnisteista), sekä tunnisteet salattuna poistovaroituksen lähettämistä varten\n- Paino, pituus ja sukupuoli\n- Merkattujen juomien alkoholimäärät, nimet ja juomisajat, arvioitu energiamäärä (kun se tiedetään), sekä Alkon valikoimasta valituille juomille tuotenumero\n- Kun haet tuotetta viivakoodilla, vain viivakoodin numero lähetetään Alkometriikalle, joka kysyy sen Alkolta. Mitään sinuun liittyvää ei lähetetä, eikä kuvia tallenneta\n- Jos lisäät viivakoodille tuotteen, jota Alko ei tunne, tuotteen tiedot (viivakoodi, nimi, koko, vahvuus, energia) näkyvät kaikille käyttäjille, eikä niitä lähetetä Alkometriikalle. Tunnukseesi tallennetaan tieto siitä, että lisäsit tuotteen, jotta voit muokata sitä. Tieto poistuu tunnuksesi mukana, mutta tuote jää muiden käyttöön\n- Jos ilmoitat virheestä käyttäjän lisäämässä tuotteessa, viestisi tallennetaan tunnukseesi liitettynä, kunnes ylläpitäjä käsittelee sen. Ylläpitäjät näkevät viestin ja tuotteen, mutta eivät sitä, kuka ilmoitti\n- Tiivisteet liittymiesi ryhmien tunnisteista sekä ryhmien nimet salattuna (Telegram-ryhmän otsikko, kun sanot ryhmässä /moro)\n\nRyhmien viestejä, puhelinnumeroa tai muita tietoja ei tallenneta.\n\n<b>Voinko saada tai poistaa tietoni?</b>\nKyllä. /data lähettää kaikki tietosi CSV-tiedostoina, ja Asetukset → Poista tunnus poistaa kaiken sinuun liittyvän tiedon heti.{retention}{web}\n\n<b>Varmuuskopiot</b>\nTietokannasta otetaan salattuja varmuuskopioita EU:ssa sijaitsevaan tallennustilaan. Poistetut tiedot häviävät myös varmuuskopioista viimeistään noin kolmen kuukauden kuluttua.{maintainer}",
     },
   },
+
+  // Added to the privacy text when the website is on.
+  privacy_web:
+    "\n\n<b>Verkkosivu</b>\nVerkkosivulle kirjaudutaan Telegramilla tai botin /web-linkillä. Kirjautumisesta tallennetaan istunto: satunnainen tunniste tiivistettynä, joka vanhenee 30 päivässä, jos sivustoa ei käytä. IP-osoitteita ei tallenneta levylle. Sivusto toimii Cloudflaren kautta, joka näkee liikenteen (esimerkiksi IP-osoitteesi) ja voi pitää siitä lokia. Sivusto käyttää vain kirjautumiseen tarvittavaa evästettä, ei seurantaa eikä mainoksia. Alkon tuotekuvat ja näyttölinkin Telegram-ryhmän kuva haetaan sivuston palvelimen kautta, joten selaimesi ei ota niitä varten yhteyttä Alkoon tai Telegramiin. Kuvia ei tallenneta levylle. Viivakoodin lukija käyttää kameraa tai kuvaa vain selaimessasi: palvelimelle lähetetään pelkkä viivakoodin numero.\n\nRyhmän jäsenet näkevät toistensa kuvaajanimet, promillearviot ja juotujen annosten määrät. Ryhmästä voi luoda <b>näyttölinkin</b>, esimerkiksi tapahtuman tv:tä varten: linkin haltija näkee ryhmän jäsenten nimet ja promillet ilman kirjautumista, kunnes linkki vanhenee (enintään 7 päivässä) tai se perutaan. Jokainen voi valita näkyvänsä näytöillä nimettömänä (ryhmän sivulla tai botin yksityisviestissä komennolla /nimeton). Näyttölinkki näyttää Telegram-ryhmän kuvan, joten ryhmän Telegram-tunniste tallennetaan salattuna, kun ryhmässä käytetään bottia. Verkossa luodun ryhmän nimi tallennetaan salattuna.",
 
   terms:
     "<b>Käyttöehdot</b>\n\nKäyttämällä Bläkkiskiliä olet hyväksynyt seuraavat käyttöehdot. Bläkkiskilin päätarkoitus on arvioida alkoholin määrää kehossa. Bläkkiskilin toiminta voi muuttua tai pysähtyä milloin vain. Sinun täytyy olla yli 18 vuotta käyttääksesi Bläkkiskiliä. Bläkkiskilin kehittäjät tai ylläpitäjät eivät ole vastuussa mistään suorasta tai epäsuorasta haitasta, jota palvelun käyttäminen voi aiheuttaa. Bläkkiskili on ilmainen käyttää. Ominaisuuksien, kuten promillejen arvioiminen, takia Bläkkiskili tallentaa käyttäjistä erinäisiä tietoja ja käyttää näitä hyväksi laskennassa. Sinuun suoraan linkitettävät tiedot tiivistetään tai salataan ennen tallentamista. Tietoja ei koskaan anneta tai myydä eteenpäin kolmansille osapuolille. Voit ladata tietosi komennolla /data ja poistaa ne milloin tahansa asetuksista.{retention}\n\nBläkkiskilin tuottamat arviot ovat arvioita, eikä niihin voi missään tapauksessa täysin luottaa. Noudata lakia, kun käytät alkoholia.\n\nNämä käyttöehdot voivat muuttua milloin vain ilman erillistä huomautusta. Uusimmat käyttöehdot voi aina lukea /terms-komennolla.",
@@ -374,9 +440,11 @@ export const S = {
         "Tällä Telegram-tilillä on jo oma tunnus, eikä tunnuksia voi yhdistää. Jos haluat käyttää toista tunnusta, lataa tietosi talteen komennolla /data ja poista tämän tilin tunnus asetuksista.",
       platform_taken: "Tunnukseen on jo yhdistetty toinen Telegram-tili. Irrota se ensin tunnuksen asetuksista.",
     },
+    web: "Tästä linkistä pääset kirjautumaan verkkosivulle: {link}\n\nLinkki toimii kerran ja vanhenee {minutes} minuutissa. Älä jaa sitä muille: sillä pääsee tunnukseesi.",
     admin_stats:
       "Tilastoja:\nKäyttäjiä on yhteensä {users}kpl, joista 14pv sisällä aktiivisia {active14}, ja 7pv sisällä aktiivisia {active7}.\nRyhmiä on yhteensä {groups}kpl, joista 14pv sisällä aktiivisia {groups14}, ja 7pv sisällä aktiivisia {groups7}. Lisäksi kaikki käyttäjät ovat yhteensä tilastoineet {drinks} juomaa.\nTop10 tilastot:\n\n{list}",
     help:
-      "Bläkkiskili auttaa sinua ja ystäviäsi seuraamaan rippauksesi (lue: promillejesi) tasoa. Aloita lähettämällä minulle privaviestinä /start.\n\nLuo ensimmäiseksi tunnus. Sen jälkeen voit alkaa kellottamaan juomia sisään /start-valikosta. Minut voi myös lisätä ryhmään, jolloin kerron /promillet-komennolla kaikkien ryhmässä olevien rippitasot. Jokaisen ryhmäläisen täytyy kuitenkin sanoa ryhmässä /moro, jotta he pääsevät rippilistaukseen mukaan.\n\nKaikki komennot: /komennot",
+      "Bläkkiskili auttaa sinua ja ystäviäsi seuraamaan rippauksesi (lue: promillejesi) tasoa. Aloita lähettämällä minulle privaviestinä /start.\n\nLuo ensimmäiseksi tunnus. Sen jälkeen voit alkaa kellottamaan juomia sisään /start-valikosta. Minut voi myös lisätä ryhmään, jolloin kerron /promillet-komennolla kaikkien ryhmässä olevien rippitasot. Jokaisen ryhmäläisen täytyy kuitenkin sanoa ryhmässä /moro, jotta he pääsevät rippilistaukseen mukaan.{web}\n\nKaikki komennot: /komennot",
+    help_web: "\n\nRyhmän promillet voi näyttää myös tapahtuman näytöllä verkkosivun näyttölinkillä. Jos et halua nimeäsi näytölle, lähetä minulle privaviestinä /nimeton.",
   },
 } as const;

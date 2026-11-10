@@ -32,6 +32,9 @@ export function fullName(from: User): string {
 
 export const isPrivate = (ctx: Context) => ctx.chat?.type === "private";
 
+/** Whether the sender is in ADMIN_IDS. */
+export const isAdmin = (ctx: BotContext) => !!ctx.from && ctx.kili.config.adminIds.includes(ctx.from.id);
+
 /** Numbers used in the retention sentence and the warning message. */
 export function retentionParams(config: Config) {
   return {
@@ -43,6 +46,11 @@ export function retentionParams(config: Config) {
 /** The retention sentence, or nothing when inactive accounts are kept forever. */
 export function retentionText(config: Config) {
   return raw(config.inactivity.deleteAfterDays > 0 ? fmt(S.retention, retentionParams(config)) : "");
+}
+
+/** The website paragraph of the privacy text, or nothing when the website is off. */
+export function webPrivacyText(config: Config) {
+  return raw(config.web.enabled ? S.privacy_web : "");
 }
 
 /** Terms of service with the configured retention policy. */

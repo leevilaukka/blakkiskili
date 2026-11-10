@@ -17,6 +17,10 @@ import { ANNOUNCEMENTS, type Announcement } from "../announcements.ts";
 import { Products } from "./products.ts";
 import { Identities } from "./identities.ts";
 import { Barcodes } from "./barcodes.ts";
+import { CustomProducts } from "./customproducts.ts";
+import { WebSessions } from "./websessions.ts";
+import { ChangeBus } from "./changebus.ts";
+import { Screens } from "./screens.ts";
 
 export interface Deps {
   db: Database;
@@ -33,10 +37,11 @@ export interface ServiceOptions {
 }
 
 export function createServices(deps: Deps, opts: ServiceOptions = {}) {
+  const bus = new ChangeBus();
   const identities = new Identities(deps);
-  const accounts = new Accounts(deps, identities);
-  const drinks = new Drinks(deps, accounts);
-  const groups = new Groups(deps);
+  const accounts = new Accounts(deps, identities, bus);
+  const drinks = new Drinks(deps, accounts, bus);
+  const groups = new Groups(deps, bus);
   const stats = new Stats(deps);
   const importer = new Importer(deps, accounts, identities);
   const pending = new Pending(deps);
@@ -44,7 +49,10 @@ export function createServices(deps: Deps, opts: ServiceOptions = {}) {
   const announcements = new Announcements(deps, opts.announcements ?? ANNOUNCEMENTS);
   const products = opts.products ?? new Products();
   const barcodes = opts.barcodes ?? new Barcodes();
-  return { identities, accounts, drinks, groups, stats, importer, pending, inactivity, announcements, products, barcodes, deps };
+  const customProducts = new CustomProducts(deps);
+  const webSessions = new WebSessions(deps);
+  const screens = new Screens(deps, bus);
+  return { identities, accounts, drinks, groups, stats, importer, pending, inactivity, announcements, products, barcodes, customProducts, webSessions, screens, bus, deps };
 }
 
 export type Services = ReturnType<typeof createServices>;

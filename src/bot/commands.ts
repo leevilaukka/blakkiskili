@@ -1,7 +1,7 @@
 import type { Bot } from "grammy";
 import type { BotContext } from "./context.ts";
 import { contactExtras, isPrivate, termsHtml } from "./context.ts";
-import { importIntro, juoView, lateView, registerView, renderNode, sessionEnergyText, shortPermilles, startView } from "./menu.ts";
+import { anonymityView, importIntro, juoView, lateView, registerView, renderNode, sessionEnergyText, shortPermilles, startView } from "./menu.ts";
 import { sendExport, sendHtml, sendView } from "./ui.ts";
 import { InputFile } from "grammy";
 import { buildPermilleChart, type ChartSeries } from "../lib/chart.ts";
@@ -10,7 +10,8 @@ import { EBAC_WINDOW_MS } from "../services/drinks.ts";
 import { S, randomDrinkResponse } from "../strings.ts";
 import { KALJA033, KALJA05, type DrinkPreset } from "../lib/catalog.ts";
 import { dateTime, drinkList, escapeHtml, fmt, hoursMinutes, num, raw } from "../lib/format.ts";
-import { DAY_MS, parseIntStrict, roundTo, STANDARD_DRINK_GRAMS } from "../lib/units.ts";
+import { DAY_MS, MINUTE_MS, parseIntStrict, roundTo, STANDARD_DRINK_GRAMS } from "../lib/units.ts";
+import { LOGIN_LINK_TTL_MS } from "../services/websessions.ts";
 import { chartLabel, type Profile } from "../services/accounts.ts";
 import type { Config } from "../config.ts";
 import type { InlineKeyboardButton } from "grammy/types";
@@ -228,13 +229,15 @@ export const COMMANDS: CommandDef[] = [
   },
   { name: "kuvaaja", description: "promillekuvaaja: 24 h + ennuste", scope: "all", needsUser: false, run: (ctx, p) => chart(ctx, p) },
   { name: "moro", description: "liity ryhmän listauksiin", scope: "group", needsUser: true, run: async (ctx, p) => {
-      ctx.kili.services.groups.join(p!.id, ctx.chat!.id);
+      ctx.kili.services.groups.join(p!.id, ctx.chat!.id, "title" in ctx.chat! ? ctx.chat.title : undefined);
       await sendHtml(ctx, fmt(S.commands.moro, { chat_title: chatTitle(ctx) }));
     } },
   { name: "poistu", description: "poistu ryhmän listauksista", scope: "group", needsUser: true, run: async (ctx, p) => {
       ctx.kili.services.groups.leave(p!.id, ctx.chat!.id);
       await sendHtml(ctx, fmt(S.commands.poistu, { chat_title: chatTitle(ctx) }));
     } },
+  { name: "nimeton", description: "näy ryhmien näyttölinkeissä nimettömänä", scope: "private", needsUser: true,
+    enabled: (c) => c.web.enabled, run: (ctx, p) => sendView(ctx, anonymityView(ctx, p!)) },
   { name: "stats", description: "kulutustilastot juomina, esim. /stats 7", scope: "all", needsUser: false, run: (ctx, p, a) => stats(ctx, p, a, "count") },
   { name: "stats2", description: "kulutustilastot annoksina, esim. /stats2 7", scope: "all", needsUser: false, run: (ctx, p, a) => stats(ctx, p, a, "grams") },
   { name: "juoma", description: "lisää juoma", scope: "private", needsUser: true, run: (ctx, p) => sendView(ctx, juoView(ctx, p!)) },
@@ -253,9 +256,12 @@ export const COMMANDS: CommandDef[] = [
   { name: "data", description: "lataa omat tietosi", scope: "private", needsUser: false, run: (ctx) => sendExport(ctx, ctx.from!.id) },
   { name: "yhdista", description: "yhdistä tunnus toisesta palvelusta koodilla", scope: "private", needsUser: false,
     enabled: (c) => c.accountLinking, run: (ctx, _p, args) => redeemLinkCode(ctx, args) },
+  { name: "web", description: "kirjaudu verkkosivulle", scope: "private", needsUser: true,
+    enabled: (c) => c.web.enabled, run: (ctx, p) => sendWebLogin(ctx, p!) },
   { name: "whoami", description: "näytä omat tietosi", scope: "private", needsUser: true, run: (ctx, p) =>
       sendHtml(ctx, fmt(S.commands.whoami, { name: p!.name, weight: p!.weight, height: p!.height, gender: p!.gender === "mies" ? S.male : S.female, created: dateTime(p!.createdAt) })) },
-  { name: "help", description: "ohjeet", scope: "all", needsUser: false, run: (ctx) => sendHtml(ctx, S.commands.help) },
+  { name: "help", description: "ohjeet", scope: "all", needsUser: false, run: (ctx) =>
+      sendHtml(ctx, fmt(S.commands.help, { web: raw(ctx.kili.config.web.enabled ? S.commands.help_web : "") })) },
   { name: "komennot", description: "kaikki komennot", scope: "all", needsUser: false, run: (ctx) =>
       sendHtml(ctx, "<b>Komennot</b>\n\n" + COMMANDS.filter((c) => !c.name.startsWith("admin") && isEnabled(c, ctx.kili.config)).map((c) => `/${c.name} - ${escapeHtml(c.description)}`).join("\n")) },
   { name: "terms", description: "käyttöehdot", scope: "all", needsUser: false, run: (ctx) => sendHtml(ctx, termsHtml(ctx.kili.config)) },
@@ -298,6 +304,9 @@ export function registerCommands(bot: Bot<BotContext>) {
       if (def.needsUser && !profile) return sendHtml(ctx, priv ? S.user404 : S.user404_group);
       if (def.needsUser && profile && !profile.acceptedTerms) return sendHtml(ctx, S.terms_required);
       await def.run(ctx, profile, typeof ctx.match === "string" ? ctx.match : "");
+      // The group's photo on the website's event screens needs its chat id. After the command, so
+      // a group /moro just created counts too.
+      if (!priv && ctx.chat && ctx.kili.config.web.enabled) services.groups.rememberChat(ctx.chat.id);
     });
   }
 }
@@ -314,6 +323,20 @@ async function redeemLinkCode(ctx: BotContext, args: string) {
   const profile = services.accounts.get(r.accountId)!;
   ctx.kili.profile = profile;
   return sendHtml(ctx, fmt(t.done, { name: profile.name }));
+}
+
+/**
+ * /web: a single-use link that signs this account in on the website. The token is in the URL
+ * fragment, which browsers never send to servers, so it doesn't end up in any access log.
+ */
+async function sendWebLogin(ctx: BotContext, p: Profile) {
+  const { services, config, identityId } = ctx.kili;
+  const { token } = services.webSessions.createLoginLink(p.id, identityId);
+  const url = `${config.web.origin}/login#t=${token}`;
+  // Telegram drops links to localhost (and other plain-http hosts) from HTML, which leaves only
+  // the link text. For those (development) show the URL itself, to copy into a browser.
+  const link = url.startsWith("https://") ? raw(`<a href="${escapeHtml(url)}">Avaa Bläkkiskili</a>`) : raw(`<code>${escapeHtml(url)}</code>`);
+  return sendHtml(ctx, fmt(S.commands.web, { link, minutes: LOGIN_LINK_TTL_MS / MINUTE_MS }));
 }
 
 /** Commands shown in Telegram's "/" menu. */

@@ -114,15 +114,39 @@ Delete `restore/` when done. It contains the whole database.
 
 **Backups failing** (healthchecks email or admin DM): check `docker compose logs backup`. Usual causes are an expired or rotated key, a full bucket, or the bot being down, which shows as "snapshot is older than…".
 
+**A wrong or offensive user-added barcode product:** users add products for barcodes Alko doesn't know, and everyone sees them. As an admin (in `ADMIN_IDS`), send the barcode to the bot and press 🗑 Poista tuote (or ✏️ Muokkaa tuotetta). Additions and deletions are logged (`docker compose logs kili | grep "Custom barcode"`). To list them all: `docker compose exec kili bun -e 'import {Database} from "bun:sqlite"; console.table(new Database("/app/data/kili.sqlite").query("SELECT ean, kind, name, size_l, abv, created_at FROM custom_products ORDER BY created_at DESC").all())'`
+
 **Lost `APP_SECRET`:** the data can't be recovered, by design. Start fresh, and tell users they can re-import their `/data` exports.
 
-## 7. Moving to a new server
+## 7. Website (Cloudflare Tunnel)
+
+The website runs inside the bot's process (`src/web/`) and is off unless `WEB_ENABLED=1`. It listens on port 8081 **inside the compose network only**. The `tunnel` container (cloudflared) connects out to Cloudflare and forwards requests to `http://kili:8081`, so nothing new is open on the server: ufw and the cloud firewall stay as they are. Never add a `ports:` entry for 8081: the server trusts the `CF-Connecting-IP` header for rate limiting, which is only safe because nothing but the tunnel can reach the port.
+
+**Set up** (once):
+1. Cloudflare dashboard → Zero Trust → Networks → Tunnels → create a tunnel (cloudflared, Docker). Copy its token. Under *Public hostname* add `kili.alkometriikka.fi` → service `HTTP` `kili:8081`. Cloudflare creates the DNS record in the zone. Make sure no Worker route or Access policy on the zone covers that hostname, and that no zone-wide Transform Rule sets security headers (`Content-Security-Policy`, `X-Frame-Options`) on it: the app sets its own, and a rule that *sets* the header replaces ours.
+2. On the server, in `~/blakkiskili`: `install -m 600 /dev/null tunnel.env && nano tunnel.env`, containing `TUNNEL_TOKEN=...`. Type or paste it yourself; it never needs to pass through a chat or a tool.
+3. In `.env`: `WEB_ENABLED=1`, `WEB_ORIGIN=https://kili.alkometriikka.fi`, and `COMPOSE_PROFILES=backup,web`.
+4. BotFather → `/setdomain` → the bot → `kili.alkometriikka.fi` (needed for the Telegram login button).
+5. `git pull && docker compose pull kili && docker compose up -d`. The logs should show `Web: listening on :8081` and the tunnel `Registered tunnel connection`. Pin the cloudflared image to the version that works (`docker compose images tunnel`) instead of `latest`.
+6. Check: `https://kili.alkometriikka.fi/healthz` says `ok`; `/web` in the bot gives a link that signs you in; `curl -sI https://kili.alkometriikka.fi/` shows **one** `content-security-policy` header that contains `default-src 'self'`, `script-src 'self' 'sha256-…'` and `frame-ancestors 'none'` (if it shows only a `frame-ancestors` line, a Cloudflare Transform Rule is overwriting the app's policy: exclude this hostname from zone-wide header rules); `ss -ltn` on the server shows nothing listening on 8081 or 8080.
+
+**Capacity** (1 vCPU, 1.8 GB, no swap): the bot has 384 MB and the tunnel 128 MB. Each watched group or screen is rendered once per update and shared by all its viewers; streams are capped at 5 per account or screen link and 500 in total. Watch `docker stats` and `free -m` during the first busy event. A container that goes over its limit is killed, so raise `mem_limit` before a big event rather than after.
+
+**Roll back** without touching data: set `WEB_ENABLED=` in `.env` and `docker compose up -d` (the site and `/web` disappear, the bot is unaffected), or just `docker compose stop tunnel`.
+
+**Incidents.** Run these in the bot container (`sqlite3` isn't installed there):
+- Sign everybody out (suspected session theft): `docker compose exec kili bun -e 'import {Database} from "bun:sqlite"; console.log(new Database("/app/data/kili.sqlite").run("DELETE FROM web_sessions"))'`
+- Kill every screen link: same, with `DELETE FROM screen_tokens`; kill every invite with `DELETE FROM group_invites`. Individual links can be revoked by members on the group page.
+- A leaked **screen link** shows one group's names and promilles until it expires (at most 7 days) or is revoked. A leaked **session cookie** is a full account takeover for 30 days idle. Both are stored only as hashes, so a database leak alone yields neither.
+- Cloudflare sees all website traffic (including IP addresses); the privacy text says so. The server itself keeps no access log and no IP addresses on disk.
+
+## 8. Moving to a new server
 
 For changing providers or replacing the VPS while the old one still works. If the old server is dead or compromised, use the real restore in §4 instead.
 
-The only state on the server is `data/kili.sqlite` and the env files. Nothing else is tied to the server: the bot uses long polling, so it has no IP or DNS in Telegram, and the backups and healthchecks.io are off-site. Expect 10–15 minutes of downtime; Telegram holds updates for 24 h, so no messages are lost.
+The only state on the server is `data/kili.sqlite` and the env files. Nothing else is tied to the server: the bot uses long polling, so it has no IP or DNS in Telegram, the website hostname follows the tunnel token (§7), and the backups and healthchecks.io are off-site. Expect 10–15 minutes of downtime; Telegram holds updates for 24 h, so no messages are lost.
 
-**Never run both servers at once.** Two bots polling get `409 Conflict` and updates bounce between them, and two backup containers write to one restic repository. Everything on the old server stops before anything starts on the new one.
+**Never run both servers at once.** Two bots polling get `409 Conflict` and updates bounce between them, two `cloudflared` with the same token split web traffic between the servers, and two backup containers write to one restic repository. Everything on the old server stops before anything starts on the new one.
 
 1. **Provision** the new server with §1 steps 1–4. Stay in the EU (§1 and the privacy text in `src/strings.ts` assume it). Arm works too: the image is built for amd64 and arm64. Leave room for the `mem_limit`s in `docker-compose.yml` plus the OS (about 1.5 GB RAM); there is no swap.
 2. **Tailscale:** rename the old machine first (admin console → *Edit machine name* → `blakkiskili-old`), otherwise the new one comes up as `blakkiskili-1`. Then follow §1 step 5 on the new server, including the `tag:blakkiskili` tag; the existing policy rules then cover it.
@@ -134,7 +158,7 @@ The only state on the server is `data/kili.sqlite` and the env files. Nothing el
    ```
    Copy the env files from your own machine. They go straight from one server to the other and are never printed. **Keep the same `APP_SECRET`**: a new one makes all data unreadable.
    ```sh
-   for f in .env backup.env; do
+   for f in .env backup.env tunnel.env; do
      ssh kili@blakkiskili-old "cat ~/blakkiskili/$f" | ssh kili@blakkiskili "umask 077; cat > ~/blakkiskili/$f"
    done
    ```
@@ -151,5 +175,5 @@ The only state on the server is `data/kili.sqlite` and the env files. Nothing el
    docker compose pull && docker compose up -d
    ```
    Don't migrate from the restic backup when the old server works: it is uploaded only every 6 h, so up to 6 h of drinks would be lost.
-5. **Check:** the logs show `started (long polling)`; `/promillet` shows recent drinks; after the first snapshot, `docker compose restart backup` logs `backup ok`. Then do the §4 restore drill on the new server.
+5. **Check:** the logs show `started (long polling)` and `Registered tunnel connection`; `https://kili.alkometriikka.fi/healthz` says `ok`; `/promillet` shows recent drinks; after the first snapshot, `docker compose restart backup` logs `backup ok`. Then do the §4 restore drill on the new server.
 6. **Clean up:** `rm ~/kili-move.sqlite` on both servers (it is the whole database). Keep the old server powered off for a few days as a fallback, then delete it **with its disks and snapshots** in the provider console (it still holds the database and `APP_SECRET`), remove `blakkiskili-old` from the tailnet, and close the old hosting account if nothing else uses it.

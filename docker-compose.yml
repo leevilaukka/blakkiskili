@@ -1,4 +1,4 @@
-# Production: `COMPOSE_PROFILES=backup` in .env enables the off-site backup service.
+# Production: `COMPOSE_PROFILES=backup,web` in .env enables the off-site backup and the website tunnel.
 # See deploy/RUNBOOK.md.
 
 x-hardening: &hardening
@@ -25,7 +25,10 @@ services:
       - ./data:/app/data
       - ./backups:/app/backups
     tmpfs: [/tmp]
-    mem_limit: 256m
+    # 256 m was enough for the bot alone; the website (event streams, charts) gets the rest.
+    mem_limit: 384m
+    # The website listens on WEB_PORT (8081) inside the compose network only: the tunnel reaches
+    # it as http://kili:8081. Never publish that port, the tunnel is the only way in.
     # Only needed in webhook mode (put a TLS reverse proxy in front of it). Bind to localhost
     # only: Docker-published ports bypass ufw.
     # ports:
@@ -47,3 +50,16 @@ services:
       - ./deploy/backup.sh:/backup.sh:ro
     tmpfs: ["/tmp:uid=1000,gid=1000,mode=0700"]
     mem_limit: 512m
+
+  # Cloudflare Tunnel: the website's only way in. It connects out to Cloudflare, so no port is open
+  # on the server and ufw stays as it is. Credentials are in their own file, like the backup's.
+  tunnel:
+    <<: *hardening
+    # Pin to a tested version once it runs (docker compose images tunnel), then update on purpose.
+    image: cloudflare/cloudflared:latest
+    profiles: [web]
+    command: tunnel --no-autoupdate run
+    env_file: tunnel.env
+    depends_on: [kili]
+    tmpfs: [/tmp]
+    mem_limit: 128m

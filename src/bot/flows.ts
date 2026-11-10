@@ -12,8 +12,13 @@ import {
   logServing,
   searchResultsView,
   customAmountView,
+  customStepView,
+  findDrink,
   profileViewFor,
+  saveCustomProduct,
+  productView,
   registerTermsView,
+  reportView,
   registerView,
 } from "./menu.ts";
 import { back, sendHtml, sendView } from "./ui.ts";
@@ -27,7 +32,9 @@ import {
 } from "../lib/units.ts";
 import { isValidHeight, isValidWeight } from "../services/accounts.ts";
 import type { ImportResult } from "../services/importer.ts";
-import { customServing, parseAmount } from "../lib/servings.ts";
+import { customCatalogDrink, customDrinkId, customServing, parseAmount } from "../lib/servings.ts";
+import { ABV_MAX, ABV_MIN, cleanProductName, cleanReportMessage, SIZE_MAX_L, SIZE_MIN_L } from "../services/customproducts.ts";
+import { notifyAdmins, productReportNotice } from "./admin.ts";
 
 /** Handles a private text message. Returns false if no flow was waiting for it. */
 export async function handleFlowText(ctx: BotContext, text: string): Promise<boolean> {
@@ -134,7 +141,7 @@ export async function handleFlowText(ctx: BotContext, text: string): Promise<boo
 
     case "productAmount": {
       if (!profile) return false;
-      const drink = services.products.get(state.drinkId);
+      const drink = findDrink(ctx, state.drinkId);
       if (!drink) {
         services.pending.clear(userId);
         return reply(ctx, juoView(ctx, profile, S.search.gone));
@@ -147,6 +154,64 @@ export async function handleFlowText(ctx: BotContext, text: string): Promise<boo
       }
       services.pending.clear(userId);
       return reply(ctx, juoView(ctx, profile, drankText(ctx, profile, logServing(ctx, profile, drink, r.serving))));
+    }
+
+    case "customProduct": {
+      if (!profile) return false;
+      const { ean } = state;
+      const C = S.custom;
+      if (state.step === "name") {
+        const name = cleanProductName(text);
+        if (!name) return reply(ctx, customStepView(ctx, ean, "name", C.name_error));
+        services.pending.set(userId, { ...state, step: "amount", name });
+        return reply(ctx, customStepView(ctx, ean, "amount"));
+      }
+      if (state.step === "amount") {
+        const sizeL = words.length === 2 ? parseAmount(words[0]!) : null;
+        const abv = words.length === 2 ? parseNumber(words[1], "%") : NaN;
+        if (sizeL === null || !Number.isFinite(abv)) return reply(ctx, customStepView(ctx, ean, "amount", C.amount_error));
+        if (sizeL < SIZE_MIN_L || sizeL > SIZE_MAX_L) return reply(ctx, customStepView(ctx, ean, "amount", C.size_error));
+        if (abv < ABV_MIN || abv > ABV_MAX) return reply(ctx, customStepView(ctx, ean, "amount", C.abv_error));
+        const kind = state.productKind;
+        if (customCatalogDrink({ ean, kind, name: state.name ?? "", sizeL, abv, kcal100: null }).servings.length === 0) {
+          return reply(ctx, customStepView(ctx, ean, "amount", C.no_serving));
+        }
+        services.pending.set(userId, { ...state, step: "kcal", sizeL, abv });
+        return reply(ctx, customStepView(ctx, ean, "kcal"));
+      }
+      const kcal100 = parseNumber(text.replace(/\s+/g, ""), "kcal");
+      if (!Number.isFinite(kcal100) || kcal100 < 0 || kcal100 >= 1000) {
+        return reply(ctx, customStepView(ctx, ean, "kcal", C.kcal_error));
+      }
+      if (!state.name || !state.sizeL || !state.abv) {
+        services.pending.clear(userId);
+        return reply(ctx, juoView(ctx, profile));
+      }
+      services.pending.clear(userId);
+      const { productKind: kind, name, sizeL, abv } = state;
+      return reply(ctx, saveCustomProduct(ctx, profile, { ean, kind, name, sizeL, abv, kcal100 }));
+    }
+
+    case "productReport": {
+      if (!profile) return false;
+      const product = services.customProducts.get(state.ean);
+      if (!product) {
+        services.pending.clear(userId);
+        return reply(ctx, juoView(ctx, profile, S.custom.gone));
+      }
+      const message = cleanReportMessage(text);
+      if (!message) return reply(ctx, reportView(product, S.custom.report_error));
+      services.pending.clear(userId);
+      const r = services.customProducts.report(product.ean, profile.id, message);
+      if (!r.ok) {
+        if (r.reason === "gone") return reply(ctx, juoView(ctx, profile, S.custom.gone));
+        return reply(ctx, productView(ctx, customDrinkId(product.ean), S.custom.report_too_many));
+      }
+      if (r.created) {
+        console.log(`Custom barcode product reported: ${product.ean} ${JSON.stringify(product.name)}`);
+        void notifyAdmins(ctx.api, ctx.kili.config.adminIds, productReportNotice(r.product, message));
+      }
+      return reply(ctx, productView(ctx, customDrinkId(product.ean), S.custom.report_sent));
     }
 
     case "productSearch":

@@ -46,6 +46,21 @@ export class Stats {
     return { top, grams: total.mg / 1000, dayCount, globalCount: global.count, globalGrams: global.mg / 1000 };
   }
 
+  /** The website's numbers for its admin page. */
+  web() {
+    const now = this.deps.now();
+    const one = (sql: string, ...params: number[]) =>
+      (this.deps.db.query(sql).get(...params) as { n: number }).n;
+    return {
+      sessions: one("SELECT count(*) AS n FROM web_sessions WHERE expires_at > ?", now),
+      accounts: one("SELECT count(DISTINCT account_id) AS n FROM web_sessions WHERE expires_at > ?", now),
+      activeAccounts1: one("SELECT count(DISTINCT account_id) AS n FROM web_sessions WHERE last_seen_at > ?", now - DAY_MS),
+      webGroups: one("SELECT count(*) AS n FROM groups WHERE kind = 'web'"),
+      screenLinks: one("SELECT count(*) AS n FROM screen_tokens WHERE expires_at > ?", now),
+      drinks24h: one("SELECT count(*) AS n FROM drinks WHERE created_at > ?", now - DAY_MS),
+    };
+  }
+
   /** Bot-wide numbers for /admin_stats. */
   global() {
     const now = this.deps.now();

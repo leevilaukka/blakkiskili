@@ -2,6 +2,7 @@
 // restart mid-flow doesn't lose it. One flow per user at a time.
 
 import type { Gender } from "../lib/alcomath.ts";
+import type { CustomKind } from "../lib/servings.ts";
 import { DAY_MS } from "../lib/units.ts";
 import type { Deps } from "./index.ts";
 
@@ -14,6 +15,18 @@ export type PendingState =
   | { kind: "consumptionDays" }
   | { kind: "productSearch" }
   | { kind: "productAmount"; drinkId: string }
+  | {
+      // Adding (or editing) the product of a barcode Alko doesn't know: name, then size and ABV, then energy.
+      kind: "customProduct";
+      ean: string;
+      productKind: CustomKind;
+      step: "name" | "amount" | "kcal";
+      name?: string;
+      sizeL?: number;
+      abv?: number;
+    }
+  // "Ilmoita virheestä" on a user-added product: the next message is the report.
+  | { kind: "productReport"; ean: string }
   | { kind: "import"; step: "terms" | "files"; waitingDrinkFiles?: string[] };
 
 const TTL_MS = DAY_MS;

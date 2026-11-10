@@ -22,11 +22,11 @@ Bläkkiskili is a Bun + TypeScript bot based on the original [BläkkisVuohi](htt
   - ✏️ *Muu määrä* takes any amount (`3`, `3 cl`, `0,5 l`, `250 ml`). An amount at the end of a search (`jallu 3 cl`, `karhu 40cl`) gives one-tap results with exactly that amount, both inline and in the menu.
   - Nicknames such as *jallu*, *kossu* and *lonkka* work.
   - Search only works in the private chat, so drinks are never posted to groups.
-- **Barcodes**: send a barcode number or a photo of one and the bot opens the product. Alko's API has no barcodes, so Alkometriikka learns them from scans: its `data.json` has an EAN column, and its API Worker (`ALKOMETRIIKKA_API_URL`) asks Alko for barcodes not yet there. The bot sends only the barcode number. Photos are decoded locally with zxing-wasm and not stored.
+- **Barcodes**: send a barcode number or a photo of one and the bot opens the product. Alko's API has no barcodes, so Alkometriikka learns them from scans: its `data.json` has an EAN column, and its API Worker (`ALKOMETRIIKKA_API_URL`) asks Alko for barcodes not yet there. The bot sends only the barcode number. Photos are decoded locally with zxing-wasm and not stored. For barcodes Alko doesn't know (grocery-store beers and the like), any user can add the product (kind, name, size, ABV, optional kcal). It is stored only in the bot's database (`custom_products`), opens for everyone who scans the barcode, and can be edited or deleted by the user who added it and by admins. The website has the same on its Juo page: the camera (or a photo) is read in the browser with the native `BarcodeDetector` or zxing-wasm (its `.wasm` served from our origin, which is why the CSP has `'wasm-unsafe-eval'` and the Permissions-Policy `camera=(self)`), and only the number goes to `GET /api/barcodes/<ean>`.
 - Shortcuts kept from the old bot: `/juoma`, `/kalja033`, `/kalja05`, `/jalkikellotus`, `/laatta`, `/tunnus`, `/whoami`.
 - **Energy (kcal):** each drink stores an energy estimate when it's logged. Catalogue drinks use Alko's *Energia kcal/100 ml*, and presets use a typical value (the median of comparable Alko products, see [`src/lib/catalog.ts`](src/lib/catalog.ts)). Custom and late-logged drinks, and drinks imported from the old bot, have none. The drink confirmation and the start screen show the current evening's total (drinks with no pause of 6 h or more), Kulutus shows the total for the period, and both say how many drinks had no data.
 - `/data` exports everything as CSV. `/tuo` imports CSVs from the old bot or from this one.
-- `/admin_stats` for the IDs listed in `ADMIN_IDS`.
+- `/admin_stats` for the IDs listed in `ADMIN_IDS`. On the website the same people get an admin page (`/admin`): bot and site numbers, and removing user-added barcode products.
 
 Every command of the original is here. Its runtime `/loglevel` admin command and New Relic monitoring were dropped on purpose.
 
@@ -43,6 +43,17 @@ bun run dev                   # long polling, restarts on file changes
 bun test                      # unit + end-to-end tests (fake Telegram API)
 bun run typecheck
 ```
+
+### Website (development)
+
+The website is a SvelteKit single-page app in `web/`, served by the bot's own process (`src/web/`). It is off unless `WEB_ENABLED=1`.
+
+```sh
+bun run web:build             # build web/ into web/build (installs web/ dependencies)
+bun run web:demo              # try the UI with a throwaway database and a demo user, no Telegram needed
+```
+
+With the real dev bot: set `WEB_ENABLED=1` and `WEB_ORIGIN=http://localhost:8081` in `.env`, run `bun run dev`, send the bot `/web` and open the link it gives (it is shown as text because Telegram does not link `localhost`). For hot reload run `bun run web:dev` (port 5173, forwards `/api` to the bot) and use `WEB_ORIGIN=http://localhost:5173`. Telegram's login button only works on the registered domain; locally use `/web`. `bun run web:check` type-checks the app.
 
 ### Production (VPS, Docker)
 
@@ -98,6 +109,8 @@ Data minimisation was the reason the original bot was shut down, so:
   - The backup service has its own credentials file (`backup.env`) and never sees `APP_SECRET`.
 - **Containers:** read-only root filesystem, all capabilities dropped, `no-new-privileges`, non-root user, memory and process limits, and log rotation. The process umask is 077.
 - **Rate limit:** 30 updates per minute per user, against floods and database stuffing.
+
+**Website.** Sign-in is the Telegram Login Widget or a single-use `/web` link (token in the URL fragment, so it never reaches a log). Sessions are random tokens in an HttpOnly cookie; only their HMAC is stored, and they expire after 30 idle days. Settings has "sign out everywhere", which ends every session of the account and closes its open live pages. A session is an admin's only if it was signed in with a Telegram login listed in `ADMIN_IDS` (compared as identity keys, and the login must still belong to the account); the admin API answers 404 to everyone else. Writes need the site's own `Origin` and a custom header, the Content-Security-Policy allows no inline styles and only the one hashed bootstrap script, and every API call takes the account from the session, never from the request. Event screens are read-only links (hash stored, expiring in at most 7 days, revocable, members can appear as "Nimetön"); the token is exchanged for a cookie so it is never in a request URL. The server is reached only through a Cloudflare Tunnel; see `deploy/RUNBOOK.md` §7. Rate limits: sign-in 10 per minute per address, other calls 120 per minute per account, at most 5 live streams per account or screen link.
 
 ## Several platforms, one account
 

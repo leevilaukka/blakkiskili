@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { Gender } from "../lib/alcomath.ts";
 import { legacyHash } from "../lib/ids.ts";
 import { toCsv } from "../lib/csv.ts";
+import { ChangeBus } from "./changebus.ts";
 import type { Deps } from "./index.ts";
 import type { Identities, IdentityRef } from "./identities.ts";
 
@@ -59,6 +60,7 @@ export class Accounts {
   constructor(
     private readonly deps: Deps,
     private readonly identities: Identities,
+    private readonly bus = new ChangeBus(),
   ) {}
 
   private toProfile(row: UserRow): Profile {
@@ -151,18 +153,22 @@ export class Accounts {
 
   updateWeight(userId: string, weight: number) {
     this.deps.db.query("UPDATE users SET weight = ? WHERE id = ?").run(weight, userId);
+    this.bus.emit({ accountId: userId });
   }
 
   updateHeight(userId: string, height: number) {
     this.deps.db.query("UPDATE users SET height = ? WHERE id = ?").run(height, userId);
+    this.bus.emit({ accountId: userId });
   }
 
   updateGender(userId: string, gender: Gender) {
     this.deps.db.query("UPDATE users SET gender = ? WHERE id = ?").run(gender, userId);
+    this.bus.emit({ accountId: userId });
   }
 
   updateChartName(userId: string, chartName: ChartName) {
     this.deps.db.query("UPDATE users SET chart_name = ? WHERE id = ?").run(chartName, userId);
+    this.bus.emit({ accountId: userId });
   }
 
   updateName(userId: string, name: string, fullName?: string) {
@@ -170,6 +176,7 @@ export class Accounts {
     this.deps.db
       .query("UPDATE users SET name_enc = ?, full_name_enc = coalesce(?, full_name_enc) WHERE id = ?")
       .run(enc(name), fullName ? enc(fullName) : null, userId);
+    this.bus.emit({ accountId: userId });
   }
 
   /** Deletes the user and, through ON DELETE CASCADE, all drinks, memberships and logins. */
@@ -180,6 +187,7 @@ export class Accounts {
         .run(userId);
       this.deps.db.query("DELETE FROM users WHERE id = ?").run(userId);
     })();
+    this.bus.emit({ accountId: userId });
   }
 
   /**
@@ -203,6 +211,12 @@ export class Accounts {
     const groups = this.deps.db
       .query("SELECT group_id FROM group_members WHERE user_id = ?")
       .all(userId) as { group_id: string }[];
+    const barcodes = this.deps.db
+      .query("SELECT ean, kind, name, size_l, abv, kcal100, created_at FROM custom_products WHERE added_by = ? ORDER BY created_at")
+      .all(userId) as { ean: string; kind: string; name: string; size_l: number; abv: number; kcal100: number | null; created_at: number }[];
+    const reports = this.deps.db
+      .query("SELECT ean, message, created_at FROM custom_product_reports WHERE reported_by = ? ORDER BY created_at")
+      .all(userId) as { ean: string; message: string; created_at: number }[];
 
     return [
       {
@@ -246,6 +260,38 @@ export class Accounts {
           groups.map((g) => ({ userid: legacyId, groupid: `v2:${g.group_id}` })),
         ),
       },
+      // Products the user added for unknown barcodes. Shared with everyone, so not re-importable.
+      ...(barcodes.length
+        ? [
+            {
+              filename: "barcodes.csv",
+              csv: toCsv(
+                ["ean", "kind", "name", "size_cl", "abv", "kcal_100ml", "created"],
+                barcodes.map((b) => ({
+                  ean: b.ean,
+                  kind: b.kind,
+                  name: b.name,
+                  size_cl: Math.round(b.size_l * 1000) / 10,
+                  abv: b.abv,
+                  kcal_100ml: b.kcal100,
+                  created: new Date(b.created_at),
+                })),
+              ),
+            },
+          ]
+        : []),
+      // Open error reports on user-added products, until an admin handles them.
+      ...(reports.length
+        ? [
+            {
+              filename: "product_reports.csv",
+              csv: toCsv(
+                ["ean", "message", "created"],
+                reports.map((r) => ({ ean: r.ean, message: r.message, created: new Date(r.created_at) })),
+              ),
+            },
+          ]
+        : []),
     ];
   }
 }

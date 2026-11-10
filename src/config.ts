@@ -15,6 +15,12 @@ export interface Config {
   productsUrl?: string; // Alkometriikka data.json; undefined = product search disabled
   accountLinking: boolean; // show "Yhdistetyt palvelut" and /yhdista (useful once another platform has a bot)
   barcodesUrl?: string; // Alkometriikka API Worker for barcode lookups; undefined = only barcodes in the catalogue
+  web: {
+    enabled: boolean; // serve the website (WEB_ENABLED)
+    origin: string; // public origin, e.g. "https://kili.example.com": CSRF check and login link base
+    port: number;
+    distDir: string; // the built SvelteKit app (web/build)
+  };
 }
 
 function required(name: string): string {
@@ -74,7 +80,25 @@ export function loadConfig(): Config {
       dir: process.env.BACKUP_DIR || undefined,
       everyMinutes: Math.max(1, intEnv("BACKUP_EVERY_MINUTES", 60)),
     },
+    web: {
+      enabled: ["1", "true", "yes"].includes((process.env.WEB_ENABLED ?? "").trim().toLowerCase()),
+      origin: (process.env.WEB_ORIGIN ?? "").trim().replace(/\/+$/, ""),
+      port: intEnv("WEB_PORT", 8081),
+      distDir: process.env.WEB_DIST || "./web/build",
+    },
   };
+  if (config.web.enabled) {
+    let url: URL;
+    try {
+      url = new URL(config.web.origin);
+    } catch {
+      throw new Error("WEB_ORIGIN must be the site's origin, e.g. https://kili.example.com");
+    }
+    const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+    if (url.origin !== config.web.origin || (url.protocol !== "https:" && !(local && url.protocol === "http:"))) {
+      throw new Error("WEB_ORIGIN must be an https origin without a path (http only for localhost)");
+    }
+  }
   const { deleteAfterDays, warnDaysBefore } = config.inactivity;
   if (deleteAfterDays > 0 && (warnDaysBefore < 1 || warnDaysBefore >= deleteAfterDays)) {
     throw new Error("INACTIVE_WARN_DAYS must be at least 1 and less than INACTIVE_DELETE_DAYS");
