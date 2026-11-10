@@ -12,7 +12,7 @@ export interface Config {
   sourceUrl?: string; // link to this bot's source code, shown in /about
   inactivity: { deleteAfterDays: number; warnDaysBefore: number }; // deleteAfterDays 0 = keep forever
   backup: { dir?: string; everyMinutes: number }; // no dir = snapshots disabled
-  productsUrl?: string; // Alkometriikka data.json; undefined = product search disabled
+  productsUrl?: string; // Alkometriikka data.minimal.json; undefined = product search disabled
   accountLinking: boolean; // show "Yhdistetyt palvelut" and /yhdista (useful once another platform has a bot)
   barcodesUrl?: string; // Alkometriikka API Worker for barcode lookups; undefined = only barcodes in the catalogue
   web: {
@@ -72,7 +72,7 @@ export function loadConfig(): Config {
     // Unset → the public Alkometriikka catalogue; set to an empty value to disable search.
     productsUrl:
       process.env.ALKOMETRIIKKA_URL === undefined
-        ? "https://alkometriikka.fi/data.json"
+        ? "https://alkometriikka.fi/data.minimal.json"
         : process.env.ALKOMETRIIKKA_URL || undefined,
     accountLinking: ["1", "true", "yes"].includes((process.env.ACCOUNT_LINKING ?? "").trim().toLowerCase()),
     barcodesUrl: process.env.ALKOMETRIIKKA_API_URL || undefined,

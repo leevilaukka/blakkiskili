@@ -1,7 +1,7 @@
 // Barcode (EAN) → Alko product number, from Alkometriikka's API Worker (api.alkometriikka.fi).
 //
 // Alko's own API has no barcodes. The Worker looks each new one up from Alko's mobile app API once
-// and keeps the answer; Alkometriikka's sync then writes the known ones into data.json's EAN
+// and keeps the answer; Alkometriikka's sync then writes the known ones into data.minimal.json's EAN
 // column, which `Products.productIdByEan` reads. This is only the fallback for barcodes that
 // haven't made it there yet. The request is just the barcode number: nothing about the user.
 

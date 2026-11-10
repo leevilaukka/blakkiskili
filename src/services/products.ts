@@ -1,4 +1,4 @@
-// Alko product catalogue from Alkometriikka (https://alkometriikka.fi/data.json).
+// Alko product catalogue from Alkometriikka (https://alkometriikka.fi/data.minimal.json).
 //
 // Data flows one way: the bot downloads the public catalogue; nothing about users is sent.
 // The last good copy is cached on disk so restarts and Alkometriikka outages don't break
@@ -11,6 +11,9 @@ import { cleanName, mergeServings, packCount, servingsFor } from "../lib/serving
 
 const REQUIRED = ["Numero", "Nimi", "Pullokoko", "Alkoholi-%", "Tyyppi"] as const;
 
+/** Product types the servings rules know. Anything else (legacy types of removed products) counts as "Muut". */
+const KNOWN_TYPES = new Set(["Panimotuotteet", "Viinit", "Väkevät", "Välituotteet", "Alkoholittomat", "Muut"]);
+
 interface RawCatalog {
   schema: string[];
   metadata?: { LastUpdated?: string };
@@ -21,6 +24,7 @@ interface Indexed {
   drink: CatalogDrink;
   tokens: string[]; // normalised words of all variants' names + maker
   name: string; // normalised name of the representative
+  removed: boolean; // no longer sold (null Tila): found by product number or EAN, never in search results
 }
 
 /** Ranks package variants: the one shown to users and used for pours. */
@@ -68,15 +72,15 @@ function num(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Parses and validates a data.json payload. Throws with a useful message if the format changed. */
+/** Parses and validates a data.minimal.json payload. Throws with a useful message if the format changed. */
 export function parseCatalog(json: unknown): { products: CatalogProduct[]; updatedAt: number | null } {
   const raw = json as RawCatalog;
   if (!raw || !Array.isArray(raw.schema) || typeof raw.products !== "object" || raw.products === null) {
-    throw new Error("Alkometriikka data.json: missing schema or products");
+    throw new Error("Alkometriikka data file: missing schema or products");
   }
   const col = new Map(raw.schema.map((name, i) => [name, i]));
   const missing = REQUIRED.filter((c) => !col.has(c));
-  if (missing.length) throw new Error(`Alkometriikka data.json: missing columns ${missing.join(", ")}`);
+  if (missing.length) throw new Error(`Alkometriikka data file: missing columns ${missing.join(", ")}`);
   const get = (values: unknown[], name: string) => {
     const i = col.get(name);
     return i === undefined ? undefined : values[i];
@@ -88,10 +92,11 @@ export function parseCatalog(json: unknown): { products: CatalogProduct[]; updat
     if (!Array.isArray(v)) continue;
     const id = String(get(v, "Numero") ?? "");
     const name = str(get(v, "Nimi"));
-    const sizeL = Number(get(v, "Pullokoko"));
-    const abv = Number(get(v, "Alkoholi-%"));
-    const type = str(get(v, "Tyyppi"));
-    if (!/^\d{1,10}$/.test(id) || !name || !(sizeL > 0) || !(abv >= 0) || !type) continue;
+    const sizeL = num(get(v, "Pullokoko"));
+    const abv = num(get(v, "Alkoholi-%"));
+    const rawType = str(get(v, "Tyyppi"));
+    if (!/^\d{1,10}$/.test(id) || !name || sizeL === null || !(sizeL > 0) || abv === null || !(abv >= 0) || !rawType) continue;
+    const type = KNOWN_TYPES.has(rawType) ? rawType : "Muut";
     const price = num(get(v, "Hinta"));
     const kcal100 = num(get(v, "Energia kcal/100 ml"));
     products.push({
@@ -102,7 +107,6 @@ export function parseCatalog(json: unknown): { products: CatalogProduct[]; updat
       abv,
       type,
       subtype: str(get(v, "Alatyyppi")),
-      packaging: str(get(v, "Pakkaustyyppi")),
       selection: str(get(v, "Valikoima")),
       status: str(get(v, "Tila")),
       price: price !== null && price > 0 ? price : null,
@@ -111,7 +115,7 @@ export function parseCatalog(json: unknown): { products: CatalogProduct[]; updat
       ean: normalizeEan(str(get(v, "EAN")) ?? ""),
     });
   }
-  if (products.length === 0) throw new Error("Alkometriikka data.json: no usable products");
+  if (products.length === 0) throw new Error("Alkometriikka data file: no usable products");
   const updatedAt = Date.parse(raw.metadata?.LastUpdated ?? "");
   return { products, updatedAt: Number.isFinite(updatedAt) ? updatedAt : null };
 }
@@ -167,7 +171,8 @@ export class Products {
         .trim();
       // Stars are dropped by normalize() but tell products apart (Jaloviina * vs ***).
       const stars = (product.name.match(/\*/g) ?? []).length;
-      const key = `${product.type}|${base}|${stars}|${product.abv}`;
+      // Removed products stay apart from sold ones so they never add servings to an active drink.
+      const key = `${product.type}|${base}|${stars}|${product.abv}|${product.status === null ? "removed" : ""}`;
       const group = groups.get(key);
       if (group) group.push(product);
       else groups.set(key, [product]);
@@ -187,8 +192,9 @@ export class Products {
       const rep = variants[0]!;
       const drink: CatalogDrink = { id: rep.id, name: cleanName(rep.name), product: rep, variants, servings: mergeServings(variants) };
       const words = variants.flatMap((v) => normalize(`${v.name} ${v.maker ?? ""}`).split(" "));
-      const x: Indexed = { drink, tokens: [...new Set(words.filter(Boolean))], name: normalize(rep.name) };
-      list.push(x);
+      const removed = rep.status === null;
+      const x: Indexed = { drink, tokens: [...new Set(words.filter(Boolean))], name: normalize(rep.name), removed };
+      if (!removed) list.push(x);
       for (const v of variants) byId.set(v.id, x);
     }
     const byEan = new Map<string, string>();
@@ -200,7 +206,7 @@ export class Products {
     this.updatedAt = updatedAt;
   }
 
-  /** The product's page on Alkometriikka (next to data.json), tagged so its analytics can tell the visit came from the bot. Undefined if search is off. */
+  /** The product's page on Alkometriikka (next to the data file), tagged so its analytics can tell the visit came from the bot. Undefined if search is off. */
   pageUrl(productId: string): string | undefined {
     if (!this.opts.url || !/^\d{1,10}$/.test(productId)) return undefined;
     try {

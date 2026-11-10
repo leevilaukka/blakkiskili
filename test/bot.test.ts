@@ -480,12 +480,11 @@ describe("bot end-to-end", () => {
 
     // Inline mode: results per serving, only in the private chat with the bot
     const answer = (await h.inlineQuery(A, "jallu")).find((c) => c.method === "answerInlineQuery")!;
-    // One drink for all four Jaloviina *** packages (and one for Jaloviina *), one result per serving
-    expect(answer.payload.results.map((r: { id: string }) => r.id)).toEqual(["700022:2", "700022:4", "700022:6", "700025:2", "700025:4", "700025:6"]);
-    // Second line: energy and the price of this amount (4 cl of the 70 cl bottle at 33,90 €)
-    expect(answer.payload.results[1]).toMatchObject({ title: "🥃 Jaloviina ***", description: "4 cl · 38 % · 1.0 annosta\n84 kcal · Alkossa 1,94 €" });
-    // each result carries the product photo as a thumbnail
-    expect(answer.payload.results[1]).toMatchObject({
+    // One result per product (all four Jaloviina *** packages are one drink), no per-serving results
+    expect(answer.payload.results.map((r: { id: string }) => r.id)).toEqual(["700022", "700025"]);
+    expect(answer.payload.results[0]).toMatchObject({
+      title: "🥃 Jaloviina ***",
+      description: "38 % · 2 cl, 4 cl, 6 cl",
       thumbnail_url: "https://images.alko.fi/images/cs_srgb,f_auto,t_products/cdn/700022/kuva.jpg",
       thumbnail_width: 160,
       thumbnail_height: 192,
@@ -496,13 +495,15 @@ describe("bot end-to-end", () => {
     expect(inGroup.payload.button.start_parameter).toBe("juo");
     // Empty query: your recent products
     const recentAnswer = (await h.inlineQuery(A, "")).find((c) => c.method === "answerInlineQuery")!;
-    expect(recentAnswer.payload.results[0].id).toStartWith("700010:");
+    expect(recentAnswer.payload.results[0].id).toBe("700010");
 
-    // Picking a result logs it and confirms privately; the "via bot" message isn't typed input
+    // Picking a product opens it in the private chat to choose the serving; nothing is logged yet
     h.clock.now += 60_000;
-    const picked = await h.chooseInline(A, "700022:4");
+    const opened = await h.chooseInline(A, "700022");
+    expect(buttonsOf(opened).map((b) => b.callback_data)).toContain("m:ps:700022:4");
+    expect(h.services.drinks.last(uid)).toMatchObject({ productId: "700010" });
+    const picked = await h.press(A, "m:ps:700022:4");
     expect(textOf(picked)).toContain("Juoma tallennettu: 🥃 Jaloviina *** (4 cl)");
-    expect(picked[0]!.payload.chat_id).toBe(A);
     expect(h.services.drinks.last(uid)).toMatchObject({ productId: "700022", alcoholMg: Math.round(0.38 * 789.24 * 0.04 * 1000) });
     expect(await h.sendViaBot(A, "🥃 Jaloviina *** (4 cl)")).toEqual([]);
     await Bun.sleep(40);

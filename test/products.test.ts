@@ -51,16 +51,42 @@ describe("catalogue parsing", () => {
   });
 });
 
+describe("removed products and legacy types", () => {
+  test("removed products (null Tila) resolve by number and EAN but never show up in search", () => {
+    expect(catalogue.get("700051")!.name).toBe("Karhu Vanha Poistunut");
+    expect(catalogue.productIdByEan("6410000000018")).toBe("700051");
+    expect(catalogue.search("poistunut")).toEqual([]);
+    expect(catalogue.search("karhu vanha").map((d) => d.id)).toEqual(["700050"]);
+    expect(catalogue.drinksFor(["700051"], 5).map((d) => d.id)).toEqual(["700051"]);
+  });
+
+  test("an unknown Tyyppi counts as Muut instead of failing", () => {
+    expect(catalogue.get("700052")!.product.type).toBe("Muut");
+  });
+
+  test("a product with a missing or invalid required value is skipped", () => {
+    const rows = PRODUCTS.map((r) => [...r] as typeof r);
+    const row = (id: string) => rows.find((r) => r[1] === id)!;
+    row("700004")[7] = null as never; // ABV
+    row("700030")[3] = "0.75 l" as never; // size as a string
+    const p = new Products();
+    p.load(catalogJson(rows));
+    expect(p.get("700004")).toBeUndefined();
+    expect(p.get("700030")).toBeUndefined();
+    expect(p.get("700026")).toBeDefined();
+  });
+});
+
 describe("EAN column", () => {
   test("is read by name, normalised, and found by productIdByEan", () => {
     expect(catalogue.productIdByEan("4006381333931")).toBe("700004");
     expect(catalogue.productIdByEan("4006381333948")).toBeUndefined();
     const rows = PRODUCTS.map((r) => [...r] as typeof r);
-    rows[0]![13] = "not a barcode";
+    rows[0]![12] = "not a barcode";
     const p = new Products();
     p.load(catalogJson(rows));
     expect(p.get("700001")!.product.ean).toBeNull();
-    // a catalogue without the column (older data.json) still loads
+    // a catalogue without the column (older file) still loads
     const old = catalogJson();
     old.schema = old.schema.filter((c) => c !== "EAN");
     expect(() => new Products().load(old)).not.toThrow();

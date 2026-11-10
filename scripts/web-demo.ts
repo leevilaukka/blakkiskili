@@ -23,7 +23,7 @@ const config = {
   web: { enabled: true, origin, port, distDir: process.env.WEB_DIST ?? "./web/build" },
 } as Config;
 
-const products = new Products({ url: process.env.ALKOMETRIIKKA_URL ?? "https://alkometriikka.fi/data.json" });
+const products = new Products({ url: process.env.ALKOMETRIIKKA_URL ?? "https://alkometriikka.fi/data.minimal.json" });
 await products.refresh().then(() => console.log(`Catalogue: ${products.count} products`)).catch(() => console.log("Catalogue unavailable (offline?): search is empty"));
 
 const services = createServices(

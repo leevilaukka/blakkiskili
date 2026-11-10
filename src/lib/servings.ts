@@ -2,7 +2,7 @@
 // 24-pack); what gets logged is a serving: a can, a 12 cl glass, a 4 cl shot, a whole bottle.
 // The same drink sold in several sizes is merged into one entry whose servings are the union
 // (Jaloviina 0.5 l and 0.7 l → 2/4/6 cl; Karhu 33 cl and 50 cl → both cans).
-// Rules were chosen from the actual Alkometriikka data (types, sizes, packaging).
+// Rules were chosen from the actual Alkometriikka data (types, sizes, names).
 
 import { alcoholMg, isAlcoholAmountOutOfLimits, STANDARD_DRINK_GRAMS } from "./units.ts";
 
@@ -12,11 +12,10 @@ export interface CatalogProduct {
   maker: string | null;
   sizeL: number; // whole package, e.g. 1.98 for a 6-pack of 33 cl
   abv: number; // percent
-  type: string; // Viinit, Väkevät, Panimotuotteet, Välituotteet, Alkoholittomat
+  type: string; // Viinit, Väkevät, Panimotuotteet, Välituotteet, Alkoholittomat, Muut
   subtype: string | null;
-  packaging: string | null; // tölkki, lasipullo, hanapakkaus, ...
   selection: string | null; // vakiovalikoima, tilausvalikoima, ...
-  status: string | null; // Aktiivinen, Poistuva, Uutuus, ...
+  status: string | null; // Aktiivinen, Poistuva, Uutuus, ...; null = removed from Alko's range
   price: number | null; // euros, whole package
   kcal100: number | null; // energy per 100 ml (Alko's "Energia kcal/100 ml")
   country: string | null; // Valmistusmaa
@@ -183,7 +182,6 @@ export function customCatalogDrink(c: CustomProductData): CatalogDrink {
     sizeL: c.sizeL,
     abv: c.abv,
     ...KIND_TYPES[c.kind],
-    packaging: null,
     selection: null,
     status: null,
     price: null,

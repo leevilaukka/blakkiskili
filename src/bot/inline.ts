@@ -8,8 +8,8 @@
 import type { Bot } from "grammy";
 import type { InlineQueryResultArticle } from "grammy/types";
 import type { BotContext } from "./context.ts";
-import { drankText, logServing, shortPermilles } from "./menu.ts";
-import { btn } from "./ui.ts";
+import { drankText, findDrink, logServing, productView, shortPermilles } from "./menu.ts";
+import { btn, clip } from "./ui.ts";
 import { S } from "../strings.ts";
 import { escapeHtml } from "../lib/format.ts";
 import {
@@ -21,7 +21,6 @@ import {
   splitAmount,
   standardDrinksText,
   type CatalogDrink,
-  type Serving,
 } from "../lib/servings.ts";
 
 const MAX_RESULTS = 50; // Telegram's limit per answer
@@ -36,31 +35,38 @@ export const thumbnailUrl = (productId: string) =>
   `https://images.alko.fi/images/cs_srgb,f_auto,t_products/cdn/${encodeURIComponent(productId)}/kuva.jpg`;
 
 /**
- * One result per serving, so even "a glass of this wine" is a single tap. With an amount in
- * the query ("jallu 3 cl"), one result per drink with exactly that amount.
+ * One result per product; the serving is picked afterwards in the private chat. With an amount
+ * in the query ("jallu 3 cl"), the result is that exact amount and picking it logs the drink.
  */
 export function inlineResults(drinks: readonly CatalogDrink[], litres?: number): InlineQueryResultArticle[] {
   const results: InlineQueryResultArticle[] = [];
   for (const d of drinks) {
-    let servings: Serving[] = d.servings;
-    if (litres !== undefined) {
-      const r = customServing(d, litres);
-      servings = "serving" in r ? [r.serving] : [];
-    }
-    for (const s of servings) {
-      if (results.length >= MAX_RESULTS) return results;
+    if (results.length >= MAX_RESULTS) return results;
+    const title = `${emojiFor(d.product)} ${d.name}`;
+    const thumb = { thumbnail_url: thumbnailUrl(d.product.id), thumbnail_width: 160, thumbnail_height: 192 };
+    if (litres === undefined) {
       results.push({
         type: "article",
-        id: `${d.id}:${s.key}`,
-        title: `${emojiFor(d.product)} ${d.name}`,
-        // Second line: "130 kcal · Alkossa 2,19 €"
-        description: [`${s.label} · ${d.product.abv} % · ${standardDrinksText(s)}`, servingFacts(s)].filter(Boolean).join("\n"),
-        input_message_content: { message_text: escapeHtml(servingDescription(d, s)), parse_mode: "HTML" },
-        thumbnail_url: thumbnailUrl(d.product.id),
-        thumbnail_width: 160,
-        thumbnail_height: 192,
+        id: d.id,
+        title,
+        description: `${d.product.abv} % · ${d.servings.map((s) => s.label).join(", ")}`,
+        input_message_content: { message_text: escapeHtml(title), parse_mode: "HTML" },
+        ...thumb,
       });
+      continue;
     }
+    const r = customServing(d, litres);
+    if (!("serving" in r)) continue;
+    const s = r.serving;
+    results.push({
+      type: "article",
+      id: `${d.id}:${s.key}`,
+      title,
+      // Second line: "130 kcal · Alkossa 2,19 €"
+      description: [`${s.label} · ${d.product.abv} % · ${standardDrinksText(s)}`, servingFacts(s)].filter(Boolean).join("\n"),
+      input_message_content: { message_text: escapeHtml(servingDescription(d, s)), parse_mode: "HTML" },
+      ...thumb,
+    });
   }
   return results;
 }
@@ -98,7 +104,17 @@ export function registerInline(bot: Bot<BotContext>, opts: InlineOptions = {}) {
     lastChosenAt.set(from.id, Date.now());
     if (!profile) return;
     const [drinkId, key] = ctx.chosenInlineResult.result_id.split(":");
-    const drink = services.products.get(drinkId ?? "");
+    const drink = findDrink(ctx, drinkId ?? "");
+    if (drink && key === undefined) {
+      // Just the product: ask for the serving in the private chat.
+      const view = productView(ctx, drink.id);
+      await ctx.api.sendMessage(from.id, clip(view.text), {
+        parse_mode: "HTML",
+        link_preview_options: { is_disabled: true },
+        reply_markup: { inline_keyboard: view.keyboard },
+      });
+      return;
+    }
     const serving = drink && resolveServing(drink, key ?? "");
     if (!drink || !serving) {
       await ctx.api.sendMessage(from.id, S.search.gone);
@@ -108,6 +124,7 @@ export function registerInline(bot: Bot<BotContext>, opts: InlineOptions = {}) {
     const text = drankText(ctx, profile, description) + "\n\n" + shortPermilles(ctx, profile);
     await ctx.api.sendMessage(from.id, text, {
       parse_mode: "HTML",
+      link_preview_options: { is_disabled: true },
       reply_markup: {
         inline_keyboard: [[{ text: S.search.more, switch_inline_query_current_chat: "" }, btn(S.search.to_menu, "j")]],
       },
