@@ -932,3 +932,54 @@ describe("/web", () => {
     expect(h.services.groups.telegramChatId(h.services.groups.listFor(h.account(7003))[0]!.id)).toBeNull();
   });
 });
+
+describe("favourites", () => {
+  test("pin the latest drink, log it from the Juo menu, remove it", async () => {
+    const h = harness();
+    await registerUser(h, 6201);
+    const uid = h.account(6201);
+
+    expect(textOf(await h.send(6201, "/kalja033"))).toContain("kcal");
+    expect(textOf(await h.press(6201, "m:jf"))).toContain("ei ole vielä suosikkeja");
+    expect(textOf(await h.press(6201, "m:jfa"))).toContain("Lisätty suosikkeihin");
+    expect(textOf(await h.press(6201, "m:jfa"))).toContain("on jo suosikeissa");
+    const [fav] = h.services.favorites.list(uid);
+    expect(fav!.kcal).toBeGreaterThan(0);
+
+    // The favourite is a quick button in the Juo menu, and logging it keeps amount and energy
+    const juo = await h.press(6201, "m:j");
+    const quick = buttonsOf(juo).find((b) => b.callback_data === `m:jfl:${fav!.id}`);
+    expect(quick).toBeDefined();
+    expect(buttonsOf(juo).filter((b) => b.text === quick!.text)).toHaveLength(1); // not repeated as a recent
+    await h.press(6201, quick!.callback_data);
+    expect(h.services.drinks.since(uid, 0).map((d) => [d.alcoholMg, d.kcal])).toEqual([
+      [fav!.alcoholMg, fav!.kcal],
+      [fav!.alcoholMg, fav!.kcal],
+    ]);
+
+    // Another user can't use or remove it
+    await registerUser(h, 6202);
+    await h.press(6202, `m:jfl:${fav!.id}`);
+    await h.press(6202, `m:jfr:${fav!.id}`);
+    expect(h.services.drinks.since(h.account(6202), 0)).toHaveLength(0);
+    expect(h.services.favorites.list(uid)).toHaveLength(1);
+
+    // Choosing it in the list opens its page, where it can be logged or removed
+    const page = await h.press(6201, `m:jfv:${fav!.id}`);
+    expect(buttonsOf(page).map((b) => b.callback_data)).toEqual([`m:jfl:${fav!.id}`, `m:jfr:${fav!.id}`, "m:jf"]);
+    expect(textOf(await h.press(6201, `m:jfr:${fav!.id}`))).toContain("Suosikki poistettu");
+    expect(h.services.favorites.list(uid)).toEqual([]);
+    expect(textOf(await h.press(6201, `m:jfl:${fav!.id}`))).toContain("Suosikkia ei löytynyt");
+  });
+
+  test("at most eight, and deleting the account removes them", async () => {
+    const h = harness();
+    await registerUser(h, 6203);
+    const uid = h.account(6203);
+    for (let i = 1; i <= 8; i++) h.services.favorites.add(uid, { description: `Juoma ${i}`, alcoholMg: i * 1000, productId: null, kcal: null });
+    h.services.drinks.add(uid, 5000, "Yhdeksäs", {});
+    expect(textOf(await h.press(6203, "m:jfa"))).toContain("enintään 8");
+    h.services.accounts.delete(uid);
+    expect(h.services.favorites.list(uid)).toEqual([]);
+  });
+});

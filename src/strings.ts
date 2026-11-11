@@ -29,6 +29,7 @@ export const E = {
   key: "🔑",
   tv: "📺",
   hidden: "🙈",
+  favorite: "⭐",
 } as const;
 
 export const PLATFORM_NAMES = { telegram: "Telegram", discord: "Discord" } as const;
@@ -92,7 +93,7 @@ export const S = {
     title: "Juo",
     drinks1h: "<b>Viimeisen tunnin tapahtumat:</b>\n{list}\n\n",
     on_select:
-      "Valitse juomasi alla olevista valikoista. Jos et löydä etsimääsi, klikkaa <b>Oma juoma</b>. Jos olet unohtanut lisätä juomia, voit lisätä ne takautuvasti valitsemalla <b>Jälkikellotus</b>. Jos lisäsit vahingossa väärän juoman, valitse <b>Kumoa</b>. Kaksi alinta nappia ovat pikavalinnat kahdelle viimeisimmälle juomalle.",
+      "Valitse juomasi alla olevista valikoista. Jos et löydä etsimääsi, klikkaa <b>Oma juoma</b>. Jos olet unohtanut lisätä juomia, voit lisätä ne takautuvasti valitsemalla <b>Jälkikellotus</b>. Jos lisäsit vahingossa väärän juoman, valitse <b>Kumoa</b>. Alimmat napit ovat pikavalintoja: omat <b>Suosikit</b> ja kaksi viimeisintä juomaa.",
     on_drink: "{drink_response}\n\nJuoma tallennettu: {drink}{energy}",
     miedot: { button: E.beers + " Miedot", title: "Miedot", on_select: "Valitse mieto." },
     viinit: { button: E.wine + " Viinit", title: "Viinit", on_select: "Valitse viini." },
@@ -107,6 +108,23 @@ export const S = {
       error_vol: "Prosentti ei ole numero. {help}",
       error_exceeds: "Absoluuttisen alkoholin määrä on liian suuri. Tarkista numerot.",
       description: "Oma juoma - {cl}cl {vol}%",
+    },
+    favorites: {
+      button: E.favorite + " Suosikit",
+      title: "Suosikit",
+      on_select:
+        "Suosikit ovat omia pikavalintojasi: yksi napautus kirjaa juoman samalla määrällä uudestaan. Ne näkyvät myös Juo-valikossa. Voit pitää enintään {max} suosikkia.\n\nLisää suosikiksi viimeisin kirjaamasi juoma valitsemalla <b>Lisää viimeisin juoma</b>. Valitse suosikki, niin voit kirjata sen, valita toisen määrän tai poistaa sen.",
+      empty: "Sinulla ei ole vielä suosikkeja.",
+      add_button: "➕ Lisää viimeisin juoma",
+      remove_button: E.trash + " Poista suosikeista",
+      log_button: "Kirjaa",
+      detail: "<b>{name}</b>\n\nKirjaa juoma sellaisenaan tai valitse toinen määrä samaa tuotetta. Voit myös poistaa suosikin.",
+      added: "Lisätty suosikkeihin: {name}",
+      exists: "{name} on jo suosikeissa.",
+      full: "Suosikkeja voi olla enintään {max}. Poista ensin jokin.",
+      no_drinks: "Et ole vielä kirjannut juomia, joten ei ole mitä lisätä.",
+      removed: "Suosikki poistettu: {name}",
+      gone: "Suosikkia ei löytynyt.",
     },
     late: {
       button: E.stopwatch + " Jälkikellotus",
@@ -388,7 +406,7 @@ export const S = {
       button: "Yksityisyys",
       title: "Help: Yksityisyys",
       text:
-        "<b>Mitä tietoja kerätään?</b>\n- Telegramiin määritelty nimimerkki ja koko nimi (etu- ja sukunimi, salattuna)\n- Tiiviste (HMAC) Telegram-tilisi tunnisteesta (ja muiden tunnukseen yhdistämiesi palveluiden tunnisteista), sekä tunnisteet salattuna poistovaroituksen lähettämistä varten\n- Paino, pituus ja sukupuoli\n- Merkattujen juomien alkoholimäärät, nimet ja juomisajat, arvioitu energiamäärä (kun se tiedetään), sekä Alkon valikoimasta valituille juomille tuotenumero\n- Kun haet tuotetta viivakoodilla, vain viivakoodin numero lähetetään Alkometriikalle, joka kysyy sen Alkolta. Mitään sinuun liittyvää ei lähetetä, eikä kuvia tallenneta\n- Jos lisäät viivakoodille tuotteen, jota Alko ei tunne, tuotteen tiedot (viivakoodi, nimi, koko, vahvuus, energia) näkyvät kaikille käyttäjille, eikä niitä lähetetä Alkometriikalle. Tunnukseesi tallennetaan tieto siitä, että lisäsit tuotteen, jotta voit muokata sitä. Tieto poistuu tunnuksesi mukana, mutta tuote jää muiden käyttöön\n- Jos ilmoitat virheestä käyttäjän lisäämässä tuotteessa, viestisi tallennetaan tunnukseesi liitettynä, kunnes ylläpitäjä käsittelee sen. Ylläpitäjät näkevät viestin ja tuotteen, mutta eivät sitä, kuka ilmoitti\n- Tiivisteet liittymiesi ryhmien tunnisteista sekä ryhmien nimet salattuna (Telegram-ryhmän otsikko, kun sanot ryhmässä /moro)\n\nRyhmien viestejä, puhelinnumeroa tai muita tietoja ei tallenneta.\n\n<b>Voinko saada tai poistaa tietoni?</b>\nKyllä. /data lähettää kaikki tietosi CSV-tiedostoina, ja Asetukset → Poista tunnus poistaa kaiken sinuun liittyvän tiedon heti.{retention}{web}\n\n<b>Varmuuskopiot</b>\nTietokannasta otetaan salattuja varmuuskopioita EU:ssa sijaitsevaan tallennustilaan. Poistetut tiedot häviävät myös varmuuskopioista viimeistään noin kolmen kuukauden kuluttua.{maintainer}",
+        "<b>Mitä tietoja kerätään?</b>\n- Telegramiin määritelty nimimerkki ja koko nimi (etu- ja sukunimi, salattuna)\n- Tiiviste (HMAC) Telegram-tilisi tunnisteesta (ja muiden tunnukseen yhdistämiesi palveluiden tunnisteista), sekä tunnisteet salattuna poistovaroituksen lähettämistä varten\n- Paino, pituus ja sukupuoli\n- Merkattujen juomien alkoholimäärät, nimet ja juomisajat, arvioitu energiamäärä (kun se tiedetään), sekä Alkon valikoimasta valituille juomille tuotenumero\n- Suosikeiksi merkitsemäsi juomat (nimi, alkoholimäärä, energia ja mahdollinen tuotenumero)\n- Kun haet tuotetta viivakoodilla, vain viivakoodin numero lähetetään Alkometriikalle, joka kysyy sen Alkolta. Mitään sinuun liittyvää ei lähetetä, eikä kuvia tallenneta\n- Jos lisäät viivakoodille tuotteen, jota Alko ei tunne, tuotteen tiedot (viivakoodi, nimi, koko, vahvuus, energia) näkyvät kaikille käyttäjille, eikä niitä lähetetä Alkometriikalle. Tunnukseesi tallennetaan tieto siitä, että lisäsit tuotteen, jotta voit muokata sitä. Tieto poistuu tunnuksesi mukana, mutta tuote jää muiden käyttöön\n- Jos ilmoitat virheestä käyttäjän lisäämässä tuotteessa, viestisi tallennetaan tunnukseesi liitettynä, kunnes ylläpitäjä käsittelee sen. Ylläpitäjät näkevät viestin ja tuotteen, mutta eivät sitä, kuka ilmoitti\n- Tiivisteet liittymiesi ryhmien tunnisteista sekä ryhmien nimet salattuna (Telegram-ryhmän otsikko, kun sanot ryhmässä /moro)\n\nRyhmien viestejä, puhelinnumeroa tai muita tietoja ei tallenneta.\n\n<b>Voinko saada tai poistaa tietoni?</b>\nKyllä. /data lähettää kaikki tietosi CSV-tiedostoina, ja Asetukset → Poista tunnus poistaa kaiken sinuun liittyvän tiedon heti.{retention}{web}\n\n<b>Varmuuskopiot</b>\nTietokannasta otetaan salattuja varmuuskopioita EU:ssa sijaitsevaan tallennustilaan. Poistetut tiedot häviävät myös varmuuskopioista viimeistään noin kolmen kuukauden kuluttua.{maintainer}",
     },
   },
 

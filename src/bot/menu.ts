@@ -37,6 +37,7 @@ import {
   type Serving,
 } from "../lib/servings.ts";
 import type { Energy } from "../services/drinks.ts";
+import { MAX_FAVORITES } from "../services/favorites.ts";
 import type { CustomProduct } from "../services/customproducts.ts";
 
 type Handler = (ctx: BotContext, arg: string | undefined) => View | Promise<View>;
@@ -126,6 +127,7 @@ export function juoView(ctx: BotContext, profile: Profile, body: string = S.juo.
   const { drinks } = ctx.kili.services;
   const lastHour = drinks.since(profile.id, ctx.kili.services.deps.now() - HOUR_MS);
   const latest = drinks.recentUnique(profile.id, 2, S.juo.late.drink_name);
+  const favorites = ctx.kili.services.favorites.list(profile.id);
   const cat = (c: DrinkCategory["id"]) => btn(S.juo[c].button, `jc:${c}`);
   return {
     text:
@@ -136,7 +138,9 @@ export function juoView(ctx: BotContext, profile: Profile, body: string = S.juo.
       ...(ctx.kili.services.products.ready ? [[searchButton(ctx)]] : []),
       [cat("miedot"), cat("viinit"), cat("shotit")],
       [btn(S.juo.oma.button, "jo"), btn(S.juo.late.button, "jk"), btn(S.juo.undo.button, "ju")],
-      ...latest.map((d) => [btn(d.description, `jl:${d.id}`)]),
+      [btn(S.juo.favorites.button, "jf")],
+      ...favorites.map((f) => [btn(f.description, `jfl:${f.id}`)]),
+      ...latest.filter((d) => !favorites.some((f) => f.description === d.description && f.alcoholMg === d.alcoholMg)).map((d) => [btn(d.description, `jl:${d.id}`)]),
       back("s"),
     ],
   };
@@ -380,6 +384,44 @@ function productDetails(ctx: BotContext, d: CatalogDrink): string {
   return lines.join("\n");
 }
 
+/** The favourites: tap to log, 🗑 to remove, and pin the latest drink. */
+export function favoritesView(ctx: BotContext, profile: Profile, notice = ""): View {
+  const list = ctx.kili.services.favorites.list(profile.id);
+  return {
+    text:
+      header(S.juo.favorites.title, profile, ctx) +
+      (notice ? notice + "\n\n" : "") +
+      fmt(S.juo.favorites.on_select, { max: MAX_FAVORITES }) +
+      (list.length ? "" : "\n\n" + S.juo.favorites.empty),
+    keyboard: [
+      ...list.map((f) => [btn(f.description, `jfv:${f.id}`)]),
+      [btn(S.juo.favorites.add_button, "jfa")],
+      back("j"),
+    ],
+  };
+}
+
+/** One favourite: log it as saved, pick another amount of the same product, or remove it. */
+export function favoriteView(ctx: BotContext, profile: Profile, id: number): View {
+  const fav = ctx.kili.services.favorites.get(profile.id, id);
+  if (!fav) return favoritesView(ctx, profile, S.juo.favorites.gone);
+  const drink = fav.productId ? findDrink(ctx, fav.productId) : undefined;
+  return {
+    text: header(S.juo.favorites.title, profile, ctx) + fmt(S.juo.favorites.detail, { name: fav.description }),
+    keyboard: [
+      [btn(`${S.juo.favorites.log_button} · ${fav.description}`, `jfl:${fav.id}`)],
+      ...(drink
+        ? [
+            ...drink.servings.map((sv) => [btn(servingButtonText(sv), `ps:${drink.id}:${sv.key}`)]),
+            [btn(S.search.custom_button, `pc:${drink.id}`)],
+          ]
+        : []),
+      [btn(S.juo.favorites.remove_button, `jfr:${fav.id}`)],
+      back("jf"),
+    ],
+  };
+}
+
 function drankView(ctx: BotContext, profile: Profile, drinkName: string): View {
   return juoView(ctx, profile, drankText(ctx, profile, drinkName));
 }
@@ -561,6 +603,26 @@ const NODES: Record<string, Handler> = {
     if (!source) return juoView(ctx, p);
     ctx.kili.services.drinks.add(p.id, source.alcoholMg, source.description, { productId: source.productId, kcal: source.kcal });
     return drankView(ctx, p, source.description);
+  }),
+  jf: withProfile((ctx, p) => favoritesView(ctx, p)),
+  jfv: withProfile((ctx, p, arg) => favoriteView(ctx, p, Number(arg))),
+  jfl: withProfile((ctx, p, arg) => {
+    const fav = ctx.kili.services.favorites.get(p.id, Number(arg));
+    if (!fav) return juoView(ctx, p, S.juo.favorites.gone);
+    ctx.kili.services.drinks.add(p.id, fav.alcoholMg, fav.description, { productId: fav.productId, kcal: fav.kcal });
+    return drankView(ctx, p, fav.description);
+  }),
+  jfa: withProfile((ctx, p) => {
+    const last = ctx.kili.services.drinks.last(p.id);
+    if (!last) return favoritesView(ctx, p, S.juo.favorites.no_drinks);
+    const result = ctx.kili.services.favorites.add(p.id, last);
+    return favoritesView(ctx, p, fmt(S.juo.favorites[result === "added" ? "added" : result], { name: last.description, max: MAX_FAVORITES }));
+  }),
+  jfr: withProfile((ctx, p, arg) => {
+    const { favorites } = ctx.kili.services;
+    const fav = favorites.get(p.id, Number(arg));
+    if (!fav || !favorites.remove(p.id, fav.id)) return favoritesView(ctx, p, S.juo.favorites.gone);
+    return favoritesView(ctx, p, fmt(S.juo.favorites.removed, { name: fav.description }));
   }),
   jh: withProfile((ctx, p) => {
     ctx.kili.services.pending.set(ctx.kili.identityId!, { kind: "productSearch" });

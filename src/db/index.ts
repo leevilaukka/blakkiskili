@@ -245,6 +245,18 @@ const MIGRATIONS: string[] = [
   INSERT INTO custom_product_reports SELECT * FROM reports_keep;
   DROP TABLE reports_keep;
   `,
+  /* 14: favourite drinks (a snapshot of a logged drink, so they outlive it) */ `
+  CREATE TABLE favorites (
+    id          INTEGER PRIMARY KEY,
+    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    description TEXT NOT NULL,
+    alcohol_mg  INTEGER NOT NULL,
+    product_id  TEXT,
+    kcal        INTEGER,
+    created_at  INTEGER NOT NULL,
+    UNIQUE (user_id, description, alcohol_mg)
+  ) STRICT;
+  `,
 ];
 
 export function openDatabase(path: string): Database {

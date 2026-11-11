@@ -7,6 +7,7 @@ import type { Database } from "bun:sqlite";
 import type { Crypto } from "../lib/ids.ts";
 import { Accounts } from "./accounts.ts";
 import { Drinks } from "./drinks.ts";
+import { Favorites } from "./favorites.ts";
 import { Groups } from "./groups.ts";
 import { Stats } from "./stats.ts";
 import { Importer } from "./importer.ts";
@@ -41,6 +42,7 @@ export function createServices(deps: Deps, opts: ServiceOptions = {}) {
   const identities = new Identities(deps);
   const accounts = new Accounts(deps, identities, bus);
   const drinks = new Drinks(deps, accounts, bus);
+  const favorites = new Favorites(deps);
   const groups = new Groups(deps, bus);
   const stats = new Stats(deps);
   const importer = new Importer(deps, accounts, identities);
@@ -52,7 +54,7 @@ export function createServices(deps: Deps, opts: ServiceOptions = {}) {
   const customProducts = new CustomProducts(deps);
   const webSessions = new WebSessions(deps);
   const screens = new Screens(deps, bus);
-  return { identities, accounts, drinks, groups, stats, importer, pending, inactivity, announcements, products, barcodes, customProducts, webSessions, screens, bus, deps };
+  return { identities, accounts, drinks, favorites, groups, stats, importer, pending, inactivity, announcements, products, barcodes, customProducts, webSessions, screens, bus, deps };
 }
 
 export type Services = ReturnType<typeof createServices>;
