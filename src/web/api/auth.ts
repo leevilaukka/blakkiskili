@@ -1,4 +1,4 @@
-// The site's config, signing in (Telegram Login Widget or a /web link) and signing out.
+// The site's config, signing in (Telegram's login page or a /web link) and signing out.
 
 import { CATALOG } from "../../lib/catalog.ts";
 import { toStandardDrinks } from "../../lib/units.ts";
@@ -19,6 +19,7 @@ export function authRoutes({ services, opts, cookies, live, now }: Api): Routes 
       GET: () =>
         json({
           botUsername: opts.botUsername,
+          botId: Number(opts.botToken.split(":")[0]), // public: the part of the token before the colon
           catalogue: services.products.ready,
           barcodes: services.barcodes.enabled || services.products.enabled,
           presets: CATALOG.flatMap((c) =>

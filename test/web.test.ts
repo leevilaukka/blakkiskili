@@ -503,6 +503,7 @@ describe("API: catalogue", () => {
     const { call } = world();
     const c = (await (await call("GET", "/api/config")).json()) as any;
     expect(c.botUsername).toBe("kili_bot");
+    expect(c.botId).toBe(Number(BOT_TOKEN.split(":")[0]));
     expect(c.presets.find((p: any) => p.id === "b33a")).toMatchObject({ category: "miedot" });
   });
 });
@@ -780,10 +781,14 @@ describe("static site", () => {
     expect((await s.serve("/missing.js")).status).toBe(404);
   });
 
-  test("only the sign-in page may load Telegram's widget", async () => {
+  test("no page may load Telegram's widget (sign-in is a redirect)", async () => {
     const { site: s } = site();
-    expect((await s.serve("/login")).headers.get("content-security-policy")).toContain("https://telegram.org");
-    expect((await s.serve("/")).headers.get("content-security-policy")).not.toContain("telegram");
+    for (const p of ["/login", "/"]) {
+      const csp = (await s.serve(p)).headers.get("content-security-policy")!;
+      expect(csp).not.toContain("telegram");
+      expect(csp).toContain("frame-src 'none'");
+      expect(csp).not.toContain("'unsafe-eval'");
+    }
   });
 
   test("path traversal never leaves the build directory", async () => {
@@ -800,7 +805,7 @@ describe("static site", () => {
     const hashes = inlineScriptHashes(`<script src="/a.js"></script><script>alert(1)</script>`);
     expect(hashes).toHaveLength(1);
     expect(hashes[0]).toMatch(/^'sha256-[A-Za-z0-9+/]+=*'$/);
-    expect(contentSecurityPolicy(hashes, false)).toContain(hashes[0]!);
+    expect(contentSecurityPolicy(hashes)).toContain(hashes[0]!);
   });
 
   test("without a build there is a clear 503", async () => {

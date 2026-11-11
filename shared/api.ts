@@ -106,7 +106,8 @@ export interface PresetItem {
 }
 
 export interface Config {
-  botUsername: string; // for the Telegram Login Widget
+  botUsername: string;
+  botId: number; // for Telegram's login page (oauth.telegram.org/auth?bot_id=…)
   catalogue: boolean; // product search is available
   barcodes: boolean; // barcode lookups are available (the catalogue or the API Worker)
   presets: PresetItem[];

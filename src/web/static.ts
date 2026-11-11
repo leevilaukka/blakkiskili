@@ -19,17 +19,18 @@ export function inlineScriptHashes(html: string): string[] {
   return hashes;
 }
 
-/** `telegramWidget`: the sign-in page loads Telegram's widget script, which opens its own iframe. */
-export function contentSecurityPolicy(scriptHashes: readonly string[], telegramWidget: boolean): string {
+// Telegram sign-in is a redirect to oauth.telegram.org and back (see web/src/routes/login), so no
+// page loads Telegram's widget script: it builds its callback with eval(), which this policy forbids.
+export function contentSecurityPolicy(scriptHashes: readonly string[]): string {
   return [
     "default-src 'self'",
     // 'wasm-unsafe-eval' lets the barcode scanner compile its WebAssembly decoder (served from
     // here); it does not allow eval() or any other JavaScript from strings.
-    `script-src 'self' ${scriptHashes.join(" ")} 'wasm-unsafe-eval'${telegramWidget ? " https://telegram.org" : ""}`.replace(/ +/g, " "),
+    `script-src 'self' ${scriptHashes.join(" ")} 'wasm-unsafe-eval'`.replace(/ +/g, " "),
     "style-src 'self'",
     "img-src 'self' data:", // Alko's photos come through our own /api (see photos.ts)
     "connect-src 'self'",
-    `frame-src ${telegramWidget ? "https://oauth.telegram.org" : "'none'"}`,
+    "frame-src 'none'",
     "object-src 'none'",
     "base-uri 'none'",
     "form-action 'self'",
@@ -54,7 +55,7 @@ export function withSecurityHeaders(res: Response, csp?: string): Response {
 
 export class StaticSite {
   private readonly root: string;
-  private readonly htmlCache = new Map<string, { modified: number; html: string; csp: string; widgetCsp: string }>();
+  private readonly htmlCache = new Map<string, { modified: number; html: string; csp: string }>();
 
   constructor(distDir: string) {
     this.root = resolve(distDir);
@@ -96,13 +97,12 @@ export class StaticSite {
     if (!cached || cached.modified !== modified) {
       const html = await Bun.file(file).text();
       const hashes = inlineScriptHashes(html);
-      cached = { modified, html, csp: contentSecurityPolicy(hashes, false), widgetCsp: contentSecurityPolicy(hashes, true) };
+      cached = { modified, html, csp: contentSecurityPolicy(hashes) };
       this.htmlCache.set(file, cached);
     }
-    const widget = pathname === "/login" || pathname.startsWith("/login/");
     return withSecurityHeaders(
       new Response(cached.html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } }),
-      widget ? cached.widgetCsp : cached.csp,
+      cached.csp,
     );
   }
 }

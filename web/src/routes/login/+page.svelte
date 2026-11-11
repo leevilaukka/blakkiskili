@@ -7,7 +7,7 @@
   let error = $state("");
   let working = $state(false);
   let botUsername = $state("");
-  let widget: HTMLDivElement | undefined = $state();
+  let botId = $state(0);
 
   async function done() {
     session.me = await api.me();
@@ -31,19 +31,74 @@
     }
   }
 
-  // /web in the bot gives /login#t=TOKEN. The token is in the fragment so it never reaches
-  // a server log; remove it from the address bar and history right away.
-  function takeToken(): string | null {
-    const token = new URLSearchParams(location.hash.slice(1)).get("t");
-    if (token) history.replaceState(null, "", location.pathname);
-    return token;
+  async function withTelegram(user: unknown) {
+    working = true;
+    error = "";
+    try {
+      await api.signInWithTelegram(user);
+      await done();
+    } catch (e) {
+      error = errorText(e);
+      working = false;
+    }
+  }
+
+  // Telegram sign-in is a redirect, not Telegram's widget script (it needs eval(), which our CSP
+  // forbids): oauth.telegram.org asks the user to confirm, then sends them back to
+  // /login#tgAuthResult=<base64url JSON>, the same signed fields the widget would give.
+  function signInWithTelegram() {
+    const q = new URLSearchParams({
+      bot_id: String(botId),
+      origin: location.origin,
+      request_access: "write",
+      return_to: `${location.origin}/login`,
+    });
+    location.href = `https://oauth.telegram.org/auth?${q}`;
+  }
+
+  function decodeTelegramResult(data: string): unknown {
+    const b64 = data.replace(/-/g, "+").replace(/_/g, "/");
+    const json = new TextDecoder().decode(Uint8Array.from(atob(b64 + "===".slice((b64.length + 3) % 4)), (c) => c.charCodeAt(0)));
+    const user = JSON.parse(json);
+    if (!user || typeof user !== "object") throw new Error("cancelled");
+    return user;
+  }
+
+  // /web in the bot gives /login#t=TOKEN, and Telegram's sign-in comes back as
+  // /login#tgAuthResult=…. Both are in the fragment so they never reach a server log; remove
+  // them from the address bar and history right away.
+  function takeFragment(): { token?: string; telegram?: string } {
+    const params = new URLSearchParams(location.hash.slice(1));
+    const token = params.get("t") ?? undefined;
+    const telegram = params.get("tgAuthResult") ?? undefined;
+    if (token || telegram !== undefined) history.replaceState(null, "", location.pathname);
+    return { token, telegram };
+  }
+
+  function handleFragment(): boolean {
+    const { token, telegram } = takeFragment();
+    if (token) {
+      withLink(token);
+      return true;
+    }
+    if (telegram !== undefined) {
+      let user: unknown;
+      try {
+        user = decodeTelegramResult(telegram);
+      } catch {
+        error = "Telegram-kirjautuminen keskeytyi. Yritä uudelleen.";
+        return false;
+      }
+      withTelegram(user);
+      return true;
+    }
+    return false;
   }
 
   // A link opened in a tab already showing this page only changes the fragment: the browser
   // doesn't load the page again, so the token arrives here instead of in onMount.
   function onHashChange() {
-    const token = takeToken();
-    if (token && !working) withLink(token);
+    if (!working) handleFragment();
   }
 
   // Signed in in another tab (or with the link in a new tab): move on when this one is looked at.
@@ -61,31 +116,14 @@
     if (session.me) return goto("/", { replaceState: true });
     // (a signed-in visitor never sees this page)
 
-    const token = takeToken();
-    if (token) return withLink(token);
+    if (handleFragment()) return;
 
-    // Telegram's login button (needs the site's domain registered with BotFather: /setdomain).
+    // The Telegram button needs the bot's id, and the site's domain registered with BotFather
+    // (/setdomain), or Telegram's page says "Bot domain invalid".
     try {
       const config = await api.config();
       botUsername = config.botUsername;
-      (window as any).onTelegramAuth = async (user: unknown) => {
-        working = true;
-        try {
-          await api.signInWithTelegram(user);
-          await done();
-        } catch (e) {
-          error = errorText(e);
-          working = false;
-        }
-      };
-      const script = document.createElement("script");
-      script.async = true;
-      script.src = "https://telegram.org/js/telegram-widget.js?22";
-      script.dataset.telegramLogin = config.botUsername;
-      script.dataset.size = "large";
-      script.dataset.onauth = "onTelegramAuth(user)";
-      script.dataset.requestAccess = "write";
-      widget?.appendChild(script);
+      botId = config.botId;
     } catch (e) {
       error = errorText(e);
     }
@@ -113,9 +151,11 @@
             <a href="https://t.me/{botUsername}" target="_blank" rel="noopener">Avaa botti Telegramissa (@{botUsername})</a>
           {/if}
         </p>
-        <div class="widget" bind:this={widget}></div>
+        <div class="widget">
+          <button class="btn primary" disabled={!botId} onclick={signInWithTelegram}>Kirjaudu Telegramilla</button>
+        </div>
         <p class="muted hint">
-          Jos Telegram-painiketta ei näy tai se ei toimi, lähetä botille <code>/web</code>, niin saat kertakäyttöisen kirjautumislinkin.
+          Jos Telegram-kirjautuminen ei toimi, lähetä botille <code>/web</code>, niin saat kertakäyttöisen kirjautumislinkin.
         </p>
       {/if}
       {#if error}<p class="error" role="alert">{error}</p>{/if}
@@ -153,7 +193,6 @@
   }
   .widget {
     margin: 1rem 0;
-    min-height: 40px;
   }
   .hint {
     font-size: 0.93rem;
