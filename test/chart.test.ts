@@ -74,6 +74,13 @@ describe("permille chart", () => {
     expect(new Set(eight.values()).size).toBe(10);
   });
 
+  test("more people than colours does not hang (a group of 11 on the website)", () => {
+    const eleven = assignColors(Array.from({ length: 11 }, (_, i) => `id${i}`));
+    expect(new Set(eleven.values()).size).toBe(11);
+    const many = assignColors(Array.from({ length: 40 }, (_, i) => `id${i}`));
+    expect(many.size).toBe(40);
+  });
+
   test("renders to a PNG", () => {
     const r = buildPermilleChart({ title: "Bläkkiskili ‰", series: [person("a", "ä", [2, 1])], now })!;
     const png = svgToPng(r.svg, 1);

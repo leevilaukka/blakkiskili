@@ -108,13 +108,17 @@ function trimZeroEnds(points: Point[]): Point[] {
  * free slot, resolved in id order so the result is deterministic.
  */
 export function assignColors(ids: readonly string[]): Map<string, string> {
+  // More people than one page holds (the website draws everyone at once) use the longer overview
+  // palette, and past that colours repeat. Never wait for a free slot that doesn't exist.
+  const palette = ids.length > PAGE_COLORS.length ? OVERVIEW_COLORS : PAGE_COLORS;
   const taken = new Set<number>();
   const out = new Map<string, string>();
   for (const id of [...ids].sort()) {
-    let slot = Number.parseInt(new Bun.CryptoHasher("sha256").update(id).digest("hex").slice(0, 8), 16) % PAGE_COLORS.length;
-    while (taken.has(slot)) slot = (slot + 1) % PAGE_COLORS.length;
+    if (taken.size >= palette.length) taken.clear();
+    let slot = Number.parseInt(new Bun.CryptoHasher("sha256").update(id).digest("hex").slice(0, 8), 16) % palette.length;
+    while (taken.has(slot)) slot = (slot + 1) % palette.length;
     taken.add(slot);
-    out.set(id, PAGE_COLORS[slot]!);
+    out.set(id, palette[slot]!);
   }
   return out;
 }
