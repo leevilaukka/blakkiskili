@@ -13,7 +13,7 @@
   import { onMount } from "svelte";
   import type { ScreenView } from "../../../../shared/api.ts";
   import { api, ApiError } from "#lib/api.ts";
-  import { canCast, castFailed, castScreen, castUnsupported } from "#lib/cast.ts";
+  import { canCast, castEnabled, castFailed, castScreen, castUnsupported } from "#lib/cast.ts";
   import Chart from "#lib/Chart.svelte";
   import Icon from "#lib/Icon.svelte";
   import QrCode from "#lib/QrCode.svelte";
@@ -247,6 +247,7 @@
                 <Icon name="list" /> {showBoard ? "Piilota tilanne" : "Näytä tilanne"}
               </button>
             {/if}
+            {#if castEnabled}
             <button
               class="btn toggle"
               disabled={!linkToken}
@@ -255,7 +256,7 @@
             >
               <Icon name="cast" /> {casting ? "Lähetetään…" : "Lähetä"}
             </button>
-          
+            {/if}
             <button class="btn toggle" onclick={present} title="Piilottaa painikkeet. Esc tai tuplaklikkaus palauttaa ne.">
               <Icon name="maximize" /> Koko näyttö
             </button>

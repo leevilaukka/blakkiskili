@@ -4,7 +4,7 @@
   import { onMount } from "svelte";
   import type { GroupView } from "../../../../../shared/api.ts";
   import { api, ApiError, errorText } from "#lib/api.ts";
-  import { canCast, castFailed, castScreen, castUnsupported } from "#lib/cast.ts";
+  import { canCast, castEnabled, castFailed, castScreen, castUnsupported } from "#lib/cast.ts";
   import Chart from "#lib/Chart.svelte";
   import Icon from "#lib/Icon.svelte";
   import { clock, dayClock, decimal1, permille } from "#lib/format.ts";
@@ -189,9 +189,11 @@
             </label>
             <div class="buttons">
               <button class="btn primary" disabled={busy} onclick={makeScreen}><Icon name="link" /> Luo näyttölinkki</button>
+              {#if castEnabled}
               <button class="btn" disabled={busy} onclick={castNow} title="Luo linkin ja lähettää sen suoraan tv:hen tai muulle näytölle.">
                 <Icon name="cast" /> Lähetä näytölle
               </button>
+              {/if}
             </div>
           </div>
 

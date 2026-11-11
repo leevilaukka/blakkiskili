@@ -3,6 +3,12 @@
  * API. The display opens the embed view of the screen link, so it needs the link's token. Must be
  * called soon after a click (the browser wants a user gesture).
  */
+/**
+ * Switched off: the Presentation API cannot cast an https page from Linux Chromium (the hidden-tab
+ * capture fails) or from phones (needs a registered Cast receiver). Turn on again with a custom receiver.
+ */
+export const castEnabled = false;
+
 const Request = typeof window === "undefined" ? undefined : (window as any).PresentationRequest;
 
 export const canCast = !!Request;
