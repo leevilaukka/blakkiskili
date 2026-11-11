@@ -1,4 +1,4 @@
-/* The look follows Alkometriikka (kili.alkometriikka.fi is its subdomain): its four brand reds,
+/* The look follows Alkometriikka (it started as its subdomain): its four brand reds,
    gray (light) and zinc (dark) neutrals, Inter, 4px corners and bordered buttons with a 1px
    shadow. Chart series colours are the dataviz palette (light steps validated on near-white, dark
    steps on #1a1a19, which zinc-900 matches); see Chart.svelte. Colour never carries meaning alone. */
