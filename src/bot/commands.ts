@@ -122,6 +122,7 @@ async function stats(ctx: BotContext, p: Profile | null, args: string, metric: "
 interface ChartSource {
   series: ChartSeries[];
   name: string;
+  named: boolean; // a group: always show names
 }
 
 function chartSource(ctx: BotContext, p: Profile | null): ChartSource | null {
@@ -129,16 +130,16 @@ function chartSource(ctx: BotContext, p: Profile | null): ChartSource | null {
   const now = services.deps.now();
   if (isPrivate(ctx)) {
     if (!p) return null;
-    return { series: [{ id: p.id, name: chartLabel(p), body: p, drinks: services.drinks.since(p.id, now - EBAC_WINDOW_MS) }], name: p.name };
+    return { series: [{ id: p.id, name: chartLabel(p), body: p, drinks: services.drinks.since(p.id, now - EBAC_WINDOW_MS) }], name: p.name, named: false };
   }
   const series = services.groups.memberHistories(ctx.chat!.id).map((m) => ({ id: m.userId, name: chartLabel(m), body: m.body, drinks: m.drinks }));
-  return { series, name: chatTitle(ctx) };
+  return { series, name: chatTitle(ctx), named: true };
 }
 
 /** Renders one page of the chart with its ‹ › buttons (none when everything fits on one page). */
 function chartPage(source: ChartSource | null, now: number, page: number, prefix = CB_CHART) {
   if (!source) return null;
-  const result = buildPermilleChart({ title: source.name ? `Promillekuvaaja feat. ${source.name}` : "Promillekuvaaja", series: source.series, now, page });
+  const result = buildPermilleChart({ title: source.name ? `Promillekuvaaja feat. ${source.name}` : "Promillekuvaaja", series: source.series, now, page, named: source.named });
   if (!result) return null;
   const keyboard: InlineKeyboardButton[][] = [];
   if (result.pages > 1) {
@@ -179,7 +180,7 @@ function demoChartSource(now: number): ChartSource {
     body: { weight: 55 + i * 3, height: 165 + i, gender: i % 2 ? ("nainen" as const) : ("mies" as const) },
     drinks: Array.from({ length: 2 + ((i * 7) % 5) }, (_, k) => ({ createdAt: now - (5 - k * 0.8 - (i % 4) * 0.3) * HOUR, alcoholMg: 12241 })),
   }));
-  return { series, name: "Esimerkkiporukka" };
+  return { series, name: "Esimerkkiporukka", named: true };
 }
 
 export async function handleDemoChartPage(ctx: BotContext, data: string) {

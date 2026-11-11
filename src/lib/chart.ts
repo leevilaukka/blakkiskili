@@ -27,6 +27,7 @@ export interface ChartInput {
   title: string;
   series: readonly ChartSeries[];
   now: number;
+  named?: boolean; // group chats: show the name even when only one person has drunk
   page?: number; // 0-based. With more than CHART_PAGE_SIZE people, page 0 is the overview of everyone,
   // then the people ranked by peak, CHART_PAGE_SIZE per page.
 }
@@ -191,7 +192,7 @@ export function buildPermilleChart(input: ChartInput): ChartResult | null {
   if (viewEnd - viewStart < MIN_SPAN_MS) viewEnd = Math.min(to, viewStart + MIN_SPAN_MS);
 
   // Layout
-  const single = shown.length === 1 && pages === 1;
+  const single = shown.length === 1 && pages === 1 && !input.named;
   const direct = shown.length <= DIRECT_LABEL_MAX;
   // Legend: as many equal-width columns as the longest entry allows (at most 5), rows centred.
   const legendFont = overview ? 12 : 14;
