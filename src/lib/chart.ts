@@ -123,9 +123,10 @@ export function assignColors(ids: readonly string[]): Map<string, string> {
  * The same numbers buildPermilleChart draws (same window, step and colours), as JSON. Used by
  * the website so its chart and the bot's picture agree.
  */
-export function buildChartData(series: readonly ChartSeries[], now: number): ChartData {
-  const from = floorHour(now - PAST_MS);
-  const to = ceilHour(now + FORECAST_MS);
+export function buildChartData(series: readonly ChartSeries[], now: number, history?: { from: number; to: number }): ChartData {
+  const from = history ? floorHour(history.from) : floorHour(now - PAST_MS);
+  const to = history ? ceilHour(history.to) : ceilHour(now + FORECAST_MS);
+  if (history) now = to;
   const colors = assignColors(series.map((s) => s.id));
   const lines = series
     .map((s) => {
@@ -141,7 +142,7 @@ export function buildChartData(series: readonly ChartSeries[], now: number): Cha
     })
     .filter((l) => l.peak > EPS)
     .sort((a, b) => b.peak - a.peak);
-  return { now, from, to, lines };
+  return history ? { now, from, to, lines, history: true } : { now, from, to, lines };
 }
 
 function niceStep(max: number): number {

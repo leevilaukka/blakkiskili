@@ -2,8 +2,10 @@
 
 import { findPreset } from "../../lib/catalog.ts";
 import { customCatalogDrink, eanOfCustomDrinkId, isAlkoProductId, resolveServing, servingDescription, type CatalogDrink } from "../../lib/servings.ts";
-import { alcoholMgFromClPercent, isAlcoholAmountOutOfLimits, toStandardDrinks } from "../../lib/units.ts";
-import type { DrinkCursor, DrinkFilter } from "../../services/drinks.ts";
+import { buildChartData } from "../../lib/chart.ts";
+import { alcoholMgFromClPercent, HOUR_MS, isAlcoholAmountOutOfLimits, toStandardDrinks } from "../../lib/units.ts";
+import { chartLabel } from "../../services/accounts.ts";
+import { EBAC_WINDOW_MS, type DrinkCursor, type DrinkFilter } from "../../services/drinks.ts";
 import type { DrinkLog, LogDrinkRequest } from "../../../shared/api.ts";
 import { fail, json } from "../http.ts";
 import type { Api, Ctx, Routes } from "./context.ts";
@@ -11,6 +13,8 @@ import { user } from "./guards.ts";
 import { toItem } from "./views.ts";
 
 const LOG_PAGE = 100;
+/** A session is a run of drinks with pauses under 6 h; this keeps a request from asking for months of samples. */
+const MAX_SESSION_CHART_MS = 7 * 24 * HOUR_MS;
 const LOG_PAGE_MAX = 200;
 
 export function drinkRoutes({ services }: Api): Routes {
@@ -26,6 +30,9 @@ export function drinkRoutes({ services }: Api): Routes {
         return json({ drink: last ? toItem(last) : null });
       }),
     },
+
+    // The estimate over one past drinking session (from its first to its last drink).
+    "/api/drinks/chart": { GET: user(sessionChart) },
 
     "/api/drinks/undo": {
       POST: user((c) => {
@@ -91,6 +98,22 @@ export function drinkRoutes({ services }: Api): Routes {
       default:
         return fail(400, "bad_request");
     }
+  }
+
+  /** A session's curve: from an hour before the first drink until the estimate is long gone (at most 12 h after the last), never past now. */
+  function sessionChart(c: Ctx) {
+    const num = (name: string) => {
+      const v = c.url.searchParams.get(name) ?? "";
+      return /^\d{1,15}$/.test(v) ? Number(v) : null;
+    };
+    const first = num("from");
+    const last = num("to");
+    if (first === null || last === null || last < first || last - first > MAX_SESSION_CHART_MS) return fail(400, "bad_request");
+    const t = services.deps.now();
+    const body = c.user;
+    const history = { from: first - HOUR_MS, to: Math.min(last + 12 * HOUR_MS, t) };
+    const samples = drinks.since(body.id, first - EBAC_WINDOW_MS).filter((d) => d.createdAt <= history.to);
+    return json(buildChartData([{ id: body.id, name: chartLabel(body), body, drinks: samples }], t, history));
   }
 
   /** The logbook. Bad parameters are a 400: the site never sends them. */

@@ -443,6 +443,25 @@ describe("API: logbook", () => {
     expect(seen).toEqual([...ids].reverse());
   });
 
+  test("a past session's curve has no forecast and ends at the last drink's burn-off", async () => {
+    const { call, services, clock, alice, cookieOf } = world();
+    const cookie = cookieOf(alice.id);
+    const a = services.drinks.add(alice.id, findPreset("b50")!.mg, "beer", { at: clock.now - 30 * 3_600_000 }).createdAt;
+    const b = services.drinks.add(alice.id, findPreset("b50")!.mg, "beer", { at: clock.now - 29 * 3_600_000 }).createdAt;
+    const res = await call("GET", `/api/drinks/chart?from=${a}&to=${b}`, { cookie });
+    expect(res.status).toBe(200);
+    const chart = (await res.json()) as any;
+    expect(chart.history).toBe(true);
+    expect(chart.now).toBe(chart.to);
+    expect(chart.to).toBeLessThanOrEqual(clock.now + 3_600_000);
+    expect(chart.lines).toHaveLength(1);
+    expect(chart.lines[0].peak).toBeGreaterThan(0.1);
+    for (const q of ["from=1", `from=${b}&to=${a}`, "from=x&to=2", `from=${a}&to=${a + 8 * 24 * 3_600_000}`]) {
+      expect((await call("GET", `/api/drinks/chart?${q}`, { cookie })).status).toBe(400);
+    }
+    expect((await call("GET", `/api/drinks/chart?from=${a}&to=${b}`)).status).toBe(401);
+  });
+
   test("bad parameters are refused and a session is needed", async () => {
     const { call, alice, cookieOf } = world();
     const cookie = cookieOf(alice.id);

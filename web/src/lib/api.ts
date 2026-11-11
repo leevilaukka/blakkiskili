@@ -5,6 +5,7 @@
 import type {
   AdminView,
   BarcodeResult,
+  ChartData,
   Config,
   CustomProductRequest,
   Dashboard,
@@ -64,6 +65,8 @@ export const api = {
     for (const [k, v] of Object.entries(filter)) if (v !== undefined && v !== "") params.set(k, String(v));
     return request<DrinkLog>("GET", `/api/drinks?${params}`);
   },
+  /** The estimate over a past session, first to last drink (epoch ms). */
+  sessionChart: (from: number, to: number) => request<ChartData>("GET", `/api/drinks/chart?from=${from}&to=${to}`),
   lastDrink: () => request<{ drink: DrinkItem | null }>("GET", "/api/drinks/last"),
   undo: () => request<DrinkItem>("POST", "/api/drinks/undo", {}),
   remove: (id: number) => request<{ ok: true }>("DELETE", `/api/drinks/${id}`),

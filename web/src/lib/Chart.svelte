@@ -56,7 +56,8 @@
     const times = lines.flatMap((l) => l.points.filter((p) => p[1] > EPS).map((p) => p[0]));
     if (times.length === 0) return { start: data.now - 6 * HOUR, end: data.now + 2 * HOUR };
     let start = Math.max(data.from, floorHour(Math.min(...times) - HOUR));
-    let end = Math.min(data.to, ceilHour(Math.max(Math.max(...times) + 30 * 60_000, data.now + 2 * HOUR)));
+    const tail = Math.max(...times) + 30 * 60_000;
+    let end = Math.min(data.to, ceilHour(data.history ? tail : Math.max(tail, data.now + 2 * HOUR)));
     if (end - start < 6 * HOUR) start = Math.max(data.from, end - 6 * HOUR);
     if (end - start < 6 * HOUR) end = Math.min(data.to, start + 6 * HOUR);
     return { start, end };
@@ -163,7 +164,7 @@
   }
   const tipLeft = $derived(cursorT === null ? 0 : Math.min(Math.max(x(cursorT), 90), W - 90));
   const valueAt = (l: (typeof lines)[number], t: number) => l.points.find((p) => p[0] === t)?.[1] ?? 0;
-  const summary = $derived(lines.map((l) => `${l.name} ${permille(l.current)} promillea`).join(", "));
+  const summary = $derived(lines.map((l) => (data.history ? `${l.name} huippu ${permille(l.peak)} promillea` : `${l.name} ${permille(l.current)} promillea`)).join(", "));
 </script>
 
 <svelte:window bind:innerHeight={viewportHeight} />
@@ -197,8 +198,10 @@
       onkeydown={onKey}
       onblur={() => (cursor = null)}
     >
-      <rect class="wash" x={nowX} y={M.top} width={Math.max(0, W - M.right - nowX)} height={H - M.top - M.bottom} />
-      <text class="muted" x={W - M.right - 6 * k} y={M.top + 16 * k} text-anchor="end">ennuste</text>
+      {#if !data.history}
+        <rect class="wash" x={nowX} y={M.top} width={Math.max(0, W - M.right - nowX)} height={H - M.top - M.bottom} />
+        <text class="muted" x={W - M.right - 6 * k} y={M.top + 16 * k} text-anchor="end">ennuste</text>
+      {/if}
 
       {#each yTicks as v}
         <line class="grid" class:zero={v === 0} x1={M.left} x2={W - M.right} y1={y(v)} y2={y(v)} />
@@ -209,8 +212,10 @@
         <text class="muted" x={x(h.t)} y={H - M.bottom + 20 * k} text-anchor="middle">{h.label}</text>
       {/each}
 
-      <line class="nowline" x1={nowX} x2={nowX} y1={M.top} y2={H - M.bottom} />
-      <text class="secondary" x={nowX} y={M.top - 5 * k} text-anchor="middle">nyt</text>
+      {#if !data.history}
+        <line class="nowline" x1={nowX} x2={nowX} y1={M.top} y2={H - M.bottom} />
+        <text class="secondary" x={nowX} y={M.top - 5 * k} text-anchor="middle">nyt</text>
+      {/if}
 
       {#each drawn as d (d.line.id)}
         {#if d.hasPast}<path class="line {d.cls}" d={d.past} />{/if}
@@ -222,13 +227,13 @@
         {#each drawn as d (d.line.id)}
           <circle class="dot {d.cls}" cx={x(cursorT)} cy={y(valueAt(d.line, cursorT))} r={4.5 * k} />
         {/each}
-      {:else}
+      {:else if !data.history}
         {#each drawn as d (d.line.id)}
           <circle class="dot {d.cls}" cx={nowX} cy={y(d.line.current)} r={4.5 * k} />
         {/each}
       {/if}
 
-      {#if cursorT === null}
+      {#if cursorT === null && !data.history}
         {#each labels as l (l.d.line.id)}
           {#if Math.abs(l.y - 4 * k - l.dotY) > 12 * k}
             <line class="leader" x1={nowX} y1={l.dotY} x2={l.lx + (l.toRight ? -2 : 2) * k} y2={l.y - 4 * k} />
@@ -258,10 +263,10 @@
   <details class="table">
     <summary>Taulukko</summary>
     <table>
-      <thead><tr><th>Nimi</th><th>Nyt</th><th>Huippu</th></tr></thead>
+      <thead><tr><th>Nimi</th>{#if !data.history}<th>Nyt</th>{/if}<th>Huippu</th></tr></thead>
       <tbody>
         {#each lines as l (l.id)}
-          <tr><td>{l.name}</td><td>{permille(l.current)}‰</td><td>{permille(l.peak)}‰</td></tr>
+          <tr><td>{l.name}</td>{#if !data.history}<td>{permille(l.current)}‰</td>{/if}<td>{permille(l.peak)}‰</td></tr>
         {/each}
       </tbody>
     </table>

@@ -1,9 +1,10 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
-  import type { DrinkItem, DrinkLog } from "../../../../shared/api.ts";
+  import type { ChartData, DrinkItem, DrinkLog } from "../../../../shared/api.ts";
   import { api, errorText } from "#lib/api.ts";
   import { clock, decimal1 } from "#lib/format.ts";
+  import Chart from "#lib/Chart.svelte";
   import Icon from "#lib/Icon.svelte";
 
   // The filters live in the address (?range=&from=&to=&q=), so a view can be bookmarked and
@@ -182,6 +183,20 @@
     return out;
   });
 
+  // A session's curve is fetched when its "Promillekäyrä" is opened, and kept while the page lives.
+  // `null` is a failed fetch (shown as a message); a drink added or removed elsewhere is not
+  // reflected until the page is reloaded.
+  let charts = $state<Record<number, ChartData | null | "loading">>({});
+  async function openChart(s: Session, open: boolean) {
+    if (!open || (charts[s.key] !== undefined && charts[s.key] !== null)) return;
+    charts[s.key] = "loading";
+    try {
+      charts[s.key] = await api.sessionChart(s.start, s.end);
+    } catch {
+      charts[s.key] = null;
+    }
+  }
+
   function dateLabel(ms: number) {
     const d = new Date(ms);
     const sameYear = d.getFullYear() === new Date().getFullYear();
@@ -271,6 +286,19 @@
               </li>
             {/each}
           </ul>
+          <details class="curve" ontoggle={(e) => openChart(s, e.currentTarget.open)}>
+            <summary>Promillekäyrä</summary>
+            {#if charts[s.key] === "loading" || charts[s.key] === undefined}
+              <p class="muted">Ladataan…</p>
+            {:else if charts[s.key] === null}
+              <p class="error">Käyrää ei voitu ladata.</p>
+            {:else if (charts[s.key] as ChartData).lines.length}
+              <p class="muted note">Arvio nykyisillä paino- ja pituustiedoillasi.</p>
+              <Chart data={charts[s.key] as ChartData} legend={false} />
+            {:else}
+              <p class="muted">Arvio ei nouse tällä kerralla mitattavaksi.</p>
+            {/if}
+          </details>
         </section>
       {:else}
         {#if totals}
@@ -385,6 +413,18 @@
   }
   .desc {
     overflow-wrap: anywhere;
+  }
+  .curve {
+    border-top: 1px solid var(--border-soft);
+    padding: 0.5rem 0 0.75rem;
+  }
+  .curve summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .note {
+    margin: 0.4rem 0;
+    font-size: 0.9rem;
   }
   .more {
     justify-self: center;

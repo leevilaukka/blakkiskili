@@ -17,6 +17,8 @@ export interface ChartData {
   from: number;
   to: number;
   lines: ChartLine[]; // highest peak first; people who never reach the threshold are left out
+  /** A finished stretch of time (a logbook session): no "now" marker or forecast, `now` is `to`. */
+  history?: boolean;
 }
 
 export type ChartName = "full" | "username";
