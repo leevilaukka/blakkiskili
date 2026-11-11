@@ -11,6 +11,8 @@ export default defineConfig({
       adapter: adapter({ pages: "build", assets: "build", fallback: "index.html", strict: false }),
     }),
   ],
+  // Chromecast and TV browsers run old Chromium (the cast receiver page crashed on `??=`): compile down.
+  build: { target: ["chrome68", "safari12"] },
   server: {
     port: 5173,
     proxy: { "/api": "http://localhost:8081" },
