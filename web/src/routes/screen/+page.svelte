@@ -13,6 +13,7 @@
   import { onMount } from "svelte";
   import type { ScreenView } from "../../../../shared/api.ts";
   import { api, ApiError } from "#lib/api.ts";
+  import { canCast, castFailed, castScreen, castUnsupported } from "#lib/cast.ts";
   import Chart from "#lib/Chart.svelte";
   import Icon from "#lib/Icon.svelte";
   import QrCode from "#lib/QrCode.svelte";
@@ -69,6 +70,14 @@
   }
   function onFullscreenChange() {
     if (!document.fullscreenElement) presenting = false;
+  }
+  let casting = $state(false);
+  let castError = $state("");
+  async function cast() {
+    castError = canCast ? "" : castUnsupported;
+    if (!linkToken || !canCast) return;
+    if (await castScreen(linkToken, () => (casting = false))) casting = true;
+    else castError = castFailed;
   }
   let copied = $state(false);
   const opt = $state({ title: true, legend: true, board: false, qr: false, transparent: true, theme: "dark" as Theme });
@@ -228,6 +237,7 @@
             {/if}
             {view.title}
           </h1>
+          {#if castError}<p class="muted" role="alert">{castError}</p>{/if}
           <p class="muted">Arvioidut promillet · {clock(view.now)}{status === "reconnecting" ? " · yhteys katkesi, yritetään uudelleen…" : ""}</p>
         </div>
         {#if !embed && !presenting}
@@ -237,6 +247,15 @@
                 <Icon name="list" /> {showBoard ? "Piilota tilanne" : "Näytä tilanne"}
               </button>
             {/if}
+            <button
+              class="btn toggle"
+              disabled={!linkToken}
+              onclick={cast}
+              title={linkToken ? "Näytä kuvaaja Chromecastilla tai muulla näytöllä." : "Avaa näyttölinkki uudelleen, jotta voit lähettää kuvan."}
+            >
+              <Icon name="cast" /> {casting ? "Lähetetään…" : "Lähetä"}
+            </button>
+          
             <button class="btn toggle" onclick={present} title="Piilottaa painikkeet. Esc tai tuplaklikkaus palauttaa ne.">
               <Icon name="maximize" /> Koko näyttö
             </button>
