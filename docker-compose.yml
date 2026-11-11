@@ -55,8 +55,8 @@ services:
   # on the server and ufw stays as it is. Credentials are in their own file, like the backup's.
   tunnel:
     <<: *hardening
-    # Pin to a tested version once it runs (docker compose images tunnel), then update on purpose.
-    image: cloudflare/cloudflared:latest
+    # Pinned to the version tested in production (2026-11-11). Update on purpose, then check the tunnel registers.
+    image: cloudflare/cloudflared:2026.10.7
     profiles: [web]
     command: tunnel --no-autoupdate run
     env_file: tunnel.env
