@@ -19,6 +19,17 @@
   /** Links are only shown right after they are made: the server keeps just a hash. */
   let fresh = $state<{ kind: "invite" | "screen"; url: string } | null>(null);
   let copied = $state(false);
+  /** Large groups: only the top of the list until asked, and a name filter. */
+  const MEMBERS_SHOWN = 12;
+  let allMembers = $state(false);
+  let query = $state("");
+  const shownMembers = $derived.by(() => {
+    const all = view?.members ?? [];
+    const q = query.trim().toLocaleLowerCase("fi");
+    if (q) return all.filter((m) => m.name.toLocaleLowerCase("fi").includes(q));
+    if (allMembers || all.length <= MEMBERS_SHOWN + 2) return all;
+    return all.filter((m, i) => i < MEMBERS_SHOWN || m.isMe);
+  });
 
   async function run<T>(action: () => Promise<T>): Promise<T | undefined> {
     busy = true;
@@ -155,10 +166,13 @@
 
         <section class="card">
           <h2>Jäsenet</h2>
+          {#if view.members.length > MEMBERS_SHOWN + 2}
+            <input class="search" type="search" bind:value={query} placeholder="Hae jäsentä" aria-label="Hae jäsentä" />
+          {/if}
           <ul class="members">
-            {#each view.members as m (m.ref)}
+            {#each shownMembers as m (m.ref)}
               <li>
-                <span class="who">{m.name}{#if m.isMe} <span class="tag">sinä</span>{/if}{#if m.hidden} <span class="tag">nimetön näytöillä</span>{/if}</span>
+                <span class="who">{m.name}{#if m.isMe} <span class="tag">sinä</span>{/if}{#if m.hidden && m.isMe} <span class="tag">nimetön näytöillä</span>{/if}</span>
                 <span class="num strong">{permille(m.permille)}‰</span>
                 <span class="num muted">{decimal1(m.standardDrinks12h)} ann. / 12 h</span>
                 {#if view.group.isOwner && !m.isMe}
@@ -169,6 +183,14 @@
               </li>
             {/each}
           </ul>
+          {#if query.trim() && !shownMembers.length}
+            <p class="muted">Ei hakutuloksia.</p>
+          {/if}
+          {#if !query.trim() && view.members.length > MEMBERS_SHOWN + 2}
+            <button class="btn ghost small more" onclick={() => (allMembers = !allMembers)}>
+              {allMembers ? "Näytä vain parhaat" : `Näytä kaikki (${view.members.length})`}
+            </button>
+          {/if}
         </section>
       </div>
 
@@ -292,6 +314,13 @@
   }
   .members li:first-child {
     border-top: 0;
+  }
+  .search {
+    width: 100%;
+    margin-bottom: 0.5rem;
+  }
+  .more {
+    margin-top: 0.5rem;
   }
   .who {
     overflow-wrap: anywhere;
