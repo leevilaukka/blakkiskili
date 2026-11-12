@@ -17,6 +17,9 @@ import { loadConfig, type Config } from "../src/config.ts";
 
 const port = Number(process.env.DEMO_PORT ?? 8082);
 const origin = `http://localhost:${port}`;
+// The demo needs no .env: the required variables get placeholders (the bot itself isn't started).
+process.env.BOT_TOKEN ??= "0:demo";
+process.env.APP_SECRET ??= "demo-secret-demo-secret-demo-secret-1";
 const config: Config = {
   ...loadConfig(),
   botToken: "0:demo",

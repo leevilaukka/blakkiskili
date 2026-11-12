@@ -1,3 +1,4 @@
+import { loadConfig, type Config } from "../src/config.ts";
 import { openDatabase } from "../src/db/index.ts";
 import { createCrypto } from "../src/lib/ids.ts";
 import { createServices } from "../src/services/index.ts";
@@ -43,4 +44,16 @@ export function serveTestApp(opts: WebAppOptions) {
       void server.stop(true);
     },
   });
+}
+
+/** A full Config without needing a .env (CI has none): the required variables are set only while it loads. */
+export function testConfig(): Config {
+  const saved = { ...process.env };
+  process.env.BOT_TOKEN ??= "1:x";
+  process.env.APP_SECRET ??= "x".repeat(32);
+  try {
+    return loadConfig();
+  } finally {
+    process.env = saved;
+  }
 }

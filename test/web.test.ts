@@ -6,7 +6,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { docsHtml } from "../src/bot/context.ts";
 import { toCsv } from "../src/lib/csv.ts";
 import { legacyHash } from "../src/lib/ids.ts";
-import { loadConfig } from "../src/config.ts";
 import { findPreset } from "../src/lib/catalog.ts";
 import { contentSecurityPolicy, inlineScriptHashes, StaticSite } from "../src/web/static.ts";
 import { LOGIN_MAX_AGE_S, verifyTelegramLogin } from "../src/web/telegram.ts";
@@ -16,7 +15,7 @@ import { Products } from "../src/services/products.ts";
 import { Barcodes } from "../src/services/barcodes.ts";
 import { ProductPhotos } from "../src/web/photos.ts";
 import { catalogJson } from "./fixtures.ts";
-import { serveTestApp, setup, tg } from "./helpers.ts";
+import { serveTestApp, setup, testConfig, tg } from "./helpers.ts";
 
 const BOT_TOKEN = "123:TEST";
 const ORIGIN = "https://kili.test";
@@ -41,7 +40,7 @@ function world(
   const w = setup(undefined, [], extra.products, extra.barcodes);
   const alice = w.services.accounts.register(tg(1), { name: "alice", fullName: "Alice A", weight: 70, height: 170, gender: "nainen" }).profile;
   const bob = w.services.accounts.register(tg(2), { name: "bob", weight: 90, height: 185, gender: "mies" }).profile;
-  const app = serveTestApp({ services: w.services, botToken: BOT_TOKEN, botUsername: "kili_bot", origin: ORIGIN, photos: extra.photos, adminIds: extra.adminIds, notifyAdmins: extra.notifyAdmins, docs: docsHtml(loadConfig()) });
+  const app = serveTestApp({ services: w.services, botToken: BOT_TOKEN, botUsername: "kili_bot", origin: ORIGIN, photos: extra.photos, adminIds: extra.adminIds, notifyAdmins: extra.notifyAdmins, docs: docsHtml(testConfig()) });
   apps.push(app);
   apps.push(app);
   const cookieOf = (accountId: string, identityId: string | null = null) =>
@@ -863,7 +862,7 @@ describe("WEB_* config", () => {
   });
   const load = (env: Record<string, string>) => {
     process.env = { ...saved, BOT_TOKEN: "1:x", APP_SECRET: "x".repeat(32), ...env };
-    return loadConfig();
+    return testConfig();
   };
 
   test("off by default, and the origin is not needed then", () => {
