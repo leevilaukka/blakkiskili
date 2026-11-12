@@ -74,6 +74,19 @@
   </header>
 {/if}
 
+{#if session.ready && !session.me && onDocs}
+  <!-- Signed out on a public text: the way back to the sign-in. -->
+  <header class="top">
+    <a class="brand" href="/login" aria-label="Bläkkiskili, kirjautuminen">
+      <img src="/kili-head-96.jpg" alt="" width="40" height="40" />
+      <span class="word">Bläkkiskili</span>
+    </a>
+    <nav aria-label="Päävalikko">
+      <a class="btn" href="/login"><span class="label">Kirjaudu</span><Icon name="login" /></a>
+    </nav>
+  </header>
+{/if}
+
 {#if !session.ready}
   <p class="page muted">Ladataan…</p>
 {:else if session.offline && !session.me && !onLogin && !onScreen && !onDocs}
