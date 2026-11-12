@@ -2,7 +2,7 @@
   import { goto } from "$app/navigation";
   import { onMount } from "svelte";
   import type { ChartName, Gender } from "../../../../shared/api.ts";
-  import { api, errorText } from "#lib/api.ts";
+  import { api, ApiError, errorText } from "#lib/api.ts";
   import Icon from "#lib/Icon.svelte";
   import { session } from "#lib/session.svelte.ts";
 
@@ -35,6 +35,81 @@
     } catch (err) {
       outError = errorText(err);
       outBusy = false;
+    }
+  }
+
+  // Download, import and delete the account's data.
+  let exportBusy = $state(false);
+  let dataError = $state("");
+  let importResults = $state<{ name: string; ok: boolean; message: string }[]>([]);
+  let importBusy = $state(false);
+  let deleteText = $state("");
+  let deleteBusy = $state(false);
+  let deleteError = $state("");
+  const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
+
+  async function download() {
+    exportBusy = true;
+    dataError = "";
+    try {
+      const res = await fetch("/api/account/export", { credentials: "same-origin" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new ApiError(res.status, typeof body?.error === "string" ? body.error : "error");
+      }
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1] ?? "blakkiskili.zip";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch (err) {
+      dataError = errorText(err);
+    } finally {
+      exportBusy = false;
+    }
+  }
+
+  async function importFiles(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    // user.csv first: it can create or update the body data the others are checked against.
+    const files = [...(input.files ?? [])].sort((a, b) => Number(b.name.startsWith("user")) - Number(a.name.startsWith("user")));
+    if (!files.length) return;
+    importBusy = true;
+    dataError = "";
+    importResults = [];
+    try {
+      for (const file of files) {
+        if (file.size > MAX_IMPORT_BYTES) {
+          importResults = [...importResults, { name: file.name, ok: false, message: "Tiedosto on liian suuri." }];
+          continue;
+        }
+        const r = await api.importFile(await file.text());
+        importResults = [...importResults, { name: file.name, ...r }];
+      }
+      // user.csv may have changed the body data
+      session.me = await api.me();
+      weight = String(session.me.weight);
+      height = String(session.me.height);
+      gender = session.me.gender;
+    } catch (err) {
+      dataError = errorText(err);
+    } finally {
+      importBusy = false;
+      input.value = "";
+    }
+  }
+
+  async function deleteAccount() {
+    deleteBusy = true;
+    deleteError = "";
+    try {
+      await api.deleteAccount();
+      session.me = null;
+      goto("/login");
+    } catch (err) {
+      deleteError = errorText(err);
+      deleteBusy = false;
     }
   }
 
@@ -104,10 +179,110 @@
       {#if outError}<p class="error" role="alert">{outError}</p>{/if}
     </div>
   </section>
+
+  <section class="card panel">
+    <h2>Tietosi</h2>
+    <p class="muted">
+      Voit ladata kaikki tallennetut tietosi CSV-tiedostoina (zip), kuten botin /data-komennolla. Samat tiedostot voi tuoda takaisin tai uuteen
+      Bläkkiskiliin, ja myös vanhan Bläkkisvuohen /data-tiedostot kelpaavat.
+    </p>
+    <div class="foot">
+      <button class="btn" disabled={exportBusy} onclick={download}><Icon name="download" /> Lataa tietoni</button>
+    </div>
+
+    <h3>Tuo tietoja</h3>
+    <p class="muted">
+      Valitse tiedostot <code>user.csv</code>, <code>drinks.csv</code> ja halutessasi <code>groups.csv</code>. Tiedostot käyvät vain sille Telegram-tilille, jolla ne on ladattu.
+      user.csv päivittää myös painon, pituuden ja sukupuolen. Tuotuja juomia ei lisätä kahdesti.
+    </p>
+    <label class="btn file" class:disabled={importBusy}>
+      <Icon name="upload" /> Valitse tiedostot
+      <input type="file" accept=".csv,text/csv" multiple disabled={importBusy} onchange={importFiles} />
+    </label>
+    {#if importResults.length}
+      <ul class="results" aria-live="polite">
+        {#each importResults as r}
+          <li class:error={!r.ok}><strong>{r.name}</strong>: {r.message}</li>
+        {/each}
+      </ul>
+    {/if}
+    {#if dataError}<p class="error" role="alert">{dataError}</p>{/if}
+  </section>
+
+  <section class="card panel">
+    <h2>Poista tunnus</h2>
+    <p class="muted">
+      Tunnuksen poistaminen poistaa kaiken sinuun liittyvän tiedon heti: juomat, suosikit, ryhmäjäsenyydet ja kirjautumiset. Sitä ei voi perua. Lataa tietosi ensin talteen, jos haluat pitää ne.
+    </p>
+    <details>
+      <summary>Haluan poistaa tunnukseni</summary>
+      <form
+        class="delete"
+        onsubmit={(e) => {
+          e.preventDefault();
+          void deleteAccount();
+        }}
+      >
+        <label class="field">Kirjoita <strong>poista</strong> vahvistaaksesi
+          <input type="text" bind:value={deleteText} autocomplete="off" />
+        </label>
+        <button class="btn danger" type="submit" disabled={deleteBusy || deleteText.trim().toLowerCase() !== "poista"}>
+          <Icon name="trash" /> Poista tunnus ja kaikki tietoni
+        </button>
+      </form>
+      {#if deleteError}<p class="error" role="alert">{deleteError}</p>{/if}
+    </details>
+  </section>
 </div>
 </main>
 
 <style>
+  h3 {
+    margin: 1.5rem 0 0.4rem;
+    font-size: 1.07rem;
+  }
+  .file {
+    position: relative;
+    cursor: pointer;
+  }
+  .file.disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+  /* The real input stays in the page for keyboards and screen readers, but invisible. */
+  .file input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: inherit;
+    width: 100%;
+    height: 100%;
+  }
+  .file:focus-within {
+    outline: 2px solid var(--brand-2);
+    outline-offset: 2px;
+  }
+  .results {
+    list-style: none;
+    margin: 0.75rem 0 0;
+    padding: 0;
+  }
+  .results li {
+    margin: 0.3rem 0;
+  }
+  details summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .delete {
+    display: grid;
+    gap: 0.75rem;
+    max-width: 22rem;
+    margin: 0.75rem 0 0;
+  }
+  .card + .card {
+    margin-top: 1rem;
+  }
   fieldset {
     border: 0;
     padding: 0;

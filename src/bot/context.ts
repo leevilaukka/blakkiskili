@@ -2,6 +2,7 @@ import type { Context } from "grammy";
 import type { User } from "grammy/types";
 import type { Config } from "../config.ts";
 import type { Profile } from "../services/accounts.ts";
+import type { ImportResult } from "../services/importer.ts";
 import type { Services } from "../services/index.ts";
 import { fmt, raw } from "../lib/format.ts";
 import { S } from "../strings.ts";
@@ -51,6 +52,48 @@ export function retentionText(config: Config) {
 /** The website paragraph of the privacy text, or nothing when the website is off. */
 export function webPrivacyText(config: Config) {
   return raw(config.web.enabled ? S.privacy_web : "");
+}
+
+/** The privacy text (bot help and the website's /privacy page), with the configured retention and contact details. */
+export function privacyHtml(config: Config): string {
+  return fmt(S.help.privacy.text, { ...contactExtras(config), retention: retentionText(config), web: webPrivacyText(config) });
+}
+
+/**
+ * The texts of the website's help, terms and privacy pages (Telegram HTML, plus <h2> lines for
+ * the help page's sections): the bot's own texts, so the two can't drift apart.
+ */
+export function docsHtml(config: Config): Record<"help" | "terms" | "privacy", string> {
+  const { help } = S;
+  const extras = contactExtras(config);
+  const faq = [
+    ["Juominen", help.faq.juominen.text],
+    ["Ryhmät", help.faq.ryhmat.text + (config.web.enabled ? help.faq.ryhmat.web : "")],
+    ["Koodi", fmt(help.faq.koodi.text, extras)],
+  ] as const;
+  return {
+    help: [
+      help.web_note,
+      `<h2>Yleistä</h2>\n${help.general.text}`,
+      ...faq.map(([title, text]) => `<h2>FAQ: ${title}</h2>\n${text}`),
+      `<h2>Tietoa</h2>\n${fmt(S.about, extras).replace(/\n+Käyttöehdot: \/terms\s*$/, "")}`,
+    ].join("\n\n"),
+    terms: termsHtml(config).replace(/^<b>Käyttöehdot<\/b>\n+/, ""),
+    privacy: privacyHtml(config),
+  };
+}
+
+/** The reply to one imported CSV file. */
+export function importResultText(r: ImportResult): string {
+  if (!r.ok) return S.import[r.reason];
+  switch (r.kind) {
+    case "user":
+      return r.created ? S.import.user_created : S.import.user_updated;
+    case "drinks":
+      return fmt(S.import.drinks, { inserted: r.inserted, duplicates: r.duplicates, invalid: r.invalid });
+    case "groups":
+      return fmt(S.import.groups, { groups: r.groups });
+  }
 }
 
 /** Terms of service with the configured retention policy. */

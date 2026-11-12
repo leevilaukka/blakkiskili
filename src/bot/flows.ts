@@ -1,7 +1,7 @@
 // Typed-input steps of the menu flows (private chat only), and CSV import via documents.
 
 import type { BotContext } from "./context.ts";
-import { displayName } from "./context.ts";
+import { displayName, importResultText } from "./context.ts";
 import {
   consumptionView,
   customDrinkView,
@@ -31,7 +31,6 @@ import {
   parseNumber,
 } from "../lib/units.ts";
 import { isValidHeight, isValidWeight } from "../services/accounts.ts";
-import type { ImportResult } from "../services/importer.ts";
 import { customCatalogDrink, customDrinkId, customServing, parseAmount } from "../lib/servings.ts";
 import { ABV_MAX, ABV_MIN, cleanProductName, cleanReportMessage, SIZE_MAX_L, SIZE_MIN_L } from "../services/customproducts.ts";
 import { notifyAdmins, productReportNotice } from "./admin.ts";
@@ -245,18 +244,6 @@ async function downloadText(ctx: BotContext, fileId: string): Promise<string> {
   return await res.text();
 }
 
-function resultText(r: ImportResult): string {
-  if (!r.ok) return S.import[r.reason];
-  switch (r.kind) {
-    case "user":
-      return r.created ? S.import.user_created : S.import.user_updated;
-    case "drinks":
-      return fmt(S.import.drinks, { inserted: r.inserted, duplicates: r.duplicates, invalid: r.invalid });
-    case "groups":
-      return fmt(S.import.groups, { groups: r.groups });
-  }
-}
-
 /** Handles a document sent in private chat. */
 export async function handleImportDocument(ctx: BotContext) {
   const doc = ctx.message?.document;
@@ -284,7 +271,7 @@ export async function handleImportDocument(ctx: BotContext) {
 
   const name = displayName(ctx.from);
   const result = services.importer.import(text, ctx.from.id, name);
-  await sendHtml(ctx, resultText(result));
+  await sendHtml(ctx, importResultText(result));
 
   if (result.ok && result.kind === "user") {
     ctx.kili.profile = services.accounts.byIdentity(userId);
@@ -293,7 +280,7 @@ export async function handleImportDocument(ctx: BotContext) {
       services.pending.set(userId, { kind: "import", step: "files" });
       for (const fileId of waiting.waitingDrinkFiles) {
         const r = services.importer.import(await downloadText(ctx, fileId), ctx.from.id, name);
-        await sendHtml(ctx, resultText(r));
+        await sendHtml(ctx, importResultText(r));
       }
     }
   }

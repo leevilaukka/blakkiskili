@@ -116,11 +116,54 @@ export interface Config {
 }
 
 /** POST /api/drinks. */
-export type LogDrinkRequest =
+export type LogDrinkRequest = (
   | { kind: "preset"; id: string }
   | { kind: "product"; productId: string; serving: string }
   | { kind: "custom"; cl: number; percent: number }
-  | { kind: "repeat" };
+  | { kind: "repeat" }
+  | { kind: "favorite"; id: number }
+) & {
+  /** When the drink was had (epoch ms), for forgotten drinks: at most a week ago, never in the future. Default: now. */
+  at?: number;
+};
+
+/** A pinned drink (GET /api/favorites): logging it adds the same amount again. */
+export interface FavoriteItem {
+  id: number;
+  description: string;
+  standardDrinks: number;
+  kcal: number | null;
+}
+
+/** GET /api/favorites; also the answer to POST (pinning a logged drink), with what happened. */
+export interface Favorites {
+  favorites: FavoriteItem[];
+  max: number;
+  result?: "added" | "exists" | "full";
+}
+
+/** A line of text on a docs page: plain, bold, code or a link. */
+export interface Inline {
+  text: string;
+  bold?: boolean;
+  code?: boolean;
+  href?: string;
+}
+
+/** The bot's help, terms and privacy texts as blocks (GET /api/docs/:page, public). */
+export interface DocBlock {
+  type: "section" | "heading" | "paragraph" | "item";
+  inline: Inline[];
+}
+
+export type DocPage = "help" | "terms" | "privacy";
+
+/** POST /api/account/import: what happened to one CSV file. */
+export interface ImportOutcome {
+  ok: boolean;
+  message: string;
+}
+
 
 // ---------- barcodes ----------
 
@@ -284,3 +327,4 @@ export interface AdminView {
 export interface ApiError {
   error: string;
 }
+

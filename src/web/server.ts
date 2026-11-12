@@ -4,6 +4,7 @@
 // over the internal network. That is why CF-Connecting-IP is trusted for rate limiting: nothing
 // else can talk to this port. Never publish it.
 
+import { docsHtml } from "../bot/context.ts";
 import type { Config } from "../config.ts";
 import type { Services } from "../services/index.ts";
 import { createWebApp, type WebApp, type WebAppOptions } from "./app.ts";
@@ -25,8 +26,9 @@ export function serveWebApp(app: WebApp, { port, idleTimeout, site }: { port: nu
   return Bun.serve({
     port,
     ...(idleTimeout === undefined ? {} : { idleTimeout }),
-    // Bodies are tiny JSON; the API rejects anything larger anyway.
-    maxRequestBodySize: 16 * 1024,
+    // Bodies are tiny JSON, which readJsonBody holds to 4 KiB; only a data import (the old bot's
+    // CSV files, as large as Telegram's import limit) is bigger, and it checks its own size.
+    maxRequestBodySize: 10 * 1024 * 1024,
     routes: {
       "/healthz": new Response("ok"),
       ...app.routes,
@@ -51,6 +53,7 @@ export function startWebServer({ config, services, botUsername, notifyAdmins, id
     origin: config.web.origin,
     adminIds: config.adminIds,
     notifyAdmins,
+    docs: docsHtml(config),
     live,
   });
   const site = new StaticSite(config.web.distDir);

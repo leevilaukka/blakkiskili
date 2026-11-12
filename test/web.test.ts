@@ -3,6 +3,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
+import { docsHtml } from "../src/bot/context.ts";
+import { toCsv } from "../src/lib/csv.ts";
+import { legacyHash } from "../src/lib/ids.ts";
 import { loadConfig } from "../src/config.ts";
 import { findPreset } from "../src/lib/catalog.ts";
 import { contentSecurityPolicy, inlineScriptHashes, StaticSite } from "../src/web/static.ts";
@@ -38,20 +41,20 @@ function world(
   const w = setup(undefined, [], extra.products, extra.barcodes);
   const alice = w.services.accounts.register(tg(1), { name: "alice", fullName: "Alice A", weight: 70, height: 170, gender: "nainen" }).profile;
   const bob = w.services.accounts.register(tg(2), { name: "bob", weight: 90, height: 185, gender: "mies" }).profile;
-  const app = serveTestApp({ services: w.services, botToken: BOT_TOKEN, botUsername: "kili_bot", origin: ORIGIN, photos: extra.photos, adminIds: extra.adminIds, notifyAdmins: extra.notifyAdmins });
+  const app = serveTestApp({ services: w.services, botToken: BOT_TOKEN, botUsername: "kili_bot", origin: ORIGIN, photos: extra.photos, adminIds: extra.adminIds, notifyAdmins: extra.notifyAdmins, docs: docsHtml(loadConfig()) });
   apps.push(app);
   apps.push(app);
   const cookieOf = (accountId: string, identityId: string | null = null) =>
     `__Host-kili=${w.services.webSessions.createSession(accountId, identityId).sessionToken}`;
   /** A session signed in with Telegram user `telegramId` (as the widget and /web links make them). */
   const telegramCookie = (accountId: string, telegramId: number) => cookieOf(accountId, w.services.identities.key(tg(telegramId)));
-  const call = (method: string, path: string, opts: { cookie?: string; body?: unknown; origin?: string | null; csrf?: boolean; ip?: string } = {}) => {
+  const call = (method: string, path: string, opts: { cookie?: string; body?: unknown; text?: string; origin?: string | null; csrf?: boolean; ip?: string } = {}) => {
     const headers: Record<string, string> = {};
     if (opts.cookie) headers.cookie = opts.cookie;
     if (opts.origin !== null && method !== "GET") headers.origin = opts.origin ?? ORIGIN;
     if (opts.csrf !== false && method !== "GET") headers["x-kili"] = "1";
     return app(
-      new Request(`${ORIGIN}${path}`, { method, headers, body: opts.body === undefined ? undefined : JSON.stringify(opts.body) }),
+      new Request(`${ORIGIN}${path}`, { method, headers, body: opts.text ?? (opts.body === undefined ? undefined : JSON.stringify(opts.body)) }),
       opts.ip ?? "1.2.3.4",
     );
   };
@@ -518,6 +521,26 @@ describe("API: catalogue", () => {
     expect(await (await call("GET", "/api/products?q=karhu", { cookie: cookieOf(alice.id) })).json()).toEqual({ products: [] });
   });
 
+  test("the help, terms and privacy texts are public and come as blocks", async () => {
+    const { call } = world();
+    for (const page of ["help", "terms", "privacy"]) {
+      const res = await call("GET", `/api/docs/${page}`);
+      expect(res.status).toBe(200);
+      const { blocks } = (await res.json()) as { blocks: { type: string; inline: { text: string; href?: string }[] }[] };
+      const text = blocks.flatMap((b) => b.inline.map((i) => i.text)).join("");
+      expect(blocks.length).toBeGreaterThan(2);
+      expect(text).not.toMatch(/[<>{}]/); // no markup or unfilled placeholders reach the browser
+    }
+    const privacy = (await (await call("GET", "/api/docs/privacy")).json()) as any;
+    expect(privacy.blocks[0]).toMatchObject({ type: "heading", inline: [{ text: "Mitä tietoja kerätään?" }] });
+    expect(privacy.blocks.some((b: any) => b.type === "item")).toBe(true);
+    const help = (await (await call("GET", "/api/docs/help")).json()) as any;
+    expect(help.blocks.some((b: any) => b.type === "section")).toBe(true);
+    // Links come from <a> and from bare URLs, and only http(s) ones.
+    expect(help.blocks.flatMap((b: any) => b.inline).some((i: any) => i.href === "https://alkometriikka.fi")).toBe(true);
+    expect((await call("GET", "/api/docs/nonsense")).status).toBe(404);
+  });
+
   test("config lists the presets and the bot name", async () => {
     const { call } = world();
     const c = (await (await call("GET", "/api/config")).json()) as any;
@@ -853,5 +876,163 @@ describe("WEB_* config", () => {
     for (const origin of ["", "kili.example.com", "http://kili.example.com", "https://kili.example.com/app", "javascript:alert(1)"]) {
       expect(() => load({ WEB_ENABLED: "1", WEB_ORIGIN: origin })).toThrow(/WEB_ORIGIN/);
     }
+  });
+});
+
+describe("API: favourites", () => {
+  test("pin a logged drink, log it again, remove it", async () => {
+    const { call, alice, cookieOf, services } = world();
+    const cookie = cookieOf(alice.id);
+    const logged = (await (await call("POST", "/api/drinks", { cookie, body: { kind: "preset", id: "b33a" } })).json()) as any;
+
+    const pinned = (await (await call("POST", "/api/favorites", { cookie, body: { drinkId: logged.id } })).json()) as any;
+    expect(pinned.result).toBe("added");
+    expect(pinned.favorites).toHaveLength(1);
+    const again = (await (await call("POST", "/api/favorites", { cookie, body: { drinkId: logged.id } })).json()) as any;
+    expect(again.result).toBe("exists");
+
+    const fav = pinned.favorites[0];
+    const second = await call("POST", "/api/drinks", { cookie, body: { kind: "favorite", id: fav.id } });
+    expect(second.status).toBe(201);
+    expect(((await second.json()) as any).description).toBe(logged.description);
+    expect(services.drinks.since(alice.id, 0)).toHaveLength(2);
+
+    expect((await call("DELETE", `/api/favorites/${fav.id}`, { cookie })).status).toBe(200);
+    expect((await call("DELETE", `/api/favorites/${fav.id}`, { cookie })).status).toBe(404);
+    expect((await call("POST", "/api/drinks", { cookie, body: { kind: "favorite", id: fav.id } })).status).toBe(404);
+  });
+
+  test("are one's own: another account can neither pin nor log them", async () => {
+    const { call, alice, bob, cookieOf } = world();
+    const a = cookieOf(alice.id);
+    const b = cookieOf(bob.id);
+    const logged = (await (await call("POST", "/api/drinks", { cookie: a, body: { kind: "preset", id: "b33a" } })).json()) as any;
+    const fav = ((await (await call("POST", "/api/favorites", { cookie: a, body: { drinkId: logged.id } })).json()) as any).favorites[0];
+    expect((await call("POST", "/api/favorites", { cookie: b, body: { drinkId: logged.id } })).status).toBe(404);
+    expect((await call("POST", "/api/drinks", { cookie: b, body: { kind: "favorite", id: fav.id } })).status).toBe(404);
+    expect((await call("DELETE", `/api/favorites/${fav.id}`, { cookie: b })).status).toBe(404);
+  });
+
+  test("at most eight", async () => {
+    const { call, alice, cookieOf, services } = world();
+    const cookie = cookieOf(alice.id);
+    for (let i = 0; i < 9; i++) {
+      const d = services.drinks.add(alice.id, 10_000 + i, `Juoma ${i}`);
+      const r = (await (await call("POST", "/api/favorites", { cookie, body: { drinkId: d.id } })).json()) as any;
+      expect(r.result).toBe(i < 8 ? "added" : "full");
+    }
+  });
+});
+
+describe("API: backdated drinks", () => {
+  test("a drink can be dated up to a week back, not further and not ahead", async () => {
+    const { call, alice, cookieOf, clock } = world();
+    const cookie = cookieOf(alice.id);
+    const log = (at: unknown) => call("POST", "/api/drinks", { cookie, body: { kind: "preset", id: "b33a", at } });
+    const ok = await log(clock.now - 2 * HOUR_MS);
+    expect(ok.status).toBe(201);
+    expect(((await ok.json()) as any).createdAt).toBe(clock.now - 2 * HOUR_MS);
+    expect((await log(clock.now - 8 * 24 * HOUR_MS)).status).toBe(422);
+    expect((await log(clock.now + HOUR_MS)).status).toBe(422);
+    expect((await log("yesterday")).status).toBe(422);
+    expect((await log(1.5)).status).toBe(422);
+    // a few seconds ahead (clock drift between browser and server) is the present
+    expect(((await (await log(clock.now + 5_000)).json()) as any).createdAt).toBe(clock.now);
+  });
+
+  test("works for repeat and favourites too", async () => {
+    const { call, alice, cookieOf, clock } = world();
+    const cookie = cookieOf(alice.id);
+    const first = (await (await call("POST", "/api/drinks", { cookie, body: { kind: "preset", id: "b33a" } })).json()) as any;
+    const fav = ((await (await call("POST", "/api/favorites", { cookie, body: { drinkId: first.id } })).json()) as any).favorites[0];
+    const at = clock.now - 3 * HOUR_MS;
+    expect(((await (await call("POST", "/api/drinks", { cookie, body: { kind: "repeat", at } })).json()) as any).createdAt).toBe(at);
+    expect(((await (await call("POST", "/api/drinks", { cookie, body: { kind: "favorite", id: fav.id, at: at - 1 } })).json()) as any).createdAt).toBe(at - 1);
+  });
+});
+
+describe("API: the account's data", () => {
+  const unzip = (bytes: Uint8Array) => {
+    // Reads the stored entries of our own zip: name → text.
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const out: Record<string, string> = {};
+    let at = 0;
+    while (view.getUint32(at, true) === 0x04034b50) {
+      const size = view.getUint32(at + 18, true);
+      const nameLength = view.getUint16(at + 26, true);
+      const name = new TextDecoder().decode(bytes.subarray(at + 30, at + 30 + nameLength));
+      const data = bytes.subarray(at + 30 + nameLength, at + 30 + nameLength + size);
+      expect(Bun.hash.crc32(data)).toBe(view.getUint32(at + 14, true));
+      out[name] = new TextDecoder().decode(data);
+      at += 30 + nameLength + size;
+    }
+    return out;
+  };
+
+  test("export is a zip of the CSV files, importable again", async () => {
+    const { call, alice, cookieOf, services } = world();
+    const cookie = cookieOf(alice.id);
+    await call("POST", "/api/drinks", { cookie, body: { kind: "preset", id: "b33a" } });
+    const res = await call("GET", "/api/account/export", { cookie });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/zip");
+    expect(res.headers.get("content-disposition")).toMatch(/^attachment; filename="blakkiskili-\d{4}-\d\d-\d\d\.zip"$/);
+    const files = unzip(new Uint8Array(await res.arrayBuffer()));
+    expect(Object.keys(files)).toEqual(expect.arrayContaining(["user.csv", "drinks.csv", "groups.csv"]));
+    expect(files["user.csv"]).toContain(legacyHash(1));
+    expect(files["drinks.csv"]).toContain(legacyHash(1));
+
+    // the same files go back in (drinks are already there)
+    const back = (await (await call("POST", "/api/account/import", { cookie, text: files["drinks.csv"]! })).json()) as any;
+    expect(back.ok).toBe(true);
+    expect(back.message).toContain("1 oli jo tallessa");
+    expect(services.drinks.since(alice.id, 0)).toHaveLength(1);
+  });
+
+  test("export needs a session", async () => {
+    const { call } = world();
+    expect((await call("GET", "/api/account/export")).status).toBe(401);
+  });
+
+  test("import takes the old bot's files, and only the person's own", async () => {
+    const { call, alice, cookieOf, services } = world();
+    const cookie = cookieOf(alice.id);
+    const drinks = (userid: string) =>
+      toCsv(["id", "userid", "alcohol", "description", "created"], [{ id: 1, userid, alcohol: 12379, description: "🍺 33cl 4.7%", created: new Date("2024-05-01T18:30:00Z") }]);
+
+    const foreign = (await (await call("POST", "/api/account/import", { cookie, text: drinks(legacyHash(2)) })).json()) as any;
+    expect(foreign.ok).toBe(false);
+    expect(foreign.message).toContain("ei ole sinun");
+    expect(services.drinks.since(alice.id, 0)).toHaveLength(0);
+
+    const mine = (await (await call("POST", "/api/account/import", { cookie, text: drinks(legacyHash(1)) })).json()) as any;
+    expect(mine).toMatchObject({ ok: true });
+    expect(mine.message).toContain("1 juomaa lisätty");
+    expect(services.drinks.since(alice.id, 0)).toHaveLength(1);
+
+    const junk = (await (await call("POST", "/api/account/import", { cookie, text: "a,b\n1,2\n" })).json()) as any;
+    expect(junk.ok).toBe(false);
+  });
+
+  test("import rejects an oversized file", async () => {
+    const { call, alice, cookieOf } = world();
+    const res = await call("POST", "/api/account/import", { cookie: cookieOf(alice.id), text: "x".repeat(10 * 1024 * 1024 + 1) });
+    expect(res.status).toBe(413);
+  });
+
+  test("deleting the account removes everything and signs out", async () => {
+    const { call, alice, bob, cookieOf, services } = world();
+    const cookie = cookieOf(alice.id);
+    await call("POST", "/api/drinks", { cookie, body: { kind: "preset", id: "b33a" } });
+    expect((await call("DELETE", "/api/account", { cookie })).status).toBe(400); // no confirmation
+    expect(services.accounts.get(alice.id)).not.toBeNull();
+
+    const res = await call("DELETE", "/api/account", { cookie, body: { confirm: true } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("set-cookie")).toContain("Max-Age=0");
+    expect(services.accounts.get(alice.id)).toBeNull();
+    expect(services.drinks.since(alice.id, 0)).toHaveLength(0);
+    expect((await call("GET", "/api/me", { cookie })).status).toBe(401);
+    expect(services.accounts.get(bob.id)).not.toBeNull();
   });
 });

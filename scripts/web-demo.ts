@@ -13,15 +13,16 @@ import { createServices } from "../src/services/index.ts";
 import { Products } from "../src/services/products.ts";
 import { Barcodes } from "../src/services/barcodes.ts";
 import { startWebServer } from "../src/web/server.ts";
-import type { Config } from "../src/config.ts";
+import { loadConfig, type Config } from "../src/config.ts";
 
 const port = Number(process.env.DEMO_PORT ?? 8082);
 const origin = `http://localhost:${port}`;
-const config = {
+const config: Config = {
+  ...loadConfig(),
   botToken: "0:demo",
   adminIds: [1], // the demo user, so /admin can be tried
   web: { enabled: true, origin, port, distDir: process.env.WEB_DIST ?? "./web/build" },
-} as Config;
+};
 
 const products = new Products({ url: process.env.ALKOMETRIIKKA_URL ?? "https://alkometriikka.fi/data.minimal.json" });
 await products.refresh().then(() => console.log(`Catalogue: ${products.count} products`)).catch(() => console.log("Catalogue unavailable (offline?): search is empty"));

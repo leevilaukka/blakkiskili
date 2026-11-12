@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { findPreset } from "../src/lib/catalog.ts";
 import { MINUTE_MS } from "../src/lib/units.ts";
 import { startWebServer } from "../src/web/server.ts";
-import type { Config } from "../src/config.ts";
+import { loadConfig, type Config } from "../src/config.ts";
 import { setup, tg } from "./helpers.ts";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -59,7 +59,7 @@ describe("live streams on the real server", () => {
     const link = w.services.screens.create({ groupId: group.id }, alice.id);
     if (link === "limit") throw new Error("unexpected");
 
-    const config = { botToken: "0:x", web: { enabled: true, origin: "http://localhost", port: 0, distDir: "/nonexistent" } } as Config;
+    const config: Config = { ...loadConfig(), botToken: "0:x", web: { enabled: true, origin: "http://localhost", port: 0, distDir: "/nonexistent" } };
     // A 1 s idle timeout and a tick much slower than that: without the timeout switched off for
     // streams, the server hangs up long before the first tick.
     const server = startWebServer({ config, services: w.services, botUsername: "b", idleTimeout: 1, live: { tickMs: 60_000, minGapMs: 10 } });

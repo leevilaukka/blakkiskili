@@ -8,11 +8,14 @@
 import type { BunRequest, Server } from "bun";
 import { RateLimiter } from "../bot/ratelimit.ts";
 import type { WebSession } from "../services/websessions.ts";
+import { accountRoutes } from "./api/account.ts";
 import { adminRoutes } from "./api/admin.ts";
 import { authRoutes } from "./api/auth.ts";
 import { barcodeRoutes } from "./api/barcodes.ts";
 import { Ctx, type Api, type Handler, type Routes, type WebAppOptions } from "./api/context.ts";
+import { docsRoutes } from "./api/docs.ts";
 import { drinkRoutes } from "./api/drinks.ts";
+import { favoriteRoutes } from "./api/favorites.ts";
 import { groupRoutes } from "./api/groups.ts";
 import { sameOrigin } from "./api/guards.ts";
 import { createLive } from "./api/live.ts";
@@ -26,7 +29,7 @@ import { withSecurityHeaders } from "./static.ts";
 
 export type { WebAppOptions } from "./api/context.ts";
 
-const MODULES = [authRoutes, meRoutes, drinkRoutes, productRoutes, barcodeRoutes, groupRoutes, screenRoutes, adminRoutes];
+const MODULES = [authRoutes, meRoutes, accountRoutes, docsRoutes, favoriteRoutes, drinkRoutes, productRoutes, barcodeRoutes, groupRoutes, screenRoutes, adminRoutes];
 
 type BunHandler = (req: BunRequest, server: Server<unknown>) => Promise<Response>;
 

@@ -371,6 +371,9 @@ export const S = {
     button: E.info + " Help",
     title: "Help",
     on_select: "Missä tarvitset apua?",
+    // First paragraph of the website's help page: the texts are the bot's.
+    web_note:
+      "Tämä ohje on sama kuin botin Help-valikossa. Komennot, kuten /data tai /nimeton, ovat Telegramin komentoja: verkkosivulla samat toiminnot löytyvät Juo-, Päiväkirja-, Ryhmät- ja Asetukset-sivuilta.",
     general: {
       button: "Yleistä",
       title: "Help: Yleistä",

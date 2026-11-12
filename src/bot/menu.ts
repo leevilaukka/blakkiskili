@@ -4,7 +4,7 @@
 // Copyright (C) 2017 Joonas Ulmanen, GPL-3.0-or-later; ported and modified November 2026.
 
 import type { BotContext } from "./context.ts";
-import { contactExtras, displayName, fullName, isAdmin, retentionText, termsHtml, webPrivacyText } from "./context.ts";
+import { contactExtras, displayName, fullName, isAdmin, privacyHtml, retentionText, termsHtml, webPrivacyText } from "./context.ts";
 import { back, btn, editView, sendExport, type View } from "./ui.ts";
 import { PLATFORM_NAMES, S, randomDrinkResponse } from "../strings.ts";
 import { formatLinkCode, LINK_CODE_TTL_MS } from "../services/identities.ts";
@@ -904,12 +904,7 @@ const NODES: Record<string, Handler> = {
     ],
   }),
   hg: () => textNode(S.help.general.title, S.help.general.text, "h"),
-  hp: (ctx) =>
-    textNode(
-      S.help.privacy.title,
-      fmt(S.help.privacy.text, { ...contactExtras(ctx.kili.config), retention: retentionText(ctx.kili.config), web: webPrivacyText(ctx.kili.config) }),
-      "h",
-    ),
+  hp: (ctx) => textNode(S.help.privacy.title, privacyHtml(ctx.kili.config), "h"),
   hf: () => ({
     text: header(S.help.faq.title) + S.help.faq.on_select,
     keyboard: [

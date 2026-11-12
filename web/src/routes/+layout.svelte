@@ -13,6 +13,8 @@
   const onLogin = $derived(page.url.pathname === "/login");
   // Event screens are opened by a link and need no account.
   const onScreen = $derived(page.url.pathname === "/screen");
+  // The help, terms and privacy texts can be read before signing in.
+  const onDocs = $derived(["/help", "/terms", "/privacy"].includes(page.url.pathname));
 
   // The logo is the way home, as on Alkometriikka; these are the header buttons after it.
   const nav: { href: string; label: string; icon: IconName }[] = [
@@ -41,7 +43,7 @@
 
   // Signed out (first load, expired session or logout): the only page is the sign-in.
   $effect(() => {
-    if (session.ready && !session.me && !onLogin && !onScreen && !session.offline) goto("/login", { replaceState: true });
+    if (session.ready && !session.me && !onLogin && !onScreen && !onDocs && !session.offline) goto("/login", { replaceState: true });
   });
 
   async function logout() {
@@ -74,7 +76,7 @@
 
 {#if !session.ready}
   <p class="page muted">Ladataan…</p>
-{:else if session.offline && !session.me && !onLogin && !onScreen}
+{:else if session.offline && !session.me && !onLogin && !onScreen && !onDocs}
   <p class="page error">Yhteys palvelimeen ei toimi. Päivitä sivu hetken päästä.</p>
 {:else}
   {@render children()}
@@ -83,7 +85,12 @@
 {#if !onScreen && session.ready}
   <footer class="foot">
     <span>Promillet ovat laskennallisia arvioita, eivät mittaustulos.</span>
-    <span>Tuotetiedot: <a href="https://alkometriikka.fi" rel="noopener">Alkometriikka</a></span>
+    <span class="links">
+      <a href="/help">Ohje</a>
+      <a href="/terms">Käyttöehdot</a>
+      <a href="/privacy">Yksityisyys</a>
+      <span>Tuotetiedot: <a href="https://alkometriikka.fi" rel="noopener">Alkometriikka</a></span>
+    </span>
   </footer>
 {/if}
 
@@ -166,6 +173,11 @@
     border-top: 1px solid var(--border-soft);
     color: var(--text-muted);
     font-size: 0.86rem;
+  }
+  .links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1.5rem;
   }
   .foot a {
     color: inherit;

@@ -3,7 +3,7 @@
 import { findPreset } from "../../lib/catalog.ts";
 import { customCatalogDrink, eanOfCustomDrinkId, isAlkoProductId, resolveServing, servingDescription, type CatalogDrink } from "../../lib/servings.ts";
 import { buildChartData } from "../../lib/chart.ts";
-import { alcoholMgFromClPercent, HOUR_MS, isAlcoholAmountOutOfLimits, toStandardDrinks } from "../../lib/units.ts";
+import { alcoholMgFromClPercent, HOUR_MS, isAlcoholAmountOutOfLimits, MINUTE_MS, toStandardDrinks } from "../../lib/units.ts";
 import { chartLabel } from "../../services/accounts.ts";
 import { EBAC_WINDOW_MS, type DrinkCursor, type DrinkFilter } from "../../services/drinks.ts";
 import type { DrinkLog, LogDrinkRequest } from "../../../shared/api.ts";
@@ -16,9 +16,11 @@ const LOG_PAGE = 100;
 /** A session is a run of drinks with pauses under 6 h; this keeps a request from asking for months of samples. */
 const MAX_SESSION_CHART_MS = 7 * 24 * HOUR_MS;
 const LOG_PAGE_MAX = 200;
+/** How far back a forgotten drink may be dated (the estimate only looks 3 days back anyway). */
+const MAX_BACKDATE_MS = 7 * 24 * HOUR_MS;
 
 export function drinkRoutes({ services }: Api): Routes {
-  const { drinks } = services;
+  const { drinks, favorites } = services;
 
   return {
     "/api/drinks": { GET: user(logbook), POST: user(logDrink) },
@@ -62,11 +64,20 @@ export function drinkRoutes({ services }: Api): Routes {
     if (!data) return fail(400, "bad_request");
     const id = c.user.id;
     const r = data as unknown as LogDrinkRequest;
+    // A forgotten drink: dated now by default, at most a week back, never ahead of the clock.
+    let at: number | undefined;
+    if (r.at !== undefined) {
+      const t = services.deps.now();
+      if (typeof r.at !== "number" || !Number.isSafeInteger(r.at) || r.at < t - MAX_BACKDATE_MS || r.at > t + MINUTE_MS) {
+        return fail(422, "invalid_time");
+      }
+      at = Math.min(r.at, t);
+    }
     switch (r.kind) {
       case "preset": {
         const preset = typeof r.id === "string" ? findPreset(r.id) : undefined;
         if (!preset) return fail(404, "unknown_preset");
-        return json(toItem(drinks.add(id, preset.mg, preset.name, { kcal: preset.kcal })), 201);
+        return json(toItem(drinks.add(id, preset.mg, preset.name, { at, kcal: preset.kcal })), 201);
       }
       case "product": {
         const drink = typeof r.productId === "string" ? findDrink(r.productId) : undefined;
@@ -74,6 +85,7 @@ export function drinkRoutes({ services }: Api): Routes {
         if (!drink || !serving) return fail(404, "unknown_product");
         const added = drinks.add(id, serving.mg, servingDescription(drink, serving), {
           // drinks.product_id is an Alko product number; user-added products have none.
+          at,
           productId: isAlkoProductId(serving.productId) ? serving.productId : null,
           kcal: serving.kcal,
         });
@@ -87,13 +99,18 @@ export function drinkRoutes({ services }: Api): Routes {
         }
         const mg = alcoholMgFromClPercent(cl, percent);
         if (isAlcoholAmountOutOfLimits(mg)) return fail(422, "too_much");
-        return json(toItem(drinks.add(id, mg, `Oma juoma - ${cl}cl ${percent}%`)), 201);
+        return json(toItem(drinks.add(id, mg, `Oma juoma - ${cl}cl ${percent}%`, { at })), 201);
       }
       case "repeat": {
         const last = drinks.last(id);
         if (!last) return fail(404, "nothing_to_repeat");
-        const added = drinks.add(id, last.alcoholMg, last.description, { productId: last.productId, kcal: last.kcal });
+        const added = drinks.add(id, last.alcoholMg, last.description, { at, productId: last.productId, kcal: last.kcal });
         return json(toItem(added), 201);
+      }
+      case "favorite": {
+        const fav = typeof r.id === "number" ? favorites.get(id, r.id) : null;
+        if (!fav) return fail(404, "not_found");
+        return json(toItem(drinks.add(id, fav.alcoholMg, fav.description, { at, productId: fav.productId, kcal: fav.kcal })), 201);
       }
       default:
         return fail(400, "bad_request");

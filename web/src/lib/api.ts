@@ -10,7 +10,11 @@ import type {
   CustomProductRequest,
   Dashboard,
   DrinkItem,
+  DocBlock,
+  DocPage,
   DrinkLog,
+  Favorites,
+  ImportOutcome,
   GroupSummary,
   GroupView,
   LogDrinkRequest,
@@ -45,8 +49,22 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return data as T;
 }
 
+/** POST of a raw text body (an imported CSV file). */
+async function postText<T>(path: string, text: string): Promise<T> {
+  const res = await fetch(path, { method: "POST", credentials: "same-origin", headers: { "content-type": "text/csv", "x-kili": "1" }, body: text });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, typeof data?.error === "string" ? data.error : "error");
+  return data as T;
+}
+
 export const api = {
   config: () => request<Config>("GET", "/api/config"),
+  docs: (page: DocPage) => request<{ blocks: DocBlock[] }>("GET", `/api/docs/${page}`),
+  favorites: () => request<Favorites>("GET", "/api/favorites"),
+  pinFavorite: (drinkId: number) => request<Favorites>("POST", "/api/favorites", { drinkId }),
+  unpinFavorite: (id: number) => request<Favorites>("DELETE", `/api/favorites/${id}`),
+  importFile: (text: string) => postText<ImportOutcome>("/api/account/import", text),
+  deleteAccount: () => request<{ ok: true }>("DELETE", "/api/account", { confirm: true }),
   me: () => request<Me>("GET", "/api/me"),
   patchMe: (changes: Partial<Pick<Me, "chartName" | "weight" | "height" | "gender">>) => request<Me>("PATCH", "/api/me", changes),
   dashboard: () => request<Dashboard>("GET", "/api/dashboard"),
@@ -146,6 +164,9 @@ export function errorText(e: unknown): string {
     not_allowed: "Vain tuotteen lisääjä tai ylläpitäjä voi muuttaa sitä.",
     invalid_report: "Kirjoita viesti, enintään 300 merkkiä.",
     too_many_reports: "Sinulla on jo monta käsittelemätöntä ilmoitusta. Kokeile uudelleen, kun ylläpitäjät ovat käsitelleet niitä.",
+    invalid_time: "Ajan pitää olla enintään viikon takaa, eikä tulevaisuudessa.",
+    no_telegram: "Tälle tunnukselle ei löydy Telegram-kirjautumista, jota tietojen lataus ja tuonti tarvitsevat.",
+    too_big: "Tiedosto on liian suuri.",
     network: "Yhteys palvelimeen ei toimi.",
   };
   return texts[code] ?? "Jokin meni pieleen. Yritä uudelleen.";

@@ -6,6 +6,7 @@
   import { clock, decimal1 } from "#lib/format.ts";
   import Chart from "#lib/Chart.svelte";
   import Icon from "#lib/Icon.svelte";
+  import TextField from "#lib/TextField.svelte";
 
   // The filters live in the address (?range=&from=&to=&q=), so a view can be bookmarked and
   // survives a reload. Days are the browser's: the API takes plain timestamps.
@@ -140,6 +141,23 @@
     }
   }
 
+  let notice = $state("");
+
+  async function pin(d: DrinkItem) {
+    busy = true;
+    error = "";
+    try {
+      const r = await api.pinFavorite(d.id);
+      notice =
+        r.result === "added" ? `Lisätty suosikkeihin: ${d.description}` : r.result === "exists" ? "Tämä on jo suosikeissa." : `Suosikkeja voi olla enintään ${r.max}. Poista ensin joku Juo-sivulla.`;
+    } catch (e) {
+      error = errorText(e);
+      notice = "";
+    } finally {
+      busy = false;
+    }
+  }
+
   async function remove(d: DrinkItem) {
     if (!confirm(`Poistetaanko ${d.description} (${dateLabel(d.createdAt)} klo ${clock(d.createdAt)})?`)) return;
     busy = true;
@@ -223,10 +241,10 @@
       {#if range === "custom"}
         <div class="dates">
           <label class="field">Alkaen
-            <input type="date" value={fromDay} max={toDay || undefined} onchange={(e) => setParams({ from: e.currentTarget.value || undefined })} />
+            <TextField kind="date" value={fromDay} max={toDay || undefined} label="Alkaen (pp.kk.vvvv)" onchange={(v) => setParams({ from: v || undefined })} />
           </label>
           <label class="field">Asti
-            <input type="date" value={toDay} min={fromDay || undefined} onchange={(e) => setParams({ to: e.currentTarget.value || undefined })} />
+            <TextField kind="date" value={toDay} min={fromDay || undefined} label="Asti (pp.kk.vvvv)" onchange={(v) => setParams({ to: v || undefined })} />
           </label>
         </div>
       {/if}
@@ -238,6 +256,7 @@
     </section>
 
     {#if error}<p class="error" role="alert">{error}</p>{/if}
+    {#if notice}<p class="notice" role="status"><Icon name="check" /> <span>{notice}</span></p>{/if}
 
     {#if totals}
       <div class="stats" aria-live="polite">
@@ -280,6 +299,9 @@
                 <span class="time">{clock(d.createdAt)}</span>
                 <span class="desc">{d.description}</span>
                 <span class="muted num">{decimal1(d.standardDrinks)} ann.</span>
+                <button class="btn ghost small icon" disabled={busy} onclick={() => pin(d)} aria-label="Lisää suosikiksi: {d.description}" title="Lisää suosikiksi">
+                  <Icon name="star" />
+                </button>
                 <button class="btn ghost small icon" disabled={busy} onclick={() => remove(d)} aria-label="Poista {d.description}" title="Poista">
                   <Icon name="trash" />
                 </button>
@@ -399,7 +421,7 @@
   }
   .drinks li {
     display: grid;
-    grid-template-columns: 3rem 1fr auto auto;
+    grid-template-columns: 3rem 1fr auto auto auto;
     gap: 0.6rem;
     align-items: center;
     padding: 0.4rem 0;
