@@ -14,7 +14,7 @@ export function productRoutes({ services, photos }: Api): Routes {
         if (!products.ready) return json({ products: [] });
         const q = (c.url.searchParams.get("q") ?? "").slice(0, 80).trim();
         const recent = services.drinks.recentProductIds(c.user.id, 20);
-        const found = q ? products.search(q, 8, recent) : products.drinksFor(recent, 8);
+        const found = q ? products.search(q, 8, recent, services.customProducts.drinks()) : products.drinksFor(recent, 8);
         return json({ products: found.map(toProduct) });
       }),
     },

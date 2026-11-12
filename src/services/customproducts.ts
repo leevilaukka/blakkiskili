@@ -4,7 +4,7 @@
 // everyone else can report an error to the admins (custom_product_reports).
 
 import { normalizeEan } from "../lib/ean.ts";
-import { customCatalogDrink, isCustomKind, type CustomKind, type CustomProductData } from "../lib/servings.ts";
+import { customCatalogDrink, isCustomKind, type CatalogDrink, type CustomKind, type CustomProductData } from "../lib/servings.ts";
 import type { Deps } from "./index.ts";
 
 export interface CustomProduct extends CustomProductData {
@@ -142,6 +142,11 @@ export class CustomProducts {
     return (
       this.deps.db.query("SELECT * FROM custom_products ORDER BY updated_at DESC, ean LIMIT ?").all(limit) as Row[]
     ).map(fromRow);
+  }
+
+  /** Every user-added product as a catalogue drink, for searching alongside the Alko catalogue. */
+  drinks(): CatalogDrink[] {
+    return (this.deps.db.query("SELECT * FROM custom_products LIMIT 5000").all() as Row[]).map((r) => customCatalogDrink(fromRow(r)));
   }
 
   count(): number {

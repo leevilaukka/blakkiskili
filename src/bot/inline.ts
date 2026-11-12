@@ -15,6 +15,7 @@ import { escapeHtml } from "../lib/format.ts";
 import {
   customServing,
   emojiFor,
+  isAlkoProductId,
   resolveServing,
   servingDescription,
   servingFacts,
@@ -43,7 +44,10 @@ export function inlineResults(drinks: readonly CatalogDrink[], litres?: number):
   for (const d of drinks) {
     if (results.length >= MAX_RESULTS) return results;
     const title = `${emojiFor(d.product)} ${d.name}`;
-    const thumb = { thumbnail_url: thumbnailUrl(d.product.id), thumbnail_width: 160, thumbnail_height: 192 };
+    // User-added products have no Alko photo.
+    const thumb = isAlkoProductId(d.id)
+      ? { thumbnail_url: thumbnailUrl(d.product.id), thumbnail_width: 160, thumbnail_height: 192 }
+      : {};
     if (litres === undefined) {
       results.push({
         type: "article",
@@ -94,7 +98,7 @@ export function registerInline(bot: Bot<BotContext>, opts: InlineOptions = {}) {
 
     const recent = services.drinks.recentProductIds(profile.id, 10);
     const { query, litres } = splitAmount(q);
-    const found = query ? services.products.search(query, MAX_PRODUCTS, recent) : services.products.drinksFor(recent, MAX_PRODUCTS);
+    const found = query ? services.products.search(query, MAX_PRODUCTS, recent, services.customProducts.drinks()) : services.products.drinksFor(recent, MAX_PRODUCTS);
     await answer(inlineResults(found, litres));
   });
 

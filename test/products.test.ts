@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { normalize, parseCatalog, Products } from "../src/services/products.ts";
 import {
+  customCatalogDrink,
   cleanName,
   customServing,
   packCount,
@@ -197,6 +198,15 @@ describe("search", () => {
 
   test("normalisation: case, diacritics, decimal commas", () => {
     expect(normalize("Château KARHU 4,6%")).toBe("chateau karhu 4.6");
+  });
+
+  test("extra drinks (user-added products) are searched with the catalogue, by name or barcode", () => {
+    const own = customCatalogDrink({ ean: "6410405060304", kind: "olut", name: "Kotipanimo Karhu IPA", sizeL: 0.33, abv: 5.5, kcal100: null });
+    const found = loaded().search("karhu", 8, [], [own]).map((d) => d.id);
+    expect(found).toContain("e6410405060304");
+    expect(found).toContain("700050"); // Alko products still there
+    expect(loaded().search("641040", 8, [], [own]).map((d) => d.id)).toEqual(["e6410405060304"]);
+    expect(loaded().search("kotipanimo").map((d) => d.id)).toEqual([]); // not without the extras
   });
 
   test("prefix match on every word, one result per drink regardless of packaging or size", () => {

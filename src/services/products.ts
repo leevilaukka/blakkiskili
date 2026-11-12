@@ -243,7 +243,7 @@ export class Products {
    * starts with the query, exact word matches, the user's recent drinks, Alko's standard
    * selection, active status, shorter (more generic) names.
    */
-  search(query: string, limit = 8, recentProductIds: readonly string[] = []): CatalogDrink[] {
+  search(query: string, limit = 8, recentProductIds: readonly string[] = [], extra: readonly CatalogDrink[] = []): CatalogDrink[] {
     const q = normalize(query);
     if (!q) return [];
     const recent = new Map<Indexed, number>();
@@ -251,9 +251,14 @@ export class Products {
       const x = this.byId.get(id);
       if (x && !recent.has(x)) recent.set(x, recentProductIds.length - i);
     });
+    // Extra drinks (user-added products) are ranked with the catalogue; their barcode is searchable too.
+    const extras = extra.map((drink): Indexed => {
+      const words = normalize(`${drink.name} ${drink.product.maker ?? ""} ${drink.product.ean ?? ""}`).split(" ");
+      return { drink, tokens: [...new Set(words.filter(Boolean))], name: normalize(drink.name), removed: false };
+    });
     const best = new Map<Indexed, number>();
     for (const variant of this.variants(q)) {
-      for (const { x, score } of this.score(variant, recent)) best.set(x, Math.max(best.get(x) ?? -Infinity, score));
+      for (const { x, score } of this.score(variant, recent, extras)) best.set(x, Math.max(best.get(x) ?? -Infinity, score));
     }
     return [...best]
       .sort((a, b) => b[1] - a[1])
@@ -282,10 +287,10 @@ export class Products {
     return [...new Set(out)];
   }
 
-  private score(q: string, recent: Map<Indexed, number>): { x: Indexed; score: number }[] {
+  private score(q: string, recent: Map<Indexed, number>, extras: Indexed[]): { x: Indexed; score: number }[] {
     const words = q.split(" ").filter(Boolean);
     const scored: { x: Indexed; score: number }[] = [];
-    for (const x of this.list) {
+    for (const x of [...this.list, ...extras]) {
       let score = 0;
       let ok = true;
       for (const w of words) {
