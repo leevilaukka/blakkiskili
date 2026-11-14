@@ -229,9 +229,9 @@
             <ul class="mt-3">
               {#each view.screens as s (s.ref)}
                 <li class="flex items-center justify-between gap-2 border-t border-line py-1.5">
-                  <span>Näyttölinkki · {s.mine ? "oma" : (s.createdBy ?? "entinen jäsen")} · voimassa {dayClock(s.expiresAt, view.now)}</span>
+                  <span class="min-w-0 wrap-anywhere">Näyttölinkki · {s.mine ? "oma" : (s.createdBy ?? "entinen jäsen")} · voimassa {dayClock(s.expiresAt, view.now)}</span>
                   {#if s.mine || view.group.isOwner || view.isTelegramAdmin}
-                    <button class="btn btn-sm" disabled={busy} onclick={() => revokeScreen(s.ref)}>Peru</button>
+                    <button class="btn btn-sm shrink-0" disabled={busy} onclick={() => revokeScreen(s.ref)}>Peru</button>
                   {/if}
                 </li>
               {/each}
