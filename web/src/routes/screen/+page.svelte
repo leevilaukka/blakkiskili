@@ -142,7 +142,38 @@
 
     let source: EventSource | undefined;
     let stopped = false;
-    let wakeLock: { release(): Promise<void> } | undefined;
+    let wakeLock: WakeLockSentinel | undefined;
+    let wakeLockPending = false;
+
+    // Keep the display awake while it is showing the chart (where the browser allows it). The
+    // browser releases the lock whenever the page is hidden (another tab, the screen turned off,
+    // the TV's browser in the background), so it is asked for again each time the page is shown.
+    const showing = () => !stopped && status !== "ended" && !!view;
+    async function keepAwake() {
+      if (!showing() || wakeLock || wakeLockPending) return;
+      if (document.visibilityState !== "visible" || !("wakeLock" in navigator)) return;
+      wakeLockPending = true;
+      try {
+        const lock = await navigator.wakeLock.request("screen");
+        if (!showing()) {
+          lock.release().catch(() => {});
+          return;
+        }
+        wakeLock = lock;
+        lock.addEventListener("release", () => {
+          if (wakeLock === lock) wakeLock = undefined;
+        });
+      } catch {
+        // not allowed (e.g. battery saver) or not supported
+      } finally {
+        wakeLockPending = false;
+      }
+    }
+    function letSleep() {
+      wakeLock?.release().catch(() => {});
+      wakeLock = undefined;
+    }
+    document.addEventListener("visibilitychange", keepAwake);
 
     function listen() {
       source = new EventSource("/api/screen/events");
@@ -153,6 +184,7 @@
       source.addEventListener("end", () => {
         source?.close();
         status = "ended";
+        letSleep();
       });
       source.onerror = async () => {
         if (status === "live") status = "reconnecting";
@@ -162,6 +194,7 @@
           if (e instanceof ApiError && (e.status === 401 || e.status === 404)) {
             source?.close();
             status = "ended";
+            letSleep();
           }
         }
       };
@@ -200,17 +233,15 @@
       view = first;
       status = "live";
       if (!stopped) listen();
-      // Keep the display awake while it is showing the chart (where the browser allows it).
-      try {
-        wakeLock = await (navigator as any).wakeLock?.request("screen");
-      } catch {}
+      keepAwake();
     }
     start();
 
     return () => {
       stopped = true;
       source?.close();
-      wakeLock?.release().catch(() => {});
+      document.removeEventListener("visibilitychange", keepAwake);
+      letSleep();
       document.documentElement.removeAttribute("data-bg");
     };
   });
