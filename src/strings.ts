@@ -463,6 +463,10 @@ export const S = {
       platform_taken: "Tunnukseen on jo yhdistetty toinen Telegram-tili. Irrota se ensin tunnuksen asetuksista.",
     },
     web: "Tästä linkistä pääset kirjautumaan verkkosivulle: {link}\n\nLinkki toimii kerran ja vanhenee {minutes} minuutissa. Älä jaa sitä muille: sillä pääsee tunnukseesi.",
+    web_group: {
+      text: "Ryhmän {chat_title} sivu verkossa: {link}\n\nSivu näkyy vain ryhmän jäsenille.{join} Jos et ole vielä kirjautunut verkkosivulle, lähetä minulle privaviestinä /web, niin saat kirjautumislinkin. Avaa sen jälkeen tämä linkki uudelleen.",
+      join: " Liity ensin ryhmään komennolla /moro.",
+    },
     admin_stats:
       "Tilastoja:\nKäyttäjiä on yhteensä {users}kpl, joista 14pv sisällä aktiivisia {active14}, ja 7pv sisällä aktiivisia {active7}.\nRyhmiä on yhteensä {groups}kpl, joista 14pv sisällä aktiivisia {groups14}, ja 7pv sisällä aktiivisia {groups7}. Lisäksi kaikki käyttäjät ovat yhteensä tilastoineet {drinks} juomaa.\nTop10 tilastot:\n\n{list}",
     help:

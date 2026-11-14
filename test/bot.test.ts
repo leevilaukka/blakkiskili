@@ -901,6 +901,27 @@ describe("/web", () => {
     expect(reply).not.toContain("<a ");
   });
 
+  test("in a group, links to the group's page and tells how to sign in", async () => {
+    const h = harness(undefined, [], undefined, { web: { enabled: true, origin: "https://kili.test", port: 0, distDir: "" } });
+    const G = { id: -100888, title: "Sauna & co" };
+    expect(textOf(await h.send(7004, "/web", G))).toContain("/start"); // needs an account
+    await registerUser(h, 7004);
+
+    const groupId = h.services.deps.crypto.groupKey(G.id);
+    const before = textOf(await h.send(7004, "/web", G));
+    expect(before).toContain(`href="https://kili.test/groups/${groupId}"`);
+    expect(before).toContain("Sauna &amp; co");
+    expect(before).toContain("/moro"); // not a member yet
+    expect(before).toContain("privaviestinä /web");
+    expect(before).not.toContain("login#t="); // never a login link in a group
+
+    await h.send(7004, "/moro", G);
+    const after = textOf(await h.send(7004, "/web", G));
+    expect(after).toContain(`/groups/${groupId}`);
+    expect(after).not.toContain("/moro");
+    expect(h.services.groups.get(groupId)).toBeDefined(); // the link leads to a group that exists
+  });
+
   test("the privacy text describes the website only while it is on", async () => {
     const on = harness(undefined, [], undefined, { web: { enabled: true, origin: "https://kili.test", port: 0, distDir: "" } });
     const privacyOn = textOf(await on.press(7010, "m:hp"));

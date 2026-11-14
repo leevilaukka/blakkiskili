@@ -6,7 +6,7 @@
   import { onMount } from "svelte";
   import { api, ApiError } from "#lib/api.ts";
   import Icon, { type IconName } from "#lib/Icon.svelte";
-  import { session } from "#lib/session.svelte.ts";
+  import { rememberReturn, session, takeReturn } from "#lib/session.svelte.ts";
 
   let { children } = $props();
 
@@ -45,13 +45,17 @@
 
   // Signed out (first load, expired session or logout): the only page is the sign-in.
   $effect(() => {
-    if (session.ready && !session.me && !onLogin && !onScreen && !onDocs && !session.offline) goto("/login", { replaceState: true });
+    if (session.ready && !session.me && !onLogin && !onScreen && !onDocs && !session.offline) {
+      rememberReturn(page.url.pathname);
+      goto("/login", { replaceState: true });
+    }
   });
 
   async function logout() {
     await api.logout().catch(() => {});
     session.me = null;
-    goto("/login");
+    await goto("/login");
+    takeReturn(); // the redirect above kept the page logged out from; the next sign-in starts at home
   }
 </script>
 

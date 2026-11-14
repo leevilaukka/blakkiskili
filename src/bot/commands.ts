@@ -257,8 +257,8 @@ export const COMMANDS: CommandDef[] = [
   { name: "data", description: "lataa omat tietosi", scope: "private", needsUser: false, run: (ctx) => sendExport(ctx, ctx.from!.id) },
   { name: "yhdista", description: "yhdistä tunnus toisesta palvelusta koodilla", scope: "private", needsUser: false,
     enabled: (c) => c.accountLinking, run: (ctx, _p, args) => redeemLinkCode(ctx, args) },
-  { name: "web", description: "kirjaudu verkkosivulle", scope: "private", needsUser: true,
-    enabled: (c) => c.web.enabled, run: (ctx, p) => sendWebLogin(ctx, p!) },
+  { name: "web", description: "kirjaudu verkkosivulle tai avaa ryhmän sivu", scope: "all", needsUser: true,
+    enabled: (c) => c.web.enabled, run: (ctx, p) => (isPrivate(ctx) ? sendWebLogin(ctx, p!) : sendGroupPage(ctx, p!)) },
   { name: "whoami", description: "näytä omat tietosi", scope: "private", needsUser: true, run: (ctx, p) =>
       sendHtml(ctx, fmt(S.commands.whoami, { name: p!.name, weight: p!.weight, height: p!.height, gender: p!.gender === "mies" ? S.male : S.female, created: dateTime(p!.createdAt) })) },
   { name: "help", description: "ohjeet", scope: "all", needsUser: false, run: (ctx) =>
@@ -333,12 +333,23 @@ async function redeemLinkCode(ctx: BotContext, args: string) {
 async function sendWebLogin(ctx: BotContext, p: Profile) {
   const { services, config, identityId } = ctx.kili;
   const { token } = services.webSessions.createLoginLink(p.id, identityId);
-  const url = `${config.web.origin}/login#t=${token}`;
-  // Telegram drops links to localhost (and other plain-http hosts) from HTML, which leaves only
-  // the link text. For those (development) show the URL itself, to copy into a browser.
-  const link = url.startsWith("https://") ? raw(`<a href="${escapeHtml(url)}">Avaa Bläkkiskili</a>`) : raw(`<code>${escapeHtml(url)}</code>`);
+  const link = webLink(`${config.web.origin}/login#t=${token}`, "Avaa Bläkkiskili");
   return sendHtml(ctx, fmt(S.commands.web, { link, minutes: LOGIN_LINK_TTL_MS / MINUTE_MS }));
 }
+
+/** /web in a group: a link to the group's page on the website. Signing in is left to /web in private. */
+async function sendGroupPage(ctx: BotContext, p: Profile) {
+  const { services, config } = ctx.kili;
+  const chatId = ctx.chat!.id;
+  const link = webLink(`${config.web.origin}/groups/${services.deps.crypto.groupKey(chatId)}`, "Avaa ryhmän sivu");
+  const t = S.commands.web_group;
+  return sendHtml(ctx, fmt(t.text, { chat_title: chatTitle(ctx), link, join: services.groups.isMember(p.id, chatId) ? "" : t.join }));
+}
+
+// Telegram drops links to localhost (and other plain-http hosts) from HTML, which leaves only the
+// link text. For those (development) show the URL itself, to copy into a browser.
+const webLink = (url: string, text: string) =>
+  url.startsWith("https://") ? raw(`<a href="${escapeHtml(url)}">${escapeHtml(text)}</a>`) : raw(`<code>${escapeHtml(url)}</code>`);
 
 /** Commands shown in Telegram's "/" menu. */
 export function commandMenus(config: Config) {

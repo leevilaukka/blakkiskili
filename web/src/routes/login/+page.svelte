@@ -2,7 +2,7 @@
   import { goto } from "$app/navigation";
   import { onMount } from "svelte";
   import { api, errorText } from "#lib/api.ts";
-  import { session } from "#lib/session.svelte.ts";
+  import { session, takeReturn } from "#lib/session.svelte.ts";
 
   let error = $state("");
   let working = $state(false);
@@ -16,7 +16,8 @@
     try {
       pendingInvite = !!sessionStorage.getItem("kili-invite");
     } catch {}
-    goto(pendingInvite ? "/join" : "/", { replaceState: true });
+    const back = takeReturn();
+    goto(pendingInvite ? "/join" : (back ?? "/"), { replaceState: true });
   }
 
   async function withLink(token: string) {
