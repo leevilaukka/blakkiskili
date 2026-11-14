@@ -798,6 +798,8 @@ describe("static site", () => {
     mkdirSync(join(dir, "_app", "immutable"), { recursive: true });
     writeFileSync(join(dir, "index.html"), html);
     writeFileSync(join(dir, "_app", "immutable", "a.js"), "export {}");
+    writeFileSync(join(dir, "service-worker.js"), "");
+    writeFileSync(join(dir, "manifest.webmanifest"), "{}");
     writeFileSync(join(root, "secret.txt"), "top secret");
     return { dir, site: new StaticSite(dir) };
   }
@@ -820,6 +822,9 @@ describe("static site", () => {
     const asset = await s.serve("/_app/immutable/a.js");
     expect(asset.headers.get("cache-control")).toContain("immutable");
     expect((await s.serve("/missing.js")).status).toBe(404);
+    // PWA: a new service worker is noticed on the next visit; the manifest has its own type.
+    expect((await s.serve("/service-worker.js")).headers.get("cache-control")).toBe("no-cache");
+    expect((await s.serve("/manifest.webmanifest")).headers.get("content-type")).toContain("application/manifest+json");
   });
 
   test("no page may load Telegram's widget (sign-in is a redirect)", async () => {

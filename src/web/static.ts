@@ -81,9 +81,11 @@ export class StaticSite {
       if (!existsSync(file) || !statSync(file).isFile()) return withSecurityHeaders(new Response("Not found", { status: 404 }));
       if (file.endsWith(".html")) return this.page(file, pathname);
       const immutable = rel.includes(`${sep}_app${sep}immutable${sep}`) || rel.includes(`_app${sep}immutable`);
+      // The service worker must be checked for a new version on every visit (also by Cloudflare's edge).
+      const revalidate = rel === `${sep}service-worker.js`;
       return withSecurityHeaders(
         new Response(Bun.file(file), {
-          headers: { "cache-control": immutable ? "public, max-age=31536000, immutable" : "public, max-age=300" },
+          headers: { "cache-control": immutable ? "public, max-age=31536000, immutable" : revalidate ? "no-cache" : "public, max-age=300" },
         }),
       );
     }
