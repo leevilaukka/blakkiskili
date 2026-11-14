@@ -45,13 +45,15 @@
     gap: 0.9rem;
   }
   /* Alko's photos are white-backed bottles; the box stays white in dark mode too, like Alkometriikka's */
+  /* Fills the card's height (stretch); the photo is inset so the bottle doesn't touch the edges */
   .thumb {
     position: relative;
     flex: none;
+    align-self: stretch;
     display: grid;
     place-items: center;
-    width: 3.5rem;
-    height: 4.2rem;
+    width: 4rem;
+    min-height: 4.5rem;
     border-radius: 4px;
     background: #fff;
     overflow: hidden;
@@ -61,9 +63,9 @@
   }
   .thumb img {
     position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
+    inset: 0.4rem;
+    width: calc(100% - 0.8rem);
+    height: calc(100% - 0.8rem);
     object-fit: contain;
     background: #fff;
   }
