@@ -2,7 +2,8 @@
   // Estimated permilles over time, drawn from the API's JSON (the same numbers as the bot's
   // /kuvaaja picture). Past solid, forecast dashed on a light wash, a "nyt" marker, hairline grid
   // and one y axis. Identity is never colour alone: everyone is in the legend with their current
-  // value, and up to four people also get direct labels at the "now" dot.
+  // value, and when at most four people are still above zero, they also get direct labels at the
+  // "now" dot (those back at zero don't, so their names don't crowd the axis).
   //
   // Colours come from classes (series-1..10 set --c to --color-series-n, see app.css), so dark mode
   // swaps in its own validated steps and the page's Content-Security-Policy needs no inline styles.
@@ -114,11 +115,12 @@
     }),
   );
 
-  // Direct labels at the "now" dot (up to four people), pushed apart with leader lines.
-  const direct = $derived(lines.length > 0 && lines.length <= 4);
+  // Direct labels at the "now" dot (up to four people above zero), pushed apart with leader lines.
+  // Someone back at zero keeps their line, dot and legend entry, but not a label.
+  const labelled = $derived(drawn.filter((d) => d.line.current > EPS));
   const labels = $derived.by(() => {
-    if (!direct) return [];
-    const items = drawn
+    if (labelled.length === 0 || labelled.length > 4) return [];
+    const items = labelled
       .map((d) => ({
         d,
         dotY: y(d.line.current),

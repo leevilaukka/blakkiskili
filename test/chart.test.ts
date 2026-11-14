@@ -26,6 +26,13 @@ describe("permille chart", () => {
     expect(r.svg).not.toContain("<tspan"); // no legend entries
   });
 
+  test("a group's chart (named) has a legend with the name even when only one person is on it", () => {
+    const r = buildPermilleChart({ title: "t", series: [person("a", "leevi", [3, 2, 1])], now, named: true })!;
+    expect(r.svg).toContain(">leevi <tspan");
+    const sober = buildPermilleChart({ title: "t", series: [person("a", "leevi", [15])], now, named: true })!;
+    expect(sober.svg).toContain(">leevi <tspan"); // back at zero: no direct label, but still in the legend
+  });
+
   test("names are XML-escaped, and there is a legend with current values", () => {
     const r = buildPermilleChart({ title: "<Kilta & co>", series: [person("a", 'Mörkö & <"Co">', [2]), person("b", "b", [1])], now })!;
     expect(r.svg).toContain("&lt;Kilta &amp; co&gt;");
@@ -49,6 +56,20 @@ describe("permille chart", () => {
     expect(second.svg).toContain("<tspan"); // a short last page still gets a legend
     expect(buildPermilleChart({ title: "t", series, now, page: 99 })!.page).toBe(2); // clamped
     expect(new Set([...names(first), ...names(second)]).size).toBe(13); // nobody twice, nobody lost
+  });
+
+  test("direct labels only for the people still above zero, when at most four are", () => {
+    const direct = (r: { svg: string }) => [...r.svg.matchAll(/paint-order="stroke">([^<]+)</g)].map((m) => m[1]!.split(" ")[0]);
+    const drinking = Array.from({ length: 4 }, (_, i) => person(`u${i}`, `p${i}`, [2, 1]));
+    const sober = person("z", "zero", [15]); // on the chart, back at zero now
+    const r = buildPermilleChart({ title: "t", series: [...drinking, sober], now })!;
+    expect(r.shown).toBe(5);
+    expect(r.svg).toContain(">zero <tspan"); // still in the legend
+    expect(direct(r).sort()).toEqual(["p0", "p1", "p2", "p3"]);
+    // a fifth person above zero: too many for direct labels
+    expect(direct(buildPermilleChart({ title: "t", series: [...drinking, person("u4", "p4", [1]), sober], now })!)).toEqual([]);
+    // alone and at zero: no legend, so the value label stays
+    expect(buildPermilleChart({ title: "t", series: [sober], now })!.svg).toMatch(/paint-order="stroke">0[.,]00‰</);
   });
 
   test("up to 10 people: one chart, no pages", () => {

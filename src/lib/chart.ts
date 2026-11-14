@@ -3,8 +3,9 @@
 // Design: past solid, 12 h forecast dashed on a light wash, a "nyt" marker, hairline grid,
 // one y-axis in ‰. Up to 8 people, colours in fixed slot order by stable user order (not by
 // rank). Two or more series always get a legend with each person's current value (the
-// palette has three sub-3:1 hues, so identity and values are never colour-only); four or
-// fewer also get direct labels at the "now" dot. Palette validated with the dataviz
+// palette has three sub-3:1 hues, so identity and values are never colour-only); when four or
+// fewer are still above zero, they also get direct labels at the "now" dot (those at zero
+// don't). Palette validated with the dataviz
 // validator (light surface, adjacent pairs).
 
 import { calculateEbac, type BodyProfile, type DrinkSample } from "./alcomath.ts";
@@ -198,7 +199,11 @@ export function buildPermilleChart(input: ChartInput): ChartResult | null {
 
   // Layout
   const single = shown.length === 1 && pages === 1 && !input.named;
-  const direct = shown.length <= DIRECT_LABEL_MAX;
+  // Direct labels for up to four people still above zero: someone back at zero keeps their line,
+  // dot and legend entry, but their name doesn't crowd the axis. A single person's chart has no
+  // legend, so their label stays.
+  const labelled = single ? shown : shown.filter((x) => x.current > EPS);
+  const direct = labelled.length > 0 && labelled.length <= DIRECT_LABEL_MAX;
   // Legend: as many equal-width columns as the longest entry allows (at most 5), rows centred.
   const legendFont = overview ? 12 : 14;
   const legendName = overview ? 14 : 22;
@@ -289,7 +294,7 @@ export function buildPermilleChart(input: ChartInput): ChartResult | null {
 
   // Direct labels at the "now" dot, pushed apart vertically with leader lines when needed
   if (direct) {
-    const labels = shown
+    const labels = labelled
       .map((s) => ({
         dotY: y(s.current),
         y: y(s.current) - 10,
