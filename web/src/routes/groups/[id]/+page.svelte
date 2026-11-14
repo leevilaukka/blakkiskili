@@ -198,7 +198,7 @@
         <section class="card panel">
           <h2><Icon name="monitor" /> Näytä ruudulla</h2>
           <p class="muted">
-            Luo linkki, jonka voi avata esimerkiksi tapahtuman tv:ssä ilman kirjautumista. Linkin haltija näkee ryhmän jäsenten nimet ja promillet, joten jaa se vain näytölle.
+            Luo linkki, jonka voi avata ilman kirjautumista esimerkiksi tv:ssä tai muulla yhteisellä näytöllä. Linkin haltija näkee ryhmän jäsenten nimet ja promillet, joten jaa se vain näytölle.
           </p>
           <div class="row">
             <label class="field">Voimassa

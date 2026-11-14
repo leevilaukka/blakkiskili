@@ -55,7 +55,7 @@
 <div class="col">
   <div class="head">
     <h1>Ryhmät</h1>
-    <p class="lead">Ryhmässä näet muiden promillet samassa kuvaajassa, ja tapahtumaan saa näyttölinkin.</p>
+    <p class="lead">Ryhmässä näet muiden promillet samassa kuvaajassa, ja näyttölinkillä ne saa myös esimerkiksi tv:hen.</p>
   </div>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 
