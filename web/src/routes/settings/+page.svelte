@@ -2,7 +2,7 @@
   import { goto } from "$app/navigation";
   import { onMount } from "svelte";
   import type { ChartName, Gender } from "../../../../shared/api.ts";
-  import { api, ApiError, errorText } from "#lib/api.ts";
+  import { api, errorText, responseError } from "#lib/api.ts";
   import Icon from "#lib/Icon.svelte";
   import { session } from "#lib/session.svelte.ts";
 
@@ -53,10 +53,7 @@
     dataError = "";
     try {
       const res = await fetch("/api/account/export", { credentials: "same-origin" });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new ApiError(res.status, typeof body?.error === "string" ? body.error : "error");
-      }
+      if (!res.ok) throw await responseError(res);
       const url = URL.createObjectURL(await res.blob());
       const a = document.createElement("a");
       a.href = url;

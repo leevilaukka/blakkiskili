@@ -34,6 +34,16 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * The error of a failed response. A 502–504 without our JSON body is Cloudflare's own page while
+ * the bot is down or restarting, so it reads as a lost connection, not as a failed request.
+ */
+export async function responseError(res: Response): Promise<ApiError> {
+  const data = await res.json().catch(() => null);
+  if (typeof data?.error === "string") return new ApiError(res.status, data.error);
+  return new ApiError(res.status, res.status >= 502 && res.status <= 504 ? "network" : "error");
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method,
@@ -44,17 +54,15 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(res.status, typeof data?.error === "string" ? data.error : "error");
-  return data as T;
+  if (!res.ok) throw await responseError(res);
+  return (await res.json().catch(() => ({}))) as T;
 }
 
 /** POST of a raw text body (an imported CSV file). */
 async function postText<T>(path: string, text: string): Promise<T> {
   const res = await fetch(path, { method: "POST", credentials: "same-origin", headers: { "content-type": "text/csv", "x-kili": "1" }, body: text });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(res.status, typeof data?.error === "string" ? data.error : "error");
-  return data as T;
+  if (!res.ok) throw await responseError(res);
+  return (await res.json().catch(() => ({}))) as T;
 }
 
 export const api = {

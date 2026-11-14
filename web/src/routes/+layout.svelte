@@ -36,7 +36,9 @@
       session.me = await api.me();
     } catch (e) {
       session.me = null;
-      session.offline = !(e instanceof ApiError);
+      // Only a 401 means signed out. A 5xx or 429 (the bot restarting, Cloudflare's 502) must not
+      // send a signed-in person to the sign-in page as if they had been logged out.
+      session.offline = !(e instanceof ApiError && e.status === 401);
     }
     session.ready = true;
   });

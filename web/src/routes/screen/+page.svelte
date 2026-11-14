@@ -163,6 +163,24 @@
       };
     }
 
+    // A screen often starts on a TV whose connection is still coming up, or while the bot restarts.
+    // Only an answer that the link is invalid ends it; anything else is retried, since the token
+    // is already gone from the address bar and a reload couldn't bring it back.
+    async function untilAnswered<T>(call: () => Promise<T>): Promise<T | undefined> {
+      for (let delay = 2000; !stopped; delay = Math.min(delay * 2, 30_000)) {
+        try {
+          return await call();
+        } catch (e) {
+          if (e instanceof ApiError && [400, 401, 404].includes(e.status)) {
+            status = "ended";
+            return undefined;
+          }
+          status = "reconnecting";
+          await new Promise((r) => setTimeout(r, delay));
+        }
+      }
+    }
+
     async function start() {
       // The link is /screen#t=TOKEN: the token is exchanged for a cookie right away and removed
       // from the address bar and history (the search parameters stay). After that, reloading the
@@ -170,21 +188,13 @@
       const token = new URLSearchParams(location.hash.slice(1)).get("t");
       if (token) {
         history.replaceState(null, "", location.pathname + location.search);
-        try {
-          await api.openScreen(token);
-          linkToken = token;
-        } catch {
-          status = "ended";
-          return;
-        }
+        if (!(await untilAnswered(() => api.openScreen(token)))) return;
+        linkToken = token;
       }
-      try {
-        view = await api.screen();
-        status = "live";
-      } catch {
-        status = "ended";
-        return;
-      }
+      const first = await untilAnswered(() => api.screen());
+      if (!first) return;
+      view = first;
+      status = "live";
       if (!stopped) listen();
       // Keep the display awake while it is showing the chart (where the browser allows it).
       try {
@@ -223,7 +233,7 @@
       <p>Linkki on vanhentunut tai peruttu. Pyydä uusi linkki ryhmästä.</p>
     </div>
   {:else if !view}
-    <p class="muted">Ladataan…</p>
+    <p class="muted">{status === "reconnecting" ? "Yhteys palvelimeen ei toimi, yritetään uudelleen…" : "Ladataan…"}</p>
   {:else}
     {#if showTitle || !embed}
       <header>
