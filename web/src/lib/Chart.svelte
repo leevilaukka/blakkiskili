@@ -15,6 +15,7 @@
     legend = true,
     fill = false,
     scale = 1,
+    mouseIdle = false,
   }: {
     data: ChartData;
     big?: boolean;
@@ -24,6 +25,8 @@
     fill?: boolean;
     /** Text, margins, lines and dots grow by this (the event screen on a big display). */
     scale?: number;
+    /** The mouse has stopped and the page hid its pointer: the moment it hovers is hidden too. */
+    mouseIdle?: boolean;
   } = $props();
 
   const HOUR = 3_600_000;
@@ -144,6 +147,11 @@
   let cursor = $state<number | null>(null); // index into times
   const cursorT = $derived(cursor === null ? null : (times[cursor] ?? null));
   let plot: SVGSVGElement | undefined = $state();
+  /** The moment shown was picked by hovering with a mouse (not a finger or the keyboard). */
+  let byMouse = false;
+  $effect(() => {
+    if (mouseIdle && byMouse) cursor = null;
+  });
 
   function nearest(px: number): number | null {
     let best: number | null = null;
@@ -160,6 +168,7 @@
   function pick(e: PointerEvent) {
     const r = (e.currentTarget as SVGElement).getBoundingClientRect();
     cursor = nearest(((e.clientX - r.left) / r.width) * W);
+    byMouse = e.pointerType === "mouse";
   }
   /** A tap: pointerup rather than pointerdown, so a scroll that starts on the chart shows nothing. */
   function onUp(e: PointerEvent) {
@@ -174,6 +183,7 @@
   }
   function onKey(e: KeyboardEvent) {
     if (times.length === 0) return;
+    byMouse = false;
     const now = times.indexOf(data.now);
     if (e.key === "ArrowLeft") cursor = Math.max(0, (cursor ?? now) - 1);
     else if (e.key === "ArrowRight") cursor = Math.min(times.length - 1, (cursor ?? now) + 1);

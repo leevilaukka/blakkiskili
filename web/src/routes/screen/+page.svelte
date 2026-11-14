@@ -57,6 +57,21 @@
    */
   const scale = $derived(Math.min(1 + Math.max(Math.min(innerWidth / 1280, innerHeight / 800) - 1, 0) / 2, 2));
 
+  /**
+   * The mouse pointer (and the chart's hover tooltip) hides after a few seconds without moving,
+   * so it doesn't sit on a TV's chart. Moving the mouse brings it back. Not while the OBS panel is
+   * open, where it's in use.
+   */
+  let mouseStopped = $state(false);
+  const mouseIdle = $derived(mouseStopped && !panelOpen);
+  let mouseTimer: ReturnType<typeof setTimeout> | undefined;
+  function onMouse(e: PointerEvent) {
+    if (e.pointerType !== "mouse") return;
+    mouseStopped = false;
+    clearTimeout(mouseTimer);
+    mouseTimer = setTimeout(() => (mouseStopped = true), 3000);
+  }
+
   async function present() {
     panelOpen = false;
     presenting = true;
@@ -241,6 +256,7 @@
       stopped = true;
       source?.close();
       document.removeEventListener("visibilitychange", keepAwake);
+      clearTimeout(mouseTimer);
       letSleep();
       document.documentElement.removeAttribute("data-bg");
     };
@@ -252,6 +268,8 @@
   onhashchange={() => new URLSearchParams(location.hash.slice(1)).has("t") && location.reload()}
   bind:innerWidth
   bind:innerHeight
+  onpointermove={onMouse}
+  onpointerdown={onMouse}
 />
 <svelte:document onfullscreenchange={onFullscreenChange} />
 
@@ -268,6 +286,7 @@
     "flex flex-col gap-4",
     fit ? "h-screen min-h-0 overflow-hidden" : "min-h-screen",
     embed ? "p-[clamp(0.5rem,1.5vw,1rem)]" : "p-[clamp(0.75rem,2.5vw,2rem)]",
+    mouseIdle && "cursor-none **:cursor-none",
   ]}
   style:--k={scale}
   ondblclick={() => presenting && stopPresenting()}
@@ -330,7 +349,7 @@
     >
       <section class={[fit && "min-h-0"]}>
         {#if view.chart.lines.length}
-          <Chart data={view.chart} big legend={showLegend} fill={fit} {scale} />
+          <Chart data={view.chart} big legend={showLegend} fill={fit} {scale} {mouseIdle} />
         {:else}
           <p class="text-[calc(1.6rem*var(--k,1))] text-secondary">Ei juomia viimeisen vuorokauden aikana.</p>
         {/if}
