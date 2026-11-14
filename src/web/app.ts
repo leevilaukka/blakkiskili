@@ -24,6 +24,7 @@ import { productRoutes } from "./api/products.ts";
 import { screenRoutes } from "./api/screens.ts";
 import { createViews } from "./api/views.ts";
 import { cookieJar, fail } from "./http.ts";
+import { GroupAdmins } from "./groupadmins.ts";
 import { GroupPhotos, ProductPhotos } from "./photos.ts";
 import { withSecurityHeaders } from "./static.ts";
 
@@ -36,7 +37,8 @@ type BunHandler = (req: BunRequest, server: Server<unknown>) => Promise<Response
 export function createWebApp(opts: WebAppOptions) {
   const { services } = opts;
   const now = () => services.deps.now();
-  const views = createViews(services, now);
+  const groupAdmins = opts.groupAdmins ?? new GroupAdmins(services, { botToken: opts.botToken });
+  const views = createViews(services, now, (groupId, accountId) => groupAdmins.wasAdmin(groupId, accountId));
   const adminIdentities = new Set((opts.adminIds ?? []).map((id) => services.identities.key({ platform: "telegram", platformUserId: id })));
   const api: Api = {
     services,
@@ -47,6 +49,7 @@ export function createWebApp(opts: WebAppOptions) {
     live: createLive(services, views, opts.live),
     photos: opts.photos ?? new ProductPhotos(),
     groupPhotos: opts.groupPhotos ?? new GroupPhotos({ botToken: opts.botToken }),
+    groupAdmins,
     isAdmin: (s: WebSession) =>
       s.identityId !== null && adminIdentities.has(s.identityId) && services.identities.accountOf(s.identityId) === s.accountId,
     limits: {

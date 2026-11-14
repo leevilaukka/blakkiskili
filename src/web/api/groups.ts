@@ -15,7 +15,7 @@ interface Group {
 }
 type GroupHandler = (c: Ctx, g: Group) => Response | Promise<Response>;
 
-export function groupRoutes({ services, views, live }: Api): Routes {
+export function groupRoutes({ services, views, live, groupAdmins }: Api): Routes {
   const { groups, screens } = services;
 
   /** A signed-in member of :group. Others get the same answer as for a group that doesn't exist. */
@@ -56,7 +56,11 @@ export function groupRoutes({ services, views, live }: Api): Routes {
     },
 
     "/api/groups/:group": {
-      GET: member(view),
+      // A Telegram group's admins are asked first (cached), so the page knows whether to offer stopping any screen link.
+      GET: member(async (c, g) => {
+        if (g.info.kind === "telegram") await groupAdmins.isAdmin(g.id, c.user.id);
+        return view(c, g);
+      }),
 
       PATCH: owner(async (c, g) => {
         const name = (await c.body())?.name;
@@ -111,13 +115,14 @@ export function groupRoutes({ services, views, live }: Api): Routes {
       }),
     },
 
-    // Any member may stop a screen they made; the owner may stop any.
+    // Any member may stop a screen they made; a web group's owner or a Telegram group's admin may stop any.
     "/api/groups/:group/screens/:ref": {
-      DELETE: member((c, g) => {
+      DELETE: member(async (c, g) => {
         const ref = c.param("ref", /^[0-9a-f]{1,64}$/);
         const link = screens.list({ groupId: g.id }).find((l) => l.ref === ref);
         if (!ref || !link) return fail(404, "not_found");
-        if (!g.isOwner && link.createdBy !== c.user.id) return fail(403, "not_owner");
+        const allowed = g.isOwner || link.createdBy === c.user.id || (g.info.kind === "telegram" && (await groupAdmins.isAdmin(g.id, c.user.id)));
+        if (!allowed) return fail(403, "not_owner");
         screens.revoke({ groupId: g.id }, ref);
         return json({ ok: true });
       }),

@@ -244,6 +244,8 @@ export interface ScreenLinkItem {
   expiresAt: number;
   /** Created by the viewer (who can therefore revoke it even when not the owner). */
   mine: boolean;
+  /** The creator's name as the group shows it; null when they are no longer in the group. */
+  createdBy: string | null;
 }
 
 export interface GroupView {
@@ -254,6 +256,8 @@ export interface GroupView {
   members: BoardRow[];
   /** When the live invite link expires; null when there is none. Only the owner sees this. */
   inviteExpiresAt: number | null;
+  /** An admin of the Telegram group: may stop any of its screen links, as a web group's owner may. */
+  isTelegramAdmin: boolean;
   screens: ScreenLinkItem[];
 }
 

@@ -7,6 +7,7 @@ import type { Profile } from "../../services/accounts.ts";
 import type { Services } from "../../services/index.ts";
 import type { WebSession } from "../../services/websessions.ts";
 import { readJsonBody, type Cookies } from "../http.ts";
+import type { GroupAdmins } from "../groupadmins.ts";
 import type { GroupPhotos, ProductPhotos } from "../photos.ts";
 import type { Live } from "./live.ts";
 import type { Views } from "./views.ts";
@@ -22,6 +23,8 @@ export interface WebAppOptions {
   photos?: ProductPhotos;
   /** Telegram group photos for event screens; tests pass a fake fetch. */
   groupPhotos?: GroupPhotos;
+  /** Telegram group admins (they may stop any of the group's screen links); tests pass a fake fetch. */
+  groupAdmins?: GroupAdmins;
   /** Telegram user ids of the admins (ADMIN_IDS); they get /api/admin. */
   adminIds?: readonly number[];
   /** Sends a Telegram HTML message to the admins (new "Ilmoita virheestä" reports). Never throws. */
@@ -42,6 +45,7 @@ export interface Api {
   live: Live;
   photos: ProductPhotos;
   groupPhotos: GroupPhotos;
+  groupAdmins: GroupAdmins;
   /** Signed in with a Telegram login in ADMIN_IDS that still belongs to the account. */
   isAdmin: (s: WebSession) => boolean;
   limits: {

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { findPreset } from "../src/lib/catalog.ts";
 import { HOUR_MS, MINUTE_MS } from "../src/lib/units.ts";
+import { ADMINS_FRESH_MS, GroupAdmins } from "../src/web/groupadmins.ts";
 import { GroupPhotos } from "../src/web/photos.ts";
 import { serveTestApp, setup, tg } from "./helpers.ts";
 
@@ -11,14 +12,23 @@ afterEach(() => {
   for (const a of apps.splice(0)) a.close();
 });
 
-function world(extra: { groupPhotos?: GroupPhotos } = {}) {
+function world(extra: { groupPhotos?: GroupPhotos; adminsFetch?: typeof fetch } = {}) {
   const w = setup();
   const user = (id: number, name: string, full?: string) =>
     w.services.accounts.register(tg(id), { name, fullName: full, weight: 75, height: 178, gender: "mies" }).profile;
   const alice = user(1, "alice", "Alice Aalto");
   const bob = user(2, "bob", "Bob Berg");
   const carol = user(3, "carol", "Carol Cederberg");
-  const app = serveTestApp({ services: w.services, botToken: "1:x", botUsername: "b", origin: ORIGIN, live: { tickMs: 1_000_000, minGapMs: 10 }, groupPhotos: extra.groupPhotos });
+  const offline = (() => Promise.reject(new Error("no network in tests"))) as unknown as typeof fetch; // never the real Telegram
+  const app = serveTestApp({
+    services: w.services,
+    botToken: "1:x",
+    botUsername: "b",
+    origin: ORIGIN,
+    live: { tickMs: 1_000_000, minGapMs: 10 },
+    groupPhotos: extra.groupPhotos,
+    groupAdmins: new GroupAdmins(w.services, { botToken: "1:x", fetch: extra.adminsFetch ?? offline }),
+  });
   apps.push(app);
   const cookies = new Map<string, string>();
   const as = (p: { id: string }) => {
@@ -288,9 +298,68 @@ describe("event screens", () => {
 
     const view = await w.json(await w.call("GET", `/api/groups/${id}`, { as: w.bob }));
     const aliceLink = view.screens.find((s: any) => !s.mine);
+    expect(aliceLink.createdBy).toBe(view.members.find((m: any) => !m.isMe).name);
+    expect(view.screens.find((s: any) => s.mine).createdBy).toBe(view.members.find((m: any) => m.isMe).name);
     expect((await w.call("DELETE", `/api/groups/${id}/screens/${aliceLink.ref}`, { as: w.bob })).status).toBe(403);
     expect((await w.call("DELETE", `/api/groups/${id}/screens/${view.screens.find((s: any) => s.mine).ref}`, { as: w.bob })).status).toBe(200);
     expect((await w.call("DELETE", `/api/groups/${id}/screens/${aliceLink.ref}`, { as: w.alice })).status).toBe(200); // the owner can
+  });
+
+  test("a Telegram group's admins may stop any of its links", async () => {
+    const CHAT = -1001234567890;
+    const requests: { url: string; init?: RequestInit }[] = [];
+    let answer: () => Response = () => Response.json({ ok: true, result: [{ status: "creator", user: { id: 3 } }, { status: "administrator", user: { id: 99 } }] });
+    const fakeFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      requests.push({ url: String(input), init });
+      return answer();
+    }) as typeof fetch;
+    const w = world({ adminsFetch: fakeFetch });
+    for (const p of [w.alice, w.bob, w.carol]) w.services.groups.join(p.id, CHAT, "Kerava");
+    const id = w.services.groups.listFor(w.alice.id)[0]!.id;
+    const link = async () => {
+      await w.call("POST", `/api/groups/${id}/screens`, { as: w.bob, body: {} });
+      const view = await w.json(await w.call("GET", `/api/groups/${id}`, { as: w.bob }));
+      return view.screens.at(-1).ref as string;
+    };
+    const revoke = (ref: string, as: { id: string }) => w.call("DELETE", `/api/groups/${id}/screens/${ref}`, { as });
+
+    // until the bot has seen a command in the group, its chat id is unknown: nobody is an admin
+    const first = await link();
+    expect((await w.json(await w.call("GET", `/api/groups/${id}`, { as: w.carol }))).isTelegramAdmin).toBe(false);
+    expect((await revoke(first, w.carol)).status).toBe(403);
+    expect(requests).toEqual([]);
+
+    w.services.groups.rememberChat(CHAT);
+    expect((await w.json(await w.call("GET", `/api/groups/${id}`, { as: w.carol }))).isTelegramAdmin).toBe(true);
+    expect((await w.json(await w.call("GET", `/api/groups/${id}`, { as: w.alice }))).isTelegramAdmin).toBe(false);
+    expect((await revoke(first, w.alice)).status).toBe(403); // a member, not an admin
+    expect((await revoke(first, w.carol)).status).toBe(200);
+    // one question per group, kept for a while; only the chat id is sent
+    expect(requests.map((r) => r.url)).toEqual([`https://api.telegram.org/bot1:x/getChatAdministrators?chat_id=${CHAT}`]);
+    for (const r of requests) for (const leak of [w.alice.id, w.carol.id, "1.1.1.1", ORIGIN]) expect(JSON.stringify(r.init)).not.toContain(leak);
+
+    // no longer an admin: noticed once the answer is old
+    answer = () => Response.json({ ok: true, result: [{ status: "creator", user: { id: 1 } }] });
+    const second = await link();
+    expect((await revoke(second, w.carol)).status).toBe(200);
+    w.clock.now += ADMINS_FRESH_MS;
+    const third = await link();
+    expect((await revoke(third, w.carol)).status).toBe(403);
+    expect((await revoke(third, w.alice)).status).toBe(200);
+    expect(requests).toHaveLength(2);
+
+    // Telegram down: nobody is an admin, and it isn't asked again right away
+    answer = () => new Response("", { status: 502 });
+    w.clock.now += ADMINS_FRESH_MS;
+    const fourth = await link();
+    expect((await revoke(fourth, w.alice)).status).toBe(403);
+    expect((await revoke(fourth, w.alice)).status).toBe(403);
+    expect(requests).toHaveLength(3);
+    // the bot was removed from the group: Telegram refuses
+    answer = () => Response.json({ ok: false, error_code: 403, description: "Forbidden: bot was kicked" }, { status: 403 });
+    w.clock.now += ADMINS_FRESH_MS;
+    expect((await revoke(fourth, w.alice)).status).toBe(403);
+    expect((await revoke(fourth, w.bob)).status).toBe(200); // the maker still can
   });
 
   test("a personal screen shows one person", async () => {

@@ -233,8 +233,8 @@
             <ul class="links">
               {#each view.screens as s (s.ref)}
                 <li>
-                  <span>Näyttölinkki{s.mine ? " (oma)" : ""} · voimassa {dayClock(s.expiresAt, view.now)}</span>
-                  {#if s.mine || view.group.isOwner}
+                  <span>Näyttölinkki · {s.mine ? "oma" : (s.createdBy ?? "entinen jäsen")} · voimassa {dayClock(s.expiresAt, view.now)}</span>
+                  {#if s.mine || view.group.isOwner || view.isTelegramAdmin}
                     <button class="btn small" disabled={busy} onclick={() => revokeScreen(s.ref)}>Peru</button>
                   {/if}
                 </li>

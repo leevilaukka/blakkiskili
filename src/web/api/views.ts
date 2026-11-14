@@ -50,7 +50,8 @@ export const toProduct = (d: CatalogDrink): ProductItem => ({
   })),
 });
 
-export function createViews(services: Services, now: () => number) {
+/** `isTelegramAdmin`: by what is already known, without asking Telegram (see GroupAdmins.wasAdmin). */
+export function createViews(services: Services, now: () => number, isTelegramAdmin: (groupId: string, accountId: string) => boolean = () => false) {
   function dashboard(p: Profile): Dashboard {
     const t = now();
     const recent = services.drinks.since(p.id, t - EBAC_WINDOW_MS);
@@ -93,8 +94,15 @@ export function createViews(services: Services, now: () => number) {
     hideOnScreen,
   });
 
-  const screenItems = (links: ReturnType<Services["screens"]["list"]>, p: Profile): ScreenLinkItem[] =>
-    links.map((l) => ({ ref: l.ref, createdAt: l.createdAt, expiresAt: l.expiresAt, mine: l.createdBy === p.id }));
+  /** `nameOf` gives a creator's name (null: no longer there); without it every link is the viewer's own. */
+  const screenItems = (links: ReturnType<Services["screens"]["list"]>, p: Profile, nameOf?: (accountId: string) => string | null): ScreenLinkItem[] =>
+    links.map((l) => ({
+      ref: l.ref,
+      createdAt: l.createdAt,
+      expiresAt: l.expiresAt,
+      mine: l.createdBy === p.id,
+      createdBy: nameOf ? nameOf(l.createdBy) : chartLabel(p),
+    }));
 
   function groupView(p: Profile, groupId: string): GroupView | null {
     const info = services.groups.get(groupId);
@@ -109,7 +117,11 @@ export function createViews(services: Services, now: () => number) {
       chart: b.chart,
       members: b.rows.map((r) => ({ ...r, isMe: r.ref === me })),
       inviteExpiresAt: isOwner ? services.groups.hasInvite(groupId) : null,
-      screens: screenItems(services.screens.list({ groupId }), p),
+      isTelegramAdmin: info.kind === "telegram" && isTelegramAdmin(groupId, p.id),
+      screens: screenItems(services.screens.list({ groupId }), p, (accountId) => {
+        const ref = memberRef(services, groupId, accountId);
+        return b.rows.find((r) => r.ref === ref)?.name ?? null;
+      }),
     };
   }
 

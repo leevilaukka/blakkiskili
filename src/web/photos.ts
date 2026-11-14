@@ -83,12 +83,12 @@ class PhotoCache {
 }
 
 /** Only what any client sends; nothing that came from the visitor. */
-const fetchInit = (accept: string): RequestInit => ({
+export const fetchInit = (accept: string, timeoutMs = TIMEOUT_MS): RequestInit => ({
   headers: { accept, "user-agent": "Blakkiskili" },
   credentials: "omit",
   referrerPolicy: "no-referrer",
   redirect: "error",
-  signal: AbortSignal.timeout(TIMEOUT_MS),
+  signal: AbortSignal.timeout(timeoutMs),
 });
 
 async function readBody(res: Response): Promise<Uint8Array | null> {
