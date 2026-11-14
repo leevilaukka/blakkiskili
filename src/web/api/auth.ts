@@ -18,7 +18,7 @@ export function authRoutes({ services, opts, cookies, live, now }: Api): Routes 
     "/api/config": {
       GET: () =>
         json({
-          botUsername: opts.botUsername,
+          botUsername: typeof opts.botUsername === "function" ? opts.botUsername() : opts.botUsername,
           botId: Number(opts.botToken.split(":")[0]), // public: the part of the token before the colon
           catalogue: services.products.ready,
           barcodes: services.barcodes.enabled || services.products.enabled,

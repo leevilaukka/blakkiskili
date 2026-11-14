@@ -14,7 +14,8 @@ import type { Views } from "./views.ts";
 export interface WebAppOptions {
   services: Services;
   botToken: string;
-  botUsername: string;
+  /** A function when the username isn't known yet at startup (the bot asks Telegram after the site is up). */
+  botUsername: string | (() => string);
   /** Public origin, e.g. "https://kili.example.com" (no trailing slash). */
   origin: string;
   /** Alko's product photos, fetched by the server (see photos.ts); tests pass a fake fetch. */

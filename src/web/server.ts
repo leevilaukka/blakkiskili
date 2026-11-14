@@ -13,7 +13,7 @@ import { StaticSite, withSecurityHeaders } from "./static.ts";
 export interface WebServerOptions {
   config: Config;
   services: Services;
-  botUsername: string;
+  botUsername: WebAppOptions["botUsername"];
   /** Telegram messages to the admins (see WebAppOptions.notifyAdmins). */
   notifyAdmins?: (html: string) => Promise<void>;
   /** Tests shorten these; production uses the defaults. */

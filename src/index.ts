@@ -31,9 +31,8 @@ const barcodes = new Barcodes({ url: config.barcodesUrl });
 const services = createServices({ db, crypto: createCrypto(config.appSecret), now: () => Date.now() }, { products, barcodes });
 const bot = createBot(config, services);
 
-await bot.init();
-await publishCommandMenus(bot, config).catch((e) => console.warn("Could not set command menus:", e));
-
+// Everything up to the website and jobs runs without Telegram: bot.init() comes last, so a slow or
+// unreachable Bot API delays only the bot, not the website or backups.
 const alert = createAdminAlerts(bot.api, config);
 const jobs: Job[] = [];
 if (config.backup.dir) {
@@ -98,7 +97,7 @@ if (config.web.enabled) {
     web = startWebServer({
       config,
       services,
-      botUsername: bot.botInfo.username,
+      botUsername: () => (bot.isInited() ? bot.botInfo.username : ""), // "" until Telegram answers getMe
       notifyAdmins: (html) => notifyAdmins(bot.api, config.adminIds, html),
     });
   } catch (e) {
@@ -118,6 +117,19 @@ const shutdown = async () => {
 };
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+
+// Telegram has hung on every request for a bot for minutes at a time (2026-11-14). grammY's own
+// timeout is 500 s, so give up sooner and keep retrying instead of crashing the website with us.
+for (let attempt = 1; ; attempt++) {
+  try {
+    await bot.init(AbortSignal.timeout(30_000) as Parameters<typeof bot.init>[0]);
+    break;
+  } catch (e) {
+    console.warn(`Telegram getMe failed (attempt ${attempt}), retrying in 10 s:`, e instanceof Error ? e.message : e);
+    await Bun.sleep(10_000);
+  }
+}
+void publishCommandMenus(bot, config).catch((e) => console.warn("Could not set command menus:", e));
 
 if (config.mode === "webhook") {
   const handle = webhookCallback(bot, "std/http", {
