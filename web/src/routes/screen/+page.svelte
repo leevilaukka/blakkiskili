@@ -29,6 +29,8 @@
   /** The leaderboard beside the chart; closed by default so the chart gets the whole width. */
   let boardOpen = $state(false);
   const showBoard = $derived(boardOpen && !!view && view.members.length > 1);
+  /** The board lists only people above zero. */
+  const boardRows = $derived(view?.members.filter((m) => m.permille > 0.005) ?? []);
 
   /** From the search parameters (see the top of this file). */
   let embed = $state(false);
@@ -355,9 +357,14 @@
         {/if}
       </section>
 
-      {#if showBoard}
+      {#if showBoard && !boardRows.length}
+        <!-- everyone back at zero: say so, rather than leave the board's column empty -->
+        <p class="m-0 self-start border-b border-line-soft py-2.25 text-[clamp(1.1rem,2vw,calc(1.7rem*var(--k,1)))] text-secondary" id="board">
+          Kenelläkään ei ole nyt promilleja.
+        </p>
+      {:else if showBoard}
         <ol class={["grid gap-1", fit && "max-h-full self-start overflow-hidden"]} id="board" aria-label="Tilanne">
-          {#each view.members.filter((m) => m.permille > 0.005) as m, i (m.name)}
+          {#each boardRows as m, i (m.name)}
             <li class="grid grid-cols-[2ch_1fr_auto_auto] items-baseline gap-3.5 border-b border-line-soft py-2.25 text-[clamp(1.1rem,2vw,calc(1.7rem*var(--k,1)))]">
               <span class="text-muted tabular-nums">{i + 1}</span>
               <span class="wrap-anywhere">{m.name}</span>
