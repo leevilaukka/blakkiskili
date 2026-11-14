@@ -22,6 +22,7 @@ RUN apk add --no-cache tzdata font-dejavu
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
 COPY src ./src
+COPY shared ./shared
 COPY --from=web /app/web/build ./web-dist
 RUN mkdir -p /app/data /app/backups && chown bun:bun /app/data /app/backups
 USER bun
