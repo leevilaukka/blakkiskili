@@ -2,7 +2,7 @@
 
 /* The look follows Alkometriikka (it started as its subdomain): its four brand reds,
    gray (light) and zinc (dark) neutrals, Inter, 4px corners and bordered buttons with a 1px
-   shadow. Chart series colours are the dataviz palette (light steps validated on near-white, dark
+   shadow. Chart series colours live in shared/colors.ts (light steps validated on near-white, dark
    steps on #1a1a19, which zinc-900 matches); see Chart.svelte. Colour never carries meaning alone.
 
    Tailwind's own palette, type scale and radii are replaced with these, so a utility like
@@ -56,17 +56,6 @@
   --color-ok-text: #14532d;
   --color-edge: rgb(0 0 0 / 10%); /* the 1px shadow under buttons and inputs */
 
-  --color-series-1: #2a78d6;
-  --color-series-2: #eb6834;
-  --color-series-3: #1baf7a;
-  --color-series-4: #eda100;
-  --color-series-5: #e87ba4;
-  --color-series-6: #008300;
-  --color-series-7: #6250d6;
-  --color-series-8: #e34948;
-  --color-series-9: #8c564b;
-  --color-series-10: #17becf;
-
   --font-*: initial;
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -119,15 +108,6 @@
     --color-ok-border: #166534;
     --color-ok-text: #bbf7d0;
     --color-edge: rgb(0 0 0 / 30%);
-
-    --color-series-1: #3987e5;
-    --color-series-2: #d95926;
-    --color-series-3: #199e70;
-    --color-series-4: #c98500;
-    --color-series-5: #d55181;
-    --color-series-6: #008300;
-    --color-series-7: #9085e9;
-    --color-series-8: #e66767;
   }
 }
 
@@ -149,20 +129,20 @@
   --color-ok-border: #166534;
   --color-ok-text: #bbf7d0;
   --color-edge: rgb(0 0 0 / 30%);
-
-  --color-series-1: #3987e5;
-  --color-series-2: #d95926;
-  --color-series-3: #199e70;
-  --color-series-4: #c98500;
-  --color-series-5: #d55181;
-  --color-series-6: #008300;
-  --color-series-7: #9085e9;
-  --color-series-8: #e66767;
 }
 
-/* A chart line's colour: series-3 sets --c to the third series colour (see Chart.svelte). */
-@utility series-* {
-  --c: --value(--color-series-*);
+/* A chart line's colour: Chart.svelte sets both steps of the line's colour (shared/colors.ts) on
+   the element, and the theme picks one into --c. */
+.series {
+  --c: var(--c-light);
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .series {
+    --c: var(--c-dark);
+  }
+}
+:root[data-theme="dark"] .series {
+  --c: var(--c-dark);
 }
 
 /* ---- element defaults (on top of Preflight) ---- */

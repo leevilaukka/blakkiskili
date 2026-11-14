@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { assignColors, buildPermilleChart, type ChartSeries } from "../src/lib/chart.ts";
+import { assignColors, buildChartData, buildPermilleChart, type ChartSeries } from "../src/lib/chart.ts";
+import { FIXED_COLORS, seriesColor } from "../shared/colors.ts";
 import { svgToPng } from "../src/lib/render.ts";
 import { HOUR_MS } from "../src/lib/units.ts";
 
@@ -95,11 +96,57 @@ describe("permille chart", () => {
     expect(new Set(eight.values()).size).toBe(10);
   });
 
-  test("more people than colours does not hang (a group of 11 on the website)", () => {
-    const eleven = assignColors(Array.from({ length: 11 }, (_, i) => `id${i}`));
-    expect(new Set(eleven.values()).size).toBe(11);
-    const many = assignColors(Array.from({ length: 40 }, (_, i) => `id${i}`));
-    expect(many.size).toBe(40);
+  test("a big group gets a colour each, never a repeat", () => {
+    for (const n of [11, 40, 150]) {
+      const slots = assignColors(Array.from({ length: n }, (_, i) => `id${i}`));
+      expect(new Set(slots.values()).size).toBe(n);
+      expect(Math.max(...slots.values())).toBe(n - 1); // uses exactly slots 0..n-1
+      for (const mode of ["light", "dark"] as const) {
+        expect(new Set([...slots.values()].map((s) => seriesColor(s, mode))).size).toBe(n);
+      }
+    }
+  });
+
+  test("generated colours stay readable on their surface", () => {
+    const lum = (hex: string) => {
+      const [r, g, b] = [1, 3, 5].map((i) => {
+        const c = Number.parseInt(hex.slice(i, i + 2), 16) / 255;
+        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+    };
+    const ratio = (a: string, b: string) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+    for (let slot = FIXED_COLORS; slot < 100; slot++) {
+      expect(seriesColor(slot, "light")).toMatch(/^#[0-9a-f]{6}$/);
+      expect(ratio(seriesColor(slot, "light"), "#fcfcfb")).toBeGreaterThanOrEqual(3);
+      expect(ratio(seriesColor(slot, "dark"), "#1a1a19")).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  test("/kuvaaja and the website give a person the same colour, on every page", () => {
+    // 12 people: the bot splits them over two pages plus an overview; the website draws all at once.
+    const series = Array.from({ length: 12 }, (_, i) => ({ ...person(`acct${i}`, `p${i}`, [2, 1 + i * 0.1]), colorKey: `acct${i}` }));
+    const web = buildChartData(series.map((s) => ({ ...s, id: `ref${s.id}` })), now);
+    const colorOf = new Map(web.lines.map((l) => [l.name, seriesColor(l.slot, "light")]));
+    let checked = 0;
+    for (const page of [0, 1, 2]) {
+      const svg = buildPermilleChart({ title: "t", series, now, page })!.svg;
+      // Each legend entry: the swatch's dot in the person's colour, then their name.
+      for (const m of svg.matchAll(/<circle [^>]*fill="(#[0-9a-f]{6})"\/>\s*<text [^>]*>(p\d+) /g)) {
+        expect(m[1]).toBe(colorOf.get(m[2]!)!);
+        checked++;
+      }
+    }
+    expect(checked).toBe(24); // everyone on the overview, and everyone once more on pages 1-2
+  });
+
+  test("website chart: a big group's sober members don't push the drinkers onto colours the site lacks", () => {
+    const drinkers = ["a", "b", "c"].map((id) => person(id, id, [2, 1]));
+    const sober = Array.from({ length: 12 }, (_, i) => person(`z${i}`, `z${i}`, []));
+    const data = buildChartData([...drinkers, ...sober], now);
+    expect(data.lines.map((l) => l.id).sort()).toEqual(["a", "b", "c"]);
+    expect(new Set(data.lines.map((l) => l.slot)).size).toBe(3);
+    for (const l of data.lines) expect(l.slot).toBeLessThan(FIXED_COLORS); // the validated palette
   });
 
   test("renders to a PNG", () => {

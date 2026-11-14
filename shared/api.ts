@@ -5,8 +5,8 @@
 export interface ChartLine {
   id: string;
   name: string;
-  /** One of the bot chart's light-mode palette colours; the site maps it to its dark-mode step. */
-  color: string;
+  /** Colour slot: shared/colors.ts gives its colour in each mode (the bot's /kuvaaja uses the same). */
+  slot: number;
   current: number; // ‰ now
   peak: number;
   points: [t: number, permille: number][]; // every 15 minutes, plus "now"

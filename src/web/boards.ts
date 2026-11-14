@@ -35,6 +35,9 @@ export function buildBoard(
 
   const series: ChartSeries[] = members.map((m) => ({
     id: memberRef(services, groupId, m.userId),
+    // Keyed by account like /kuvaaja, so a line is the same colour there and here; except someone
+    // shown as "Nimetön n", whose colour would otherwise give away who they are.
+    colorKey: opts.anonymize && m.hideOnScreen ? memberRef(services, groupId, m.userId) : m.userId,
     name: nameOf(m),
     body: m.body,
     drinks: m.drinks,

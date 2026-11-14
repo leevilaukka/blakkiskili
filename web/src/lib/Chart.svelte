@@ -5,9 +5,12 @@
   // value, and when at most four people are still above zero, they also get direct labels at the
   // "now" dot (those back at zero don't, so their names don't crowd the axis).
   //
-  // Colours come from classes (series-1..10 set --c to --color-series-n, see app.css), so dark mode
-  // swaps in its own validated steps and the page's Content-Security-Policy needs no inline styles.
+  // Colours: each line's slot gives a light and a dark colour (shared/colors.ts, the same ones
+  // /kuvaaja draws with), set as --c-light and --c-dark from script (CSSOM, which the page's
+  // Content-Security-Policy allows; the app renders only in the browser, so there are no inline
+  // style attributes), and the `series` class picks one by theme (app.css).
   import type { ChartData } from "../../../shared/api.ts";
+  import { seriesColor } from "../../../shared/colors.ts";
   import { clock, permille } from "./format.ts";
 
   let {
@@ -32,10 +35,6 @@
 
   const HOUR = 3_600_000;
   const EPS = 0.005;
-  // The bot chart's light-mode palette order; a line's slot decides its colour in both modes.
-  const LIGHT = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948", "#8c564b", "#17becf"];
-  const SERIES = ["series-1", "series-2", "series-3", "series-4", "series-5", "series-6", "series-7", "series-8", "series-9", "series-10"];
-  const seriesClass = (hex: string) => SERIES[Math.max(0, LIGHT.indexOf(hex))]!;
 
   let width = $state(640);
   let viewportHeight = $state(900);
@@ -106,7 +105,8 @@
       const pts = trimmed(l.points);
       return {
         line: l,
-        cls: seriesClass(l.color),
+        light: seriesColor(l.slot, "light"),
+        dark: seriesColor(l.slot, "dark"),
         past: path(pts.filter((p) => p[0] <= data.now)),
         future: path(pts.filter((p) => p[0] >= data.now)),
         hasPast: pts.filter((p) => p[0] <= data.now).length > 1,
@@ -212,7 +212,8 @@
       {#each drawn as d (d.line.id)}
         <li class={["flex items-center", big ? "gap-[calc(0.4rem*var(--k,1))]" : "gap-1.5"]}>
           <svg
-            class={["block flex-none", d.cls, big && "h-[calc(10px*var(--k,1))] w-[calc(22px*var(--k,1))]"]}
+            class={["block flex-none series", big && "h-[calc(10px*var(--k,1))] w-[calc(22px*var(--k,1))]"]}
+            style:--c-light={d.light} style:--c-dark={d.dark}
             width="22"
             height="10"
             viewBox="0 0 22 10"
@@ -265,18 +266,18 @@
       {/if}
 
       {#each drawn as d (d.line.id)}
-        {#if d.hasPast}<path class={[lineClass, d.cls]} d={d.past} />{/if}
-        {#if d.hasFuture}<path class={[lineClass, "[stroke-dasharray:2_6]", d.cls]} d={d.future} />{/if}
+        {#if d.hasPast}<path class={[lineClass, "series"]} style:--c-light={d.light} style:--c-dark={d.dark} d={d.past} />{/if}
+        {#if d.hasFuture}<path class={[lineClass, "series [stroke-dasharray:2_6]"]} style:--c-light={d.light} style:--c-dark={d.dark} d={d.future} />{/if}
       {/each}
 
       {#if cursorT !== null}
         <line class="stroke-secondary stroke-1" x1={x(cursorT)} x2={x(cursorT)} y1={M.top} y2={H - M.bottom} />
         {#each drawn as d (d.line.id)}
-          <circle class={[dotClass, d.cls]} cx={x(cursorT)} cy={y(valueAt(d.line, cursorT))} r={4.5 * k} />
+          <circle class={[dotClass, "series"]} style:--c-light={d.light} style:--c-dark={d.dark} cx={x(cursorT)} cy={y(valueAt(d.line, cursorT))} r={4.5 * k} />
         {/each}
       {:else if !data.history}
         {#each drawn as d (d.line.id)}
-          <circle class={[dotClass, d.cls]} cx={nowX} cy={y(d.line.current)} r={4.5 * k} />
+          <circle class={[dotClass, "series"]} style:--c-light={d.light} style:--c-dark={d.dark} cx={nowX} cy={y(d.line.current)} r={4.5 * k} />
         {/each}
       {/if}
 
@@ -310,7 +311,7 @@
         <div class="text-[0.78rem] text-secondary">{clock(cursorT)}{cursorT > data.now ? " · ennuste" : ""}</div>
         {#each [...drawn].sort((a, b) => valueAt(b.line, cursorT!) - valueAt(a.line, cursorT!)) as d (d.line.id)}
           <div class="flex items-center gap-1.5">
-            <svg class={["block flex-none", d.cls]} width="14" height="8" viewBox="0 0 14 8" aria-hidden="true"
+            <svg class="block flex-none series" style:--c-light={d.light} style:--c-dark={d.dark} width="14" height="8" viewBox="0 0 14 8" aria-hidden="true"
               ><line class="stroke-(--c) stroke-2 [stroke-linecap:round]" x1="0" x2="14" y1="4" y2="4" /></svg
             >
             <strong>{permille(valueAt(d.line, cursorT))}‰</strong>

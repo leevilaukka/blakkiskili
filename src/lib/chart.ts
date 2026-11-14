@@ -1,16 +1,16 @@
 // /kuvaaja: estimated permilles over time as an SVG line chart (rendered to PNG elsewhere).
 //
 // Design: past solid, 12 h forecast dashed on a light wash, a "nyt" marker, hairline grid,
-// one y-axis in ‰. Up to 8 people, colours in fixed slot order by stable user order (not by
-// rank). Two or more series always get a legend with each person's current value (the
-// palette has three sub-3:1 hues, so identity and values are never colour-only); when four or
-// fewer are still above zero, they also get direct labels at the "now" dot (those at zero
-// don't). Palette validated with the dataviz
-// validator (light surface, adjacent pairs).
+// one y-axis in ‰. Colours follow the person, not their rank (assignColors), and come from
+// shared/colors.ts, the same ones the website's chart uses. Two or more series always get a
+// legend with each person's current value (some palette hues are below 3:1, and a big group's
+// colours can't all be told apart, so identity and values are never colour-only); when four or
+// fewer are still above zero, they also get direct labels at the "now" dot (those at zero don't).
 
 import { calculateEbac, type BodyProfile, type DrinkSample } from "./alcomath.ts";
 import { hhmm, longDate, num } from "./format.ts";
 import type { ChartData, ChartLine } from "../../shared/api.ts";
+import { FIXED_COLORS, seriesColor } from "../../shared/colors.ts";
 
 export type { ChartData, ChartLine };
 
@@ -18,7 +18,10 @@ const pm = (v: number) => `${v.toFixed(2)}‰`;
 import { HOUR_MS } from "./units.ts";
 
 export interface ChartSeries {
-  id: string; // stable per person: decides the colour slot
+  id: string; // stable per person: decides the colour slot unless colorKey does
+  /** Decides the colour slot instead of id. The website's group boards key by account, as
+   * /kuvaaja does, so a person's line is the same colour in both. */
+  colorKey?: string;
   name: string;
   body: BodyProfile;
   drinks: readonly DrinkSample[]; // ascending
@@ -44,15 +47,6 @@ export interface ChartResult {
 }
 
 export const CHART_PAGE_SIZE = 10;
-const PALETTE = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"];
-// Overview only: up to 24 lines, told apart by the legend rather than colour alone.
-const OVERVIEW_COLORS = [
-  ...PALETTE,
-  "#8c564b", "#17becf", "#bcbd22", "#7f7f7f", "#aec7e8", "#ffbb78", "#98df8a", "#ff9896",
-  "#c5b0d5", "#c49c94", "#f7b6d2", "#dbdb8d", "#9edae5", "#393b79", "#843c39", "#637939",
-];
-// One page: the validated palette plus the first extras (slots 9 and 10 are not validated).
-const PAGE_COLORS = OVERVIEW_COLORS.slice(0, CHART_PAGE_SIZE);
 const INK = { primary: "#0b0b0b", secondary: "#52514e", muted: "#898781" };
 const SURFACE = "#fcfcfb";
 const GRID = "#e1e0d9";
@@ -104,22 +98,22 @@ function trimZeroEnds(points: Point[]): Point[] {
 }
 
 /**
- * Colour follows the person, not their rank: each id has a preferred slot derived from a hash
- * of it, so someone keeps their colour from one chart to the next. Collisions take the next
- * free slot, resolved in id order so the result is deterministic.
+ * Colour slots (see shared/colors.ts) for the people on one chart, never two the same. Colour
+ * follows the person, not their rank: each key has a preferred slot derived from a hash of it,
+ * so someone keeps their colour from one chart to the next. Up to FIXED_COLORS people share the
+ * validated palette; a bigger chart uses as many slots as it has people (generated colours past
+ * the palette). Collisions take the next free slot, resolved in key order so the result is
+ * deterministic.
  */
-export function assignColors(ids: readonly string[]): Map<string, string> {
-  // More people than one page holds (the website draws everyone at once) use the longer overview
-  // palette, and past that colours repeat. Never wait for a free slot that doesn't exist.
-  const palette = ids.length > PAGE_COLORS.length ? OVERVIEW_COLORS : PAGE_COLORS;
+export function assignColors(keys: readonly string[]): Map<string, number> {
+  const size = Math.max(FIXED_COLORS, keys.length);
   const taken = new Set<number>();
-  const out = new Map<string, string>();
-  for (const id of [...ids].sort()) {
-    if (taken.size >= palette.length) taken.clear();
-    let slot = Number.parseInt(new Bun.CryptoHasher("sha256").update(id).digest("hex").slice(0, 8), 16) % palette.length;
-    while (taken.has(slot)) slot = (slot + 1) % palette.length;
+  const out = new Map<string, number>();
+  for (const key of [...new Set(keys)].sort()) {
+    let slot = Number.parseInt(new Bun.CryptoHasher("sha256").update(key).digest("hex").slice(0, 8), 16) % size;
+    while (taken.has(slot)) slot = (slot + 1) % size;
     taken.add(slot);
-    out.set(id, palette[slot]!);
+    out.set(key, slot);
   }
   return out;
 }
@@ -132,14 +126,13 @@ export function buildChartData(series: readonly ChartSeries[], now: number, hist
   const from = history ? floorHour(history.from) : floorHour(now - PAST_MS);
   const to = history ? ceilHour(history.to) : ceilHour(now + FORECAST_MS);
   if (history) now = to;
-  const colors = assignColors(series.map((s) => s.id));
-  const lines = series
+  const drawn = series
     .map((s) => {
       const points = sample(s, from, to, now);
       return {
+        key: s.colorKey ?? s.id,
         id: s.id,
         name: s.name,
-        color: colors.get(s.id)!,
         current: points.find((p) => p.t === now)!.v,
         peak: Math.max(...points.map((p) => p.v)),
         points: points.map((p): [number, number] => [p.t, Math.round(p.v * 1000) / 1000]),
@@ -147,6 +140,11 @@ export function buildChartData(series: readonly ChartSeries[], now: number, hist
     })
     .filter((l) => l.peak > EPS)
     .sort((a, b) => b.peak - a.peak);
+  // Colours go to the drawn lines only (as on the bot's chart): a big group's members who drank
+  // nothing would otherwise push it onto the overview palette, whose extra colours the website
+  // has no class for, so they all came out as the first series colour.
+  const slots = assignColors(drawn.map((l) => l.key));
+  const lines = drawn.map(({ key, id, name, ...rest }): ChartLine => ({ id, name, slot: slots.get(key)!, ...rest }));
   return history ? { now, from, to, lines, history: true } : { now, from, to, lines };
 }
 
@@ -186,9 +184,10 @@ export function buildPermilleChart(input: ChartInput): ChartResult | null {
   const shown = overview ? sampled : sampled.slice(group * CHART_PAGE_SIZE, (group + 1) * CHART_PAGE_SIZE);
   const label = !hasOverview ? "" : overview ? "Kaikki" : `${group + 1}/${groups}`;
   const title = !hasOverview || overview ? truncate(input.title, 60) : `${truncate(input.title, 52)} (${label})`;
-  const color = overview
-    ? new Map(shown.map((x, i) => [x.s.id, OVERVIEW_COLORS[i % OVERVIEW_COLORS.length]!]))
-    : assignColors(shown.map((x) => x.s.id));
+  // Slots are assigned over everyone drawn, not per page, so the overview, the pages and the
+  // website's chart all give a person the same colour.
+  const slots = assignColors(sampled.map((x) => x.s.colorKey ?? x.s.id));
+  const color = new Map(sampled.map((x) => [x.s.id, seriesColor(slots.get(x.s.colorKey ?? x.s.id)!, "light")]));
 
   // Visible time range: trim empty hours at both ends, keep at least 6 h and 2 h of forecast.
   const nonZero = sampled.flatMap((x) => x.points.filter((p) => p.v > EPS).map((p) => p.t));
