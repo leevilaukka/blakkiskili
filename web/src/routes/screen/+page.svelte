@@ -47,6 +47,7 @@
   /**
    * Fullscreen with no buttons, for a TV. Follows the browser's fullscreen (Esc leaves it); where
    * there is none (iPhone Safari) the buttons are just hidden. A double-click brings them back.
+   * Moving the mouse shows the board toggle and an exit button until it stops again.
    */
   let presenting = $state(false);
   /** The window's size: when there's room, the chart fills the height (as on a TV). */
@@ -66,9 +67,13 @@
    */
   let mouseStopped = $state(false);
   const mouseIdle = $derived(mouseStopped && !panelOpen);
+  /** A mouse has moved in the last few seconds: while presenting, the header buttons show then. */
+  let mouseSeen = $state(false);
+  const cursorShown = $derived(mouseSeen && !mouseStopped);
   let mouseTimer: ReturnType<typeof setTimeout> | undefined;
   function onMouse(e: PointerEvent) {
     if (e.pointerType !== "mouse") return;
+    mouseSeen = true;
     mouseStopped = false;
     clearTimeout(mouseTimer);
     mouseTimer = setTimeout(() => (mouseStopped = true), 3000);
@@ -316,14 +321,26 @@
           {#if castError}<p class={subtitle} role="alert">{castError}</p>{/if}
           <p class={subtitle}>Arvioidut promillet · {clock(view.now)}{status === "reconnecting" ? " · yhteys katkesi, yritetään uudelleen…" : ""}</p>
         </div>
-        {#if !embed && !presenting}
-          <div class="flex flex-none flex-wrap justify-end gap-2">
+        {#if !embed}
+          <!-- presenting: only the board toggle and the way out, and only while the mouse moves;
+               invisible rather than removed, so the heading doesn't reflow when they come and go -->
+          <!-- the fade: visibility flips at the end of a fade-out and at the start of a fade-in -->
+          <div
+            class={[
+              "flex flex-none flex-wrap justify-end gap-2 transition-[opacity,visibility] duration-200 motion-reduce:transition-none",
+              presenting && !cursorShown && "invisible opacity-0",
+            ]}
+          >
             {#if view.members.length > 1}
               <button class={headerButton} aria-expanded={showBoard} aria-controls="board" onclick={toggleBoard}>
                 <Icon name="list" /> {showBoard ? "Piilota tilanne" : "Näytä tilanne"}
               </button>
             {/if}
-            {#if castEnabled}
+            {#if presenting}
+              <button class={headerButton} onclick={stopPresenting}>
+                <Icon name="minimize" /> Poistu kokoruudusta
+              </button>
+            {:else if castEnabled}
             <button
               class={headerButton}
               disabled={!linkToken}
@@ -333,9 +350,11 @@
               <Icon name="cast" /> {casting ? "Lähetetään…" : "Lähetä"}
             </button>
             {/if}
-            <button class={headerButton} onclick={present} title="Piilottaa painikkeet. Esc tai tuplaklikkaus palauttaa ne.">
-              <Icon name="maximize" /> Koko näyttö
-            </button>
+            {#if !presenting}
+              <button class={headerButton} onclick={present} title="Piilottaa painikkeet, kunnes hiirtä liikutetaan. Esc tai tuplaklikkaus palauttaa ne.">
+                <Icon name="maximize" /> Koko näyttö
+              </button>
+            {/if}
           </div>
         {/if}
       </header>
