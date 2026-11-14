@@ -57,8 +57,8 @@
   }
 </script>
 
-<form onsubmit={save}>
-  <p class="intro">
+<form class="grid gap-3.5" onsubmit={save}>
+  <p class="m-0">
     {#if existing}
       Muokkaat viivakoodin <code>{ean}</code> tuotetta.
     {:else}
@@ -67,78 +67,27 @@
   </p>
 
   <fieldset>
-    <legend>Mikä juoma on kyseessä?</legend>
-    <div class="kinds">
+    <legend class="mb-1.5">Mikä juoma on kyseessä?</legend>
+    <div class="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-1.5">
       {#each KINDS as k (k.id)}
-        <label class="kind"><input type="radio" name="kind" value={k.id} bind:group={kind} /> {k.label}</label>
+        <label class="flex cursor-pointer items-center gap-2 rounded-sm border border-line bg-raised px-2.75 py-1.75 has-checked:border-accent"><input type="radio" name="kind" value={k.id} bind:group={kind} /> {k.label}</label>
       {/each}
     </div>
   </fieldset>
 
-  <label class="field">Nimi<input type="text" bind:value={name} maxlength="60" placeholder="Esim. Lapin Kulta IVA" required /></label>
-  <div class="row">
-    <label class="field">Tölkin tai pullon koko (cl)<input type="text" inputmode="decimal" bind:value={sizeCl} placeholder="33" required /></label>
-    <label class="field">Alkoholia (%)<input type="text" inputmode="decimal" bind:value={abv} placeholder="4,5" required /></label>
+  <label class="grid gap-1.25">Nimi<input type="text" bind:value={name} maxlength="60" placeholder="Esim. Lapin Kulta IVA" required /></label>
+  <div class="grid grid-cols-2 gap-3">
+    <label class="grid gap-1.25">Tölkin tai pullon koko (cl)<input type="text" inputmode="decimal" bind:value={sizeCl} placeholder="33" required /></label>
+    <label class="grid gap-1.25">Alkoholia (%)<input type="text" inputmode="decimal" bind:value={abv} placeholder="4,5" required /></label>
   </div>
-  <label class="field">Energia (kcal / 100 ml, vapaaehtoinen)<input type="text" inputmode="decimal" bind:value={kcal} placeholder="43" /></label>
+  <label class="grid gap-1.25">Energia (kcal / 100 ml, vapaaehtoinen)<input type="text" inputmode="decimal" bind:value={kcal} placeholder="43" /></label>
 
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if error}<p class="m-0 text-danger" role="alert">{error}</p>{/if}
 
-  <div class="buttons">
-    <button class="btn primary" type="submit" disabled={busy}>{existing ? "Tallenna muutokset" : "Lisää tuote"}</button>
-    <button class="btn ghost" type="button" disabled={busy} onclick={onCancel}>Peruuta</button>
+  <div class="flex flex-wrap gap-2">
+    <button class="btn btn-primary" type="submit" disabled={busy}>{existing ? "Tallenna muutokset" : "Lisää tuote"}</button>
+    <button class="btn btn-ghost" type="button" disabled={busy} onclick={onCancel}>Peruuta</button>
   </div>
-  <p class="muted small">Tuote tallennetaan vain Bläkkiskiliin, ei Alkometriikalle. Voit muokata tai poistaa sen myöhemmin.</p>
+  <p class="m-0 text-sm text-secondary">Tuote tallennetaan vain Bläkkiskiliin, ei Alkometriikalle. Voit muokata tai poistaa sen myöhemmin.</p>
 </form>
 
-<style>
-  form {
-    display: grid;
-    gap: 0.9rem;
-  }
-  .intro,
-  .small,
-  .error {
-    margin: 0;
-  }
-  .small {
-    font-size: 0.93rem;
-  }
-  fieldset {
-    margin: 0;
-    padding: 0;
-    border: 0;
-  }
-  legend {
-    margin-bottom: 0.4rem;
-    padding: 0;
-  }
-  .kinds {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
-    gap: 0.4rem;
-  }
-  .kind {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.45rem 0.7rem;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--raised);
-    cursor: pointer;
-  }
-  .kind:has(input:checked) {
-    border-color: var(--accent);
-  }
-  .row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.75rem;
-  }
-  .buttons {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-</style>

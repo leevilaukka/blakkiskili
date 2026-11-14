@@ -31,6 +31,8 @@
     return all.filter((m, i) => i < MEMBERS_SHOWN || m.isMe);
   });
 
+  const tag = "ml-1.5 inline-block rounded-sm border border-line px-1.5 text-xs whitespace-nowrap text-secondary";
+
   async function run<T>(action: () => Promise<T>): Promise<T | undefined> {
     busy = true;
     error = "";
@@ -142,41 +144,41 @@
 <svelte:head><title>{view?.group.name ?? "Ryhmä"} · Bläkkiskili</title></svelte:head>
 
 <main class="page">
-  <nav class="crumbs" aria-label="Murupolku">
-    <a href="/groups"><Icon name="users" /> Ryhmät</a>
-    {#if view}<Icon name="chevron-right" /><span aria-current="page">{view.group.name}</span>{/if}
+  <nav class="mb-3.5 flex items-center gap-1.5 text-base text-secondary" aria-label="Murupolku">
+    <a class="inline-flex items-center gap-1.25 text-inherit no-underline hover:text-fg hover:underline" href="/groups"><Icon name="users" /> Ryhmät</a>
+    {#if view}<Icon name="chevron-right" /><span class="text-fg" aria-current="page">{view.group.name}</span>{/if}
   </nav>
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if error}<p class="text-danger" role="alert">{error}</p>{/if}
 
   {#if view}
-    <div class="head">
+    <div class="mb-5">
       <h1>{view.group.name}</h1>
-      <p class="lead">{view.group.memberCount} jäsentä · {view.group.kind === "telegram" ? "Telegram-ryhmä" : "Verkkoryhmä"} · päivittyy automaattisesti ({clock(view.now)})</p>
+      <p class="mt-1.5 mb-0 text-lg text-secondary">{view.group.memberCount} jäsentä · {view.group.kind === "telegram" ? "Telegram-ryhmä" : "Verkkoryhmä"} · päivittyy automaattisesti ({clock(view.now)})</p>
     </div>
 
-    <div class="cols">
-      <div>
+    <div class="grid items-start gap-4 min-[62rem]:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] min-[62rem]:gap-6">
+      <div class="grid min-w-0 gap-4">
         <section class="card" aria-label="Ryhmän promillekuvaaja">
           {#if view.chart.lines.length}
             <Chart data={view.chart} />
           {:else}
-            <p class="muted">Kukaan ei ole juonut viimeisen vuorokauden aikana.</p>
+            <p class="text-secondary">Kukaan ei ole juonut viimeisen vuorokauden aikana.</p>
           {/if}
         </section>
 
         <section class="card">
           <h2>Jäsenet</h2>
           {#if view.members.length > MEMBERS_SHOWN + 2}
-            <input class="search" type="search" bind:value={query} placeholder="Hae jäsentä" aria-label="Hae jäsentä" />
+            <input class="mb-2" type="search" bind:value={query} placeholder="Hae jäsentä" aria-label="Hae jäsentä" />
           {/if}
-          <ul class="members">
+          <ul>
             {#each shownMembers as m (m.ref)}
-              <li>
-                <span class="who">{m.name}{#if m.isMe} <span class="tag">sinä</span>{/if}{#if m.hidden && m.isMe} <span class="tag">nimetön näytöillä</span>{/if}</span>
-                <span class="num strong">{permille(m.permille)}‰</span>
-                <span class="num muted">{decimal1(m.standardDrinks12h)} ann. / 12 h</span>
+              <li class="grid grid-cols-[1fr_auto_auto_2.5rem] items-center gap-3 border-t border-line-soft py-1.75 first:border-t-0">
+                <span class="wrap-anywhere">{m.name}{#if m.isMe} <span class={tag}>sinä</span>{/if}{#if m.hidden && m.isMe} <span class={tag}>nimetön näytöillä</span>{/if}</span>
+                <span class="text-right font-bold whitespace-nowrap tabular-nums">{permille(m.permille)}‰</span>
+                <span class="text-right whitespace-nowrap text-secondary tabular-nums">{decimal1(m.standardDrinks12h)} ann. / 12 h</span>
                 {#if view.group.isOwner && !m.isMe}
-                  <button class="btn ghost small icon" disabled={busy} onclick={() => remove(m.ref, m.name)} aria-label="Poista {m.name} ryhmästä" title="Poista ryhmästä"><Icon name="trash" /></button>
+                  <button class="btn btn-ghost btn-sm btn-icon" disabled={busy} onclick={() => remove(m.ref, m.name)} aria-label="Poista {m.name} ryhmästä" title="Poista ryhmästä"><Icon name="trash" /></button>
                 {:else}
                   <span></span>
                 {/if}
@@ -184,24 +186,24 @@
             {/each}
           </ul>
           {#if query.trim() && !shownMembers.length}
-            <p class="muted">Ei hakutuloksia.</p>
+            <p class="text-secondary">Ei hakutuloksia.</p>
           {/if}
           {#if !query.trim() && view.members.length > MEMBERS_SHOWN + 2}
-            <button class="btn ghost small more" onclick={() => (allMembers = !allMembers)}>
+            <button class="btn btn-ghost btn-sm mt-2" onclick={() => (allMembers = !allMembers)}>
               {allMembers ? "Näytä vain parhaat" : `Näytä kaikki (${view.members.length})`}
             </button>
           {/if}
         </section>
       </div>
 
-      <div>
-        <section class="card panel">
-          <h2><Icon name="monitor" /> Näytä ruudulla</h2>
-          <p class="muted">
+      <div class="grid min-w-0 gap-4">
+        <section class="card card-panel">
+          <h2 class="flex items-center gap-2"><Icon name="monitor" /> Näytä ruudulla</h2>
+          <p class="text-secondary">
             Luo linkki, jonka voi avata ilman kirjautumista esimerkiksi tv:ssä tai muulla yhteisellä näytöllä. Linkin haltija näkee ryhmän jäsenten nimet ja promillet, joten jaa se vain näytölle.
           </p>
-          <div class="row">
-            <label class="field">Voimassa
+          <div class="mt-3 flex flex-wrap items-end gap-3">
+            <label class="grid min-w-[9rem] gap-1.25 max-[480px]:flex-[1_1_100%]">Voimassa
               <select bind:value={hours}>
                 <option value="6">6 tuntia</option>
                 <option value="24">24 tuntia</option>
@@ -209,8 +211,8 @@
                 <option value="168">7 päivää</option>
               </select>
             </label>
-            <div class="buttons">
-              <button class="btn primary" disabled={busy} onclick={makeScreen}><Icon name="link" /> Luo näyttölinkki</button>
+            <div class="flex flex-wrap gap-2 max-[480px]:flex-[1_1_100%] max-[480px]:*:flex-[1_1_0]">
+              <button class="btn btn-primary" disabled={busy} onclick={makeScreen}><Icon name="link" /> Luo näyttölinkki</button>
               {#if castEnabled}
               <button class="btn" disabled={busy} onclick={castNow} title="Luo linkin ja lähettää sen suoraan tv:hen tai muulle näytölle.">
                 <Icon name="cast" /> Lähetä näytölle
@@ -220,58 +222,46 @@
           </div>
 
           {#if fresh?.kind === "screen"}
-            <div class="fresh">
-              <p>Linkki näkyy vain nyt. Kopioi se ja avaa näytöllä:</p>
-              <div class="copyrow">
-                <input type="text" readonly value={fresh.url} onfocus={(e) => e.currentTarget.select()} aria-label="Näyttölinkki" />
-                <button class="btn" onclick={() => copy(fresh!.url)}><Icon name={copied ? "check" : "copy"} /> {copied ? "Kopioitu" : "Kopioi"}</button>
-              </div>
-            </div>
+            {@render freshLink("Linkki näkyy vain nyt. Kopioi se ja avaa näytöllä:", "Näyttölinkki", fresh.url)}
           {/if}
 
           {#if view.screens.length}
-            <ul class="links">
+            <ul class="mt-3">
               {#each view.screens as s (s.ref)}
-                <li>
+                <li class="flex items-center justify-between gap-2 border-t border-line py-1.5">
                   <span>Näyttölinkki · {s.mine ? "oma" : (s.createdBy ?? "entinen jäsen")} · voimassa {dayClock(s.expiresAt, view.now)}</span>
                   {#if s.mine || view.group.isOwner || view.isTelegramAdmin}
-                    <button class="btn small" disabled={busy} onclick={() => revokeScreen(s.ref)}>Peru</button>
+                    <button class="btn btn-sm" disabled={busy} onclick={() => revokeScreen(s.ref)}>Peru</button>
                   {/if}
                 </li>
               {/each}
             </ul>
           {/if}
 
-          <label class="check">
+          <label class="mt-4 flex items-center gap-2.5">
             <input type="checkbox" checked={view.group.hideOnScreen} disabled={busy} onchange={(e) => toggleHide(e.currentTarget.checked)} />
             Näytä minut näytöillä nimettömänä (Nimetön 1, 2, …)
           </label>
         </section>
 
         {#if view.group.kind === "web" && view.group.isOwner}
-          <section class="card panel">
-            <h2><Icon name="link" /> Kutsu</h2>
-            <p class="muted">
+          <section class="card card-panel">
+            <h2 class="flex items-center gap-2"><Icon name="link" /> Kutsu</h2>
+            <p class="text-secondary">
               Kutsulinkillä pääsee ryhmään.
               {#if view.inviteExpiresAt}Nykyinen kutsu on voimassa {dayClock(view.inviteExpiresAt, view.now)} asti.{/if}
               Uusi linkki korvaa vanhan.
             </p>
-            <div class="row">
-              <button class="btn primary" disabled={busy} onclick={makeInvite}><Icon name="plus" /> Luo kutsulinkki</button>
+            <div class="mt-3 flex flex-wrap items-end gap-3">
+              <button class="btn btn-primary" disabled={busy} onclick={makeInvite}><Icon name="plus" /> Luo kutsulinkki</button>
               {#if view.inviteExpiresAt}<button class="btn" disabled={busy} onclick={revokeInvite}>Peru kutsu</button>{/if}
             </div>
             {#if fresh?.kind === "invite"}
-              <div class="fresh">
-                <p>Linkki näkyy vain nyt:</p>
-                <div class="copyrow">
-                  <input type="text" readonly value={fresh.url} onfocus={(e) => e.currentTarget.select()} aria-label="Kutsulinkki" />
-                  <button class="btn" onclick={() => copy(fresh!.url)}><Icon name={copied ? "check" : "copy"} /> {copied ? "Kopioitu" : "Kopioi"}</button>
-                </div>
-              </div>
+              {@render freshLink("Linkki näkyy vain nyt:", "Kutsulinkki", fresh.url)}
             {/if}
-            <form class="rename" onsubmit={saveName}>
-              <label class="field" for="rn">Ryhmän nimi</label>
-              <div class="copyrow">
+            <form class="mt-4 grid gap-1.25" onsubmit={saveName}>
+              <label for="rn">Ryhmän nimi</label>
+              <div class="flex gap-2">
                 <input id="rn" type="text" bind:value={rename} maxlength="40" required />
                 <button class="btn" disabled={busy} type="submit">Nimeä uudelleen</button>
               </div>
@@ -279,136 +269,25 @@
           </section>
         {/if}
 
-        <section class="exit">
+        <section class="flex flex-wrap justify-end gap-2">
           <button class="btn" disabled={busy} onclick={leave}><Icon name="door" /> Poistu ryhmästä</button>
           {#if view.group.kind === "web" && view.group.isOwner}
-            <button class="btn danger" disabled={busy} onclick={destroy}><Icon name="trash" /> Poista ryhmä</button>
+            <button class="btn btn-danger" disabled={busy} onclick={destroy}><Icon name="trash" /> Poista ryhmä</button>
           {/if}
         </section>
       </div>
     </div>
   {:else if !error}
-    <p class="muted">Ladataan…</p>
+    <p class="text-secondary">Ladataan…</p>
   {/if}
 </main>
 
-<style>
-  h2 {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  .members,
-  .links {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-  .members li {
-    display: grid;
-    grid-template-columns: 1fr auto auto 2.5rem;
-    gap: 0.75rem;
-    align-items: center;
-    padding: 0.45rem 0;
-    border-top: 1px solid var(--border-soft);
-  }
-  .members li:first-child {
-    border-top: 0;
-  }
-  .search {
-    width: 100%;
-    margin-bottom: 0.5rem;
-  }
-  .more {
-    margin-top: 0.5rem;
-  }
-  .who {
-    overflow-wrap: anywhere;
-  }
-  .tag {
-    display: inline-block;
-    margin-left: 0.35rem;
-    padding: 0 0.35rem;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    font-size: 0.86rem;
-    color: var(--text-secondary);
-    white-space: nowrap;
-  }
-  .num {
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-    text-align: right;
-  }
-  .strong {
-    font-weight: 700;
-  }
-  .links {
-    margin-top: 0.75rem;
-  }
-  .links li {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.4rem 0;
-    border-top: 1px solid var(--border);
-  }
-  .row {
-    display: flex;
-    gap: 0.75rem;
-    align-items: end;
-    flex-wrap: wrap;
-    margin-top: 0.75rem;
-  }
-  .row .field {
-    min-width: 9rem;
-  }
-  .buttons {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-  @media (max-width: 480px) {
-    .row .field,
-    .buttons {
-      flex: 1 1 100%;
-    }
-    .buttons .btn {
-      flex: 1 1 0;
-    }
-  }
-  .fresh {
-    margin-top: 0.75rem;
-    padding: 0.75rem;
-    border: 1px dashed var(--axis);
-    border-radius: 4px;
-    background: var(--surface-1);
-    display: grid;
-    gap: 0.5rem;
-  }
-  .fresh p {
-    margin: 0;
-  }
-  .copyrow {
-    display: flex;
-    gap: 0.5rem;
-  }
-  .check {
-    display: flex;
-    gap: 0.6rem;
-    align-items: center;
-    margin-top: 1rem;
-  }
-  .rename {
-    display: grid;
-    gap: 0.3rem;
-    margin-top: 1rem;
-  }
-  .exit {
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-  }
-</style>
+{#snippet freshLink(intro: string, label: string, url: string)}
+  <div class="mt-3 grid gap-2 rounded-sm border border-dashed border-axis bg-surface-1 p-3">
+    <p class="m-0">{intro}</p>
+    <div class="flex gap-2">
+      <input type="text" readonly value={url} onfocus={(e) => e.currentTarget.select()} aria-label={label} />
+      <button class="btn" onclick={() => copy(url)}><Icon name={copied ? "check" : "copy"} /> {copied ? "Kopioitu" : "Kopioi"}</button>
+    </div>
+  </div>
+{/snippet}

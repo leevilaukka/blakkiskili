@@ -6,6 +6,7 @@
   import { clock, decimal1 } from "#lib/format.ts";
   import Chart from "#lib/Chart.svelte";
   import Icon from "#lib/Icon.svelte";
+  import Stat from "#lib/Stat.svelte";
   import TextField from "#lib/TextField.svelte";
 
   // The filters live in the address (?range=&from=&to=&q=), so a view can be bookmarked and
@@ -226,229 +227,105 @@
 <svelte:head><title>Päiväkirja · Bläkkiskili</title></svelte:head>
 
 <main class="page">
-  <div class="col">
-    <div class="head">
+  <div class="mx-auto max-w-[46rem]">
+    <div class="mb-5">
       <h1>Juomapäiväkirja</h1>
-      <p class="lead">Kaikki merkitsemäsi juomat illoittain. Rajaa ajan tai juoman nimen mukaan.</p>
+      <p class="mt-1.5 mb-0 text-lg text-secondary">Kaikki merkitsemäsi juomat illoittain. Rajaa ajan tai juoman nimen mukaan.</p>
     </div>
 
-    <section class="card panel filters" aria-label="Rajaukset">
-      <div class="ranges" role="group" aria-label="Aikaväli">
+    <section class="card card-panel grid gap-3" aria-label="Rajaukset">
+      <div class="flex flex-wrap gap-1.5" role="group" aria-label="Aikaväli">
         {#each RANGES as r (r.id)}
-          <button class="btn small" aria-pressed={range === r.id} onclick={() => chooseRange(r.id)}>{r.label}</button>
+          <button
+            class="btn btn-sm aria-pressed:border-brand-4 aria-pressed:bg-brand-4 aria-pressed:font-bold aria-pressed:text-white"
+            aria-pressed={range === r.id}
+            onclick={() => chooseRange(r.id)}>{r.label}</button
+          >
         {/each}
       </div>
       {#if range === "custom"}
-        <div class="dates">
-          <label class="field">Alkaen
+        <div class="grid grid-cols-2 gap-3">
+          <label class="grid gap-1.25">Alkaen
             <TextField kind="date" value={fromDay} max={toDay || undefined} label="Alkaen (pp.kk.vvvv)" onchange={(v) => setParams({ from: v || undefined })} />
           </label>
-          <label class="field">Asti
+          <label class="grid gap-1.25">Asti
             <TextField kind="date" value={toDay} min={fromDay || undefined} label="Asti (pp.kk.vvvv)" onchange={(v) => setParams({ to: v || undefined })} />
           </label>
         </div>
       {/if}
-      <div class="search">
-        <Icon name="search" />
+      <div class="relative flex items-center">
+        <Icon name="search" class="pointer-events-none absolute left-2.75 text-muted" />
         <label class="sr-only" for="q">Hae juoman nimellä</label>
-        <input id="q" type="search" placeholder="Hae juoman nimellä, esim. karhu" bind:value={search} oninput={onSearch} autocomplete="off" maxlength="80" />
+        <input id="q" class="pl-8.75" type="search" placeholder="Hae juoman nimellä, esim. karhu" bind:value={search} oninput={onSearch} autocomplete="off" maxlength="80" />
       </div>
     </section>
 
-    {#if error}<p class="error" role="alert">{error}</p>{/if}
+    {#if error}<p class="text-danger" role="alert">{error}</p>{/if}
     {#if notice}<p class="notice" role="status"><Icon name="check" /> <span>{notice}</span></p>{/if}
 
     {#if totals}
-      <div class="stats" aria-live="polite">
-        <div class="stat">
-          <span class="k">Juomia</span>
-          <span class="v">{totals.count}</span>
-        </div>
-        <div class="stat">
-          <span class="k">Annoksia</span>
-          <span class="v">{decimal1(totals.standardDrinks)}</span>
-          {#if totals.sessions > 1}<span class="sub">{decimal1(totals.standardDrinks / totals.sessions)} / kerta</span>{/if}
-        </div>
-        <div class="stat">
-          <span class="k">Juomakertoja</span>
-          <span class="v">{totals.sessions}</span>
-        </div>
-        <div class="stat">
-          <span class="k">Energia</span>
-          <span class="v">{totals.kcal} <small>kcal</small></span>
-          {#if totals.unknownKcal}<span class="sub">+ {totals.unknownKcal} ilman tietoa</span>{/if}
-        </div>
+      <div class="my-4 grid grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))] gap-2.5" aria-live="polite">
+        <Stat label="Juomia" value={totals.count} />
+        <Stat label="Annoksia" value={decimal1(totals.standardDrinks)} sub={totals.sessions > 1 ? `${decimal1(totals.standardDrinks / totals.sessions)} / kerta` : undefined} />
+        <Stat label="Juomakertoja" value={totals.sessions} />
+        <Stat label="Energia" value={totals.kcal} unit="kcal" sub={totals.unknownKcal ? `+ ${totals.unknownKcal} ilman tietoa` : undefined} />
       </div>
     {/if}
 
-    <div class="list" class:stale={loading && totals}>
+    <div class={["grid gap-3 transition-opacity", loading && totals && "opacity-55"]}>
       {#each sessions as s (s.key)}
-        <section class="card session" aria-labelledby="s{s.key}">
-          <header>
-            <h2 id="s{s.key}">
+        <section class="card px-4 pt-3 pb-1" aria-labelledby="s{s.key}">
+          <header class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 pb-1.5">
+            <h2 class="text-lg first-letter:uppercase" id="s{s.key}">
               {dateLabel(s.start)}
-              <span class="span">klo {clock(s.start)}{#if s.end !== s.start}–{clock(s.end)}{/if}</span>
+              <span class="ml-1.5 font-medium text-secondary tabular-nums">klo {clock(s.start)}{#if s.end !== s.start}–{clock(s.end)}{/if}</span>
             </h2>
-            <span class="muted num">
+            <span class="whitespace-nowrap text-secondary tabular-nums">
               {[count(s.drinks.length), `${decimal1(s.standardDrinks)} ann.`, s.kcal ? `${s.kcal} kcal` : ""].filter(Boolean).join(" · ")}
             </span>
           </header>
-          <ul class="drinks">
+          <ul>
             {#each s.drinks as d (d.id)}
-              <li>
-                <span class="time">{clock(d.createdAt)}</span>
-                <span class="desc">{d.description}</span>
-                <span class="muted num">{decimal1(d.standardDrinks)} ann.</span>
-                <button class="btn ghost small icon" disabled={busy} onclick={() => pin(d)} aria-label="Lisää suosikiksi: {d.description}" title="Lisää suosikiksi">
+              <li class="grid grid-cols-[3rem_1fr_auto_auto_auto] items-center gap-2.5 border-t border-line-soft py-1.5">
+                <span class="whitespace-nowrap text-secondary tabular-nums">{clock(d.createdAt)}</span>
+                <span class="wrap-anywhere">{d.description}</span>
+                <span class="whitespace-nowrap text-secondary tabular-nums">{decimal1(d.standardDrinks)} ann.</span>
+                <button class="btn btn-ghost btn-sm btn-icon" disabled={busy} onclick={() => pin(d)} aria-label="Lisää suosikiksi: {d.description}" title="Lisää suosikiksi">
                   <Icon name="star" />
                 </button>
-                <button class="btn ghost small icon" disabled={busy} onclick={() => remove(d)} aria-label="Poista {d.description}" title="Poista">
+                <button class="btn btn-ghost btn-sm btn-icon" disabled={busy} onclick={() => remove(d)} aria-label="Poista {d.description}" title="Poista">
                   <Icon name="trash" />
                 </button>
               </li>
             {/each}
           </ul>
-          <details class="curve" ontoggle={(e) => openChart(s, e.currentTarget.open)}>
-            <summary>Promillekäyrä</summary>
+          <details class="border-t border-line-soft pt-2 pb-3" ontoggle={(e) => openChart(s, e.currentTarget.open)}>
+            <summary class="cursor-pointer font-semibold">Promillekäyrä</summary>
             {#if charts[s.key] === "loading" || charts[s.key] === undefined}
-              <p class="muted">Ladataan…</p>
+              <p class="text-secondary">Ladataan…</p>
             {:else if charts[s.key] === null}
-              <p class="error">Käyrää ei voitu ladata.</p>
+              <p class="text-danger">Käyrää ei voitu ladata.</p>
             {:else if (charts[s.key] as ChartData).lines.length}
-              <p class="muted note">Arvio nykyisillä paino- ja pituustiedoillasi.</p>
+              <p class="my-1.5 text-[0.9rem] text-secondary">Arvio nykyisillä paino- ja pituustiedoillasi.</p>
               <Chart data={charts[s.key] as ChartData} legend={false} />
             {:else}
-              <p class="muted">Arvio ei nouse tällä kerralla mitattavaksi.</p>
+              <p class="text-secondary">Arvio ei nouse tällä kerralla mitattavaksi.</p>
             {/if}
           </details>
         </section>
       {:else}
         {#if totals}
-          <p class="muted empty">
+          <p class="my-2 text-secondary">
             {#if q}Ei juomia haulla ”{q}” tällä aikavälillä.{:else}Ei juomia tällä aikavälillä.{/if}
           </p>
         {:else if loading}
-          <p class="muted">Ladataan…</p>
+          <p class="text-secondary">Ladataan…</p>
         {/if}
       {/each}
 
       {#if next}
-        <button class="btn more" disabled={loadingMore} onclick={more}>{loadingMore ? "Ladataan…" : "Näytä vanhemmat"}</button>
+        <button class="btn justify-self-center" disabled={loadingMore} onclick={more}>{loadingMore ? "Ladataan…" : "Näytä vanhemmat"}</button>
       {/if}
     </div>
   </div>
 </main>
-
-<style>
-  .filters {
-    display: grid;
-    gap: 0.75rem;
-  }
-  .ranges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-  }
-  .ranges .btn[aria-pressed="true"] {
-    background: var(--brand-4);
-    border-color: var(--brand-4);
-    color: #fff;
-    font-weight: 700;
-  }
-  .dates {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.75rem;
-  }
-  .search {
-    position: relative;
-    display: flex;
-    align-items: center;
-  }
-  .search > :global(.icon) {
-    position: absolute;
-    left: 0.7rem;
-    color: var(--text-muted);
-    pointer-events: none;
-  }
-  .search input {
-    padding-left: 2.2rem;
-  }
-
-  .stats {
-    margin: 1rem 0;
-  }
-  .list {
-    display: grid;
-    gap: 0.75rem;
-    transition: opacity 0.15s;
-  }
-  .stale {
-    opacity: 0.55;
-  }
-  .empty {
-    margin: 0.5rem 0;
-  }
-
-  .session {
-    padding: 0.75rem 1rem 0.25rem;
-  }
-  .session header {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.25rem 1rem;
-    padding-bottom: 0.4rem;
-  }
-  .session h2 {
-    font-size: 1.07rem;
-  }
-  .session h2::first-letter {
-    text-transform: uppercase;
-  }
-  .span {
-    margin-left: 0.35rem;
-    color: var(--text-secondary);
-    font-weight: 500;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .drinks {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-  .drinks li {
-    display: grid;
-    grid-template-columns: 3rem 1fr auto auto auto;
-    gap: 0.6rem;
-    align-items: center;
-    padding: 0.4rem 0;
-    border-top: 1px solid var(--border-soft);
-  }
-  .time,
-  .num {
-    color: var(--text-secondary);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-  .desc {
-    overflow-wrap: anywhere;
-  }
-  .curve {
-    border-top: 1px solid var(--border-soft);
-    padding: 0.5rem 0 0.75rem;
-  }
-  .curve summary {
-    cursor: pointer;
-    font-weight: 600;
-  }
-  .note {
-    margin: 0.4rem 0;
-    font-size: 0.9rem;
-  }
-  .more {
-    justify-self: center;
-  }
-</style>

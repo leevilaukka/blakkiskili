@@ -1,7 +1,14 @@
+@import "tailwindcss";
+
 /* The look follows Alkometriikka (it started as its subdomain): its four brand reds,
    gray (light) and zinc (dark) neutrals, Inter, 4px corners and bordered buttons with a 1px
    shadow. Chart series colours are the dataviz palette (light steps validated on near-white, dark
-   steps on #1a1a19, which zinc-900 matches); see Chart.svelte. Colour never carries meaning alone. */
+   steps on #1a1a19, which zinc-900 matches); see Chart.svelte. Colour never carries meaning alone.
+
+   Tailwind's own palette, type scale and radii are replaced with these, so a utility like
+   `text-secondary` or `bg-surface-2` follows the theme: dark mode redefines the variables below
+   (system setting, or data-theme on the event screen), and no `dark:` variants are needed. The
+   root font size is 14px, so rem-based utilities are 14px-based too. */
 
 @font-face {
   font-family: "Inter";
@@ -17,483 +24,420 @@
   src: url("./lib/assets/fonts/Inter_24pt-Bold.subset.woff2") format("woff2");
 }
 
+/* static: every variable is emitted, also the ones only used through var() */
+@theme static {
+  --color-*: initial;
+  --color-white: #ffffff;
+  --color-black: #000000;
+  --color-brand-1: #e51b15;
+  --color-brand-2: #bf1616;
+  --color-brand-3: #960f0f;
+  --color-brand-4: #52000a;
+
+  --color-surface-1: #ffffff; /* page, cards, chart */
+  --color-surface-2: #f3f4f6; /* panels, hover, forecast wash */
+  --color-raised: #ffffff; /* buttons and inputs */
+  --color-line: #d1d5db;
+  --color-line-soft: #e5e7eb;
+  --color-axis: #9ca3af;
+  --color-fg: #09090b;
+  --color-secondary: #4b5563;
+  --color-muted: #6b7280;
+  --color-wordmark: var(--color-brand-3);
+  --color-link: var(--color-brand-2);
+  --color-accent: var(--color-brand-1); /* focus ring */
+  --color-positive: #15803d;
+  --color-positive-hover: #166534;
+  --color-danger: #bf1616;
+  --color-danger-bg: #e51b15;
+  --color-danger-hover: #b91c1c;
+  --color-ok-bg: #dcfce7;
+  --color-ok-border: #86efac;
+  --color-ok-text: #14532d;
+  --color-edge: rgb(0 0 0 / 10%); /* the 1px shadow under buttons and inputs */
+
+  --color-series-1: #2a78d6;
+  --color-series-2: #eb6834;
+  --color-series-3: #1baf7a;
+  --color-series-4: #eda100;
+  --color-series-5: #e87ba4;
+  --color-series-6: #008300;
+  --color-series-7: #6250d6;
+  --color-series-8: #e34948;
+  --color-series-9: #8c564b;
+  --color-series-10: #17becf;
+
+  --font-*: initial;
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* No line heights: text keeps the inherited 1.45 unless a leading-* utility says otherwise. */
+  --text-*: initial;
+  --text-xs: 0.86rem; /* 12px: footers, tags, sub-lines */
+  --text-sm: 0.93rem; /* 13px: hints, small buttons */
+  --text-base: 1rem; /* 14px */
+  --text-lg: 1.07rem; /* 15px: leads, list headings */
+  --text-xl: 1.25rem; /* h2 */
+  --text-2xl: 1.6rem; /* stat values */
+  --text-3xl: 2rem; /* h1 */
+  --text-4xl: 2.25rem;
+
+  --tracking-*: initial;
+  --tracking-normal: 0em;
+  --tracking-tight: -0.01em;
+  --tracking-tighter: -0.03em;
+
+  --radius-*: initial;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  --shadow-edge: 0 1px 0 var(--color-edge);
+}
+
 :root {
   color-scheme: light;
-  --brand-1: #e51b15;
-  --brand-2: #bf1616;
-  --brand-3: #960f0f;
-  --brand-4: #52000a;
-
-  --surface-1: #ffffff; /* page, cards, chart */
-  --surface-2: #f3f4f6; /* panels, hover, forecast wash */
-  --raised: #ffffff; /* buttons and inputs */
-  --border: #d1d5db;
-  --border-soft: #e5e7eb;
-  --axis: #9ca3af;
-  --text-primary: #09090b;
-  --text-secondary: #4b5563;
-  --text-muted: #6b7280;
-  --wordmark: var(--brand-3);
-  --link: var(--brand-2);
-  --accent: var(--brand-1); /* focus ring */
-  --positive: #15803d;
-  --positive-hover: #166534;
-  --danger: #bf1616;
-  --danger-bg: #e51b15;
-  --danger-hover: #b91c1c;
-  --ok-bg: #dcfce7;
-  --ok-border: #86efac;
-  --ok-text: #14532d;
-  --shadow: 0 1px 0 rgb(0 0 0 / 10%);
-
-  --series-1: #2a78d6;
-  --series-2: #eb6834;
-  --series-3: #1baf7a;
-  --series-4: #eda100;
-  --series-5: #e87ba4;
-  --series-6: #008300;
-  --series-7: #6250d6;
-  --series-8: #e34948;
-  --series-9: #8c564b;
-  --series-10: #17becf;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) {
     color-scheme: dark;
-    --surface-1: #18181b;
-    --surface-2: #09090b;
-    --raised: #27272a;
-    --border: #3f3f46;
-    --border-soft: #27272a;
-    --axis: #52525b;
-    --text-primary: #e4e4e7;
-    --text-secondary: #a1a1aa;
-    --text-muted: #8f8f99;
-    --wordmark: #ffffff;
-    --link: #f87171;
-    --danger: #f87171;
-    --ok-bg: #052e16;
-    --ok-border: #166534;
-    --ok-text: #bbf7d0;
-    --shadow: 0 1px 0 rgb(0 0 0 / 30%);
+    --color-surface-1: #18181b;
+    --color-surface-2: #09090b;
+    --color-raised: #27272a;
+    --color-line: #3f3f46;
+    --color-line-soft: #27272a;
+    --color-axis: #52525b;
+    --color-fg: #e4e4e7;
+    --color-secondary: #a1a1aa;
+    --color-muted: #8f8f99;
+    --color-wordmark: #ffffff;
+    --color-link: #f87171;
+    --color-danger: #f87171;
+    --color-ok-bg: #052e16;
+    --color-ok-border: #166534;
+    --color-ok-text: #bbf7d0;
+    --color-edge: rgb(0 0 0 / 30%);
 
-    --series-1: #3987e5;
-    --series-2: #d95926;
-    --series-3: #199e70;
-    --series-4: #c98500;
-    --series-5: #d55181;
-    --series-6: #008300;
-    --series-7: #9085e9;
-    --series-8: #e66767;
+    --color-series-1: #3987e5;
+    --color-series-2: #d95926;
+    --color-series-3: #199e70;
+    --color-series-4: #c98500;
+    --color-series-5: #d55181;
+    --color-series-6: #008300;
+    --color-series-7: #9085e9;
+    --color-series-8: #e66767;
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --surface-1: #18181b;
-  --surface-2: #09090b;
-  --raised: #27272a;
-  --border: #3f3f46;
-  --border-soft: #27272a;
-  --axis: #52525b;
-  --text-primary: #e4e4e7;
-  --text-secondary: #a1a1aa;
-  --text-muted: #8f8f99;
-  --wordmark: #ffffff;
-  --link: #f87171;
-  --danger: #f87171;
-  --ok-bg: #052e16;
-  --ok-border: #166534;
-  --ok-text: #bbf7d0;
-  --shadow: 0 1px 0 rgb(0 0 0 / 30%);
+  --color-surface-1: #18181b;
+  --color-surface-2: #09090b;
+  --color-raised: #27272a;
+  --color-line: #3f3f46;
+  --color-line-soft: #27272a;
+  --color-axis: #52525b;
+  --color-fg: #e4e4e7;
+  --color-secondary: #a1a1aa;
+  --color-muted: #8f8f99;
+  --color-wordmark: #ffffff;
+  --color-link: #f87171;
+  --color-danger: #f87171;
+  --color-ok-bg: #052e16;
+  --color-ok-border: #166534;
+  --color-ok-text: #bbf7d0;
+  --color-edge: rgb(0 0 0 / 30%);
 
-  --series-1: #3987e5;
-  --series-2: #d95926;
-  --series-3: #199e70;
-  --series-4: #c98500;
-  --series-5: #d55181;
-  --series-6: #008300;
-  --series-7: #9085e9;
-  --series-8: #e66767;
-}
-
-* {
-  box-sizing: border-box;
+  --color-series-1: #3987e5;
+  --color-series-2: #d95926;
+  --color-series-3: #199e70;
+  --color-series-4: #c98500;
+  --color-series-5: #d55181;
+  --color-series-6: #008300;
+  --color-series-7: #9085e9;
+  --color-series-8: #e66767;
 }
 
-html {
-  background: var(--surface-1);
-  color: var(--text-primary);
-  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  font-weight: 500;
-  font-size: 14px;
-  line-height: 1.45;
-  -webkit-text-size-adjust: 100%;
-  -webkit-tap-highlight-color: transparent;
+/* A chart line's colour: series-3 sets --c to the third series colour (see Chart.svelte). */
+@utility series-* {
+  --c: --value(--color-series-*);
 }
 
-body {
-  margin: 0;
-  min-height: 100vh;
-  background: var(--surface-1);
-}
+/* ---- element defaults (on top of Preflight) ---- */
 
-/* The event screen's embed view for OBS overlays (/screen?bg=transparent) */
-:root[data-bg="transparent"],
-:root[data-bg="transparent"] body {
-  background: transparent;
-}
-
-#app {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-}
-
-h1,
-h2,
-h3 {
-  line-height: 1.2;
-  margin: 0;
-  font-weight: 700;
-}
-h2 {
-  font-size: 1.25rem;
-}
-
-p {
-  margin: 0.5rem 0;
-}
-
-a {
-  color: var(--link);
-}
-
-strong,
-b {
-  font-weight: 700;
-}
-
-button,
-input,
-select {
-  font: inherit;
-  color: inherit;
-}
-
-button {
-  cursor: pointer;
-}
-
-:focus-visible {
-  outline: 1px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-/* ---- layout ---- */
-
-.page {
-  width: 100%;
-  max-width: 76rem;
-  margin: 0 auto;
-  padding: 1.25rem 1rem 3rem;
-  flex: 1;
-}
-
-/* Forms and lists: one narrow column, centred like Alkometriikka's tool pages. */
-.col {
-  max-width: 46rem;
-  margin: 0 auto;
-}
-
-/* Two columns from desktop width: the main thing (chart) and the lists around it. */
-.cols {
-  display: grid;
-  gap: 1rem;
-  align-items: start;
-}
-.cols > * {
-  min-width: 0;
-  display: grid;
-  gap: 1rem;
-}
-@media (min-width: 62rem) {
-  .cols {
-    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-    gap: 1.5rem;
+@layer base {
+  html {
+    background: var(--color-surface-1);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-weight: 500;
+    font-size: 14px;
+    line-height: 1.45;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
   }
-}
 
-/* Page title: breadcrumb, h1 and a muted lead, as on Alkometriikka's pages. */
-.head {
-  margin-bottom: 1.25rem;
-}
-.head h1 {
-  font-size: 2rem;
-  letter-spacing: -0.01em;
-}
-.head .lead {
-  margin: 0.4rem 0 0;
-  color: var(--text-secondary);
-  font-size: 1.07rem;
-}
-.crumbs {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  margin: 0 0 0.9rem;
-  color: var(--text-secondary);
-  font-size: 1rem;
-}
-.crumbs a {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  color: inherit;
-  text-decoration: none;
-}
-.crumbs a:hover {
-  color: var(--text-primary);
-  text-decoration: underline;
-}
-.crumbs [aria-current] {
-  color: var(--text-primary);
-}
-
-/* ---- surfaces ---- */
-
-.card {
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 1.25rem;
-  background: var(--surface-1);
-}
-/* A form or settings block: grey panel, white inputs. */
-.card.panel {
-  background: var(--surface-2);
-}
-.card > h2:first-child {
-  margin-bottom: 0.75rem;
-}
-.card > h2 + .muted {
-  margin-top: -0.4rem;
-}
-
-/* Number tiles: small label over a big value. */
-.stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
-  gap: 0.6rem;
-}
-.stat {
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0.75rem 1rem;
-  background: var(--surface-1);
-}
-.stat .k {
-  display: block;
-  color: var(--text-secondary);
-  font-size: 0.93rem;
-}
-.stat .v {
-  display: block;
-  font-size: 1.6rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.25;
-}
-.stat .v small {
-  font-size: 0.6em;
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-.stat .sub {
-  display: block;
-  color: var(--text-muted);
-  font-size: 0.86rem;
-}
-
-.muted {
-  color: var(--text-secondary);
-}
-
-.error {
-  color: var(--danger);
-}
-
-/* A confirmation that something happened (drink added). */
-.notice {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0;
-  padding: 0.6rem 0.8rem;
-  border: 1px solid var(--ok-border);
-  border-radius: 4px;
-  background: var(--ok-bg);
-  color: var(--ok-text);
-}
-.notice a {
-  color: inherit;
-  font-weight: 700;
-}
-
-/* ---- controls ---- */
-
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  border: 1px solid var(--border);
-  background: var(--raised);
-  color: var(--text-primary);
-  border-radius: 4px;
-  padding: 0.45rem 0.8rem;
-  min-height: 38px;
-  box-shadow: var(--shadow);
-  text-decoration: none;
-  white-space: nowrap;
-  user-select: none;
-  transition: background-color 0.15s, border-color 0.15s;
-}
-.btn:hover {
-  background: var(--surface-2);
-}
-.btn[aria-current="page"] {
-  background: var(--surface-2);
-}
-.btn.primary {
-  background: var(--positive);
-  border-color: var(--positive);
-  color: #fff;
-  font-weight: 700;
-}
-.btn.primary:hover {
-  background: var(--positive-hover);
-  border-color: var(--positive-hover);
-}
-.btn.danger {
-  background: var(--danger-bg);
-  border-color: var(--danger-bg);
-  color: #fff;
-}
-.btn.danger:hover {
-  background: var(--danger-hover);
-  border-color: var(--danger-hover);
-}
-.btn.ghost {
-  background: transparent;
-  border-color: transparent;
-  box-shadow: none;
-  color: var(--text-secondary);
-}
-.btn.ghost:hover {
-  background: var(--surface-2);
-  color: var(--text-primary);
-}
-.btn.small {
-  min-height: 32px;
-  padding: 0.25rem 0.6rem;
-  font-size: 0.93rem;
-}
-.btn.icon {
-  padding-inline: 0.5rem;
-}
-.btn:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-/* Fingers need bigger targets than the mouse (Alkometriikka's pointer-coarse rule). */
-@media (pointer: coarse) {
-  .btn {
-    min-height: 44px;
+  *,
+  ::before,
+  ::after,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-line);
   }
-  .btn.small {
-    min-height: 40px;
-  }
-}
 
-input[type="text"],
-input[type="number"],
-input[type="search"],
-input[type="date"],
-input[type="datetime-local"],
-select {
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0.45rem 0.65rem;
-  background: var(--raised);
-  min-height: 38px;
-  width: 100%;
-  box-shadow: var(--shadow);
-}
-input::placeholder {
-  color: var(--text-muted);
-}
-input[type="radio"],
-input[type="checkbox"] {
-  accent-color: var(--brand-2);
-  width: 1.1rem;
-  height: 1.1rem;
-  margin: 0;
-}
-/* iOS zooms into inputs with text under 16px. */
-@media (pointer: coarse) {
+  body {
+    min-height: 100vh;
+    background: var(--color-surface-1);
+  }
+
+  /* The event screen's embed view for OBS overlays (/screen?bg=transparent) */
+  :root[data-bg="transparent"],
+  :root[data-bg="transparent"] body {
+    background: transparent;
+  }
+
+  #app {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  h1,
+  h2,
+  h3 {
+    line-height: 1.2;
+    font-weight: 700;
+  }
+  h1 {
+    font-size: var(--text-3xl);
+    letter-spacing: var(--tracking-tight);
+  }
+  h2 {
+    font-size: var(--text-xl);
+  }
+  h3 {
+    font-size: 1.17em;
+  }
+
+  p {
+    margin: 0.5rem 0;
+  }
+
+  a {
+    color: var(--color-link);
+    text-decoration: underline;
+  }
+
+  strong,
+  b {
+    font-weight: 700;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 1px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  /* Focus from a tap or click (the chart has tabindex for its arrow keys) gets no browser ring. */
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
   input[type="text"],
   input[type="number"],
   input[type="search"],
   input[type="date"],
   input[type="datetime-local"],
   select {
-    font-size: 16px;
-    min-height: 44px;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    padding: 0.45rem 0.65rem;
+    background: var(--color-raised);
+    min-height: 38px;
+    width: 100%;
+    box-shadow: var(--shadow-edge);
+  }
+  input::placeholder {
+    color: var(--color-muted);
+  }
+  input[type="radio"],
+  input[type="checkbox"] {
+    accent-color: var(--color-brand-2);
+    width: 1.1rem;
+    height: 1.1rem;
+    margin: 0;
+  }
+  /* iOS zooms into inputs with text under 16px. */
+  @media (pointer: coarse) {
+    input[type="text"],
+    input[type="number"],
+    input[type="search"],
+    input[type="date"],
+    input[type="datetime-local"],
+    select {
+      font-size: 16px;
+      min-height: 44px;
+    }
+  }
+
+  kbd,
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    padding: 0.05rem 0.3rem;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
+  }
+
+  /* SvelteKit's route announcer hides itself with an inline style attribute, which our strict
+     Content-Security-Policy (style-src 'self') blocks. Same visually-hidden rule, in the stylesheet. */
+  #svelte-announcer {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      transition-duration: 0.01ms !important;
+    }
   }
 }
 
-/* A label above its input. */
-.field {
-  display: grid;
-  gap: 0.3rem;
-  color: var(--text-primary);
-}
+/* ---- the few classes every page shares; utilities override them ---- */
 
-kbd,
-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.92em;
-  padding: 0.05rem 0.3rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--surface-2);
-}
+@layer components {
+  /* A page's content area under the header. */
+  .page {
+    width: 100%;
+    max-width: 76rem;
+    margin: 0 auto;
+    padding: 1.25rem 1rem 3rem;
+    flex: 1;
+  }
 
-/* SvelteKit's route announcer hides itself with an inline style attribute, which our strict
-   Content-Security-Policy (style-src 'self') blocks. Same visually-hidden rule, in the stylesheet. */
-#svelte-announcer {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
+  .card {
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    padding: 1.25rem;
+    background: var(--color-surface-1);
+  }
+  /* A form or settings block: grey panel, white inputs. */
+  .card-panel {
+    background: var(--color-surface-2);
+  }
+  .card > h2:first-child {
+    margin-bottom: 0.75rem;
+  }
+  /* the explanation under a card's heading sits close to it */
+  .card > h2 + p {
+    margin-top: -0.4rem;
+  }
 
-@media (prefers-reduced-motion: reduce) {
-  * {
-    transition-duration: 0.01ms !important;
+  /* A confirmation that something happened (drink added). */
+  .notice {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid var(--color-ok-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-ok-bg);
+    color: var(--color-ok-text);
+  }
+  .notice a {
+    color: inherit;
+    font-weight: 700;
+  }
+
+  /* Buttons (also links and file labels that look like one): btn, plus btn-primary, btn-danger
+     or btn-ghost, and btn-sm or btn-icon for size. */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border: 1px solid var(--color-line);
+    background: var(--color-raised);
+    color: var(--color-fg);
+    border-radius: var(--radius-sm);
+    padding: 0.45rem 0.8rem;
+    min-height: 38px;
+    box-shadow: var(--shadow-edge);
+    text-decoration: none;
+    white-space: nowrap;
+    user-select: none;
+    transition:
+      background-color 0.15s,
+      border-color 0.15s;
+    @variant hover {
+      background: var(--color-surface-2);
+    }
+    &[aria-current="page"] {
+      background: var(--color-surface-2);
+    }
+    &:disabled {
+      opacity: 0.55;
+      cursor: default;
+    }
+  }
+  .btn-primary {
+    background: var(--color-positive);
+    border-color: var(--color-positive);
+    color: var(--color-white);
+    font-weight: 700;
+    @variant hover {
+      background: var(--color-positive-hover);
+      border-color: var(--color-positive-hover);
+    }
+  }
+  .btn-danger {
+    background: var(--color-danger-bg);
+    border-color: var(--color-danger-bg);
+    color: var(--color-white);
+    @variant hover {
+      background: var(--color-danger-hover);
+      border-color: var(--color-danger-hover);
+    }
+  }
+  .btn-ghost {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    color: var(--color-secondary);
+    @variant hover {
+      background: var(--color-surface-2);
+      color: var(--color-fg);
+    }
+  }
+  .btn-sm {
+    min-height: 32px;
+    padding: 0.25rem 0.6rem;
+    font-size: var(--text-sm);
+  }
+  .btn-icon {
+    padding-inline: 0.5rem;
+  }
+  /* Fingers need bigger targets than the mouse (Alkometriikka's pointer-coarse rule). */
+  @media (pointer: coarse) {
+    .btn {
+      min-height: 44px;
+    }
+    .btn-sm {
+      min-height: 40px;
+    }
   }
 }

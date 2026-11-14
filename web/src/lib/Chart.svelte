@@ -4,8 +4,8 @@
   // and one y axis. Identity is never colour alone: everyone is in the legend with their current
   // value, and up to four people also get direct labels at the "now" dot.
   //
-  // Colours come from CSS classes (s1..s10 → --series-n), so dark mode swaps in its own validated
-  // steps and the page's Content-Security-Policy needs no inline styles.
+  // Colours come from classes (series-1..10 set --c to --color-series-n, see app.css), so dark mode
+  // swaps in its own validated steps and the page's Content-Security-Policy needs no inline styles.
   import type { ChartData } from "../../../shared/api.ts";
   import { clock, permille } from "./format.ts";
 
@@ -30,7 +30,8 @@
   const EPS = 0.005;
   // The bot chart's light-mode palette order; a line's slot decides its colour in both modes.
   const LIGHT = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948", "#8c564b", "#17becf"];
-  const slot = (hex: string) => Math.max(0, LIGHT.indexOf(hex)) + 1;
+  const SERIES = ["series-1", "series-2", "series-3", "series-4", "series-5", "series-6", "series-7", "series-8", "series-9", "series-10"];
+  const seriesClass = (hex: string) => SERIES[Math.max(0, LIGHT.indexOf(hex))]!;
 
   let width = $state(640);
   let viewportHeight = $state(900);
@@ -101,7 +102,7 @@
       const pts = trimmed(l.points);
       return {
         line: l,
-        cls: `s${slot(l.color)}`,
+        cls: seriesClass(l.color),
         past: path(pts.filter((p) => p[0] <= data.now)),
         future: path(pts.filter((p) => p[0] >= data.now)),
         hasPast: pts.filter((p) => p[0] <= data.now).length > 1,
@@ -130,12 +131,19 @@
     const toRight = nowX + 10 * k + chars * 7.4 * k <= W - M.right;
     return items.map((it) => ({ ...it, toRight, lx: toRight ? nowX + 10 * k : nowX - 10 * k }));
   });
+  const lineClass = "fill-none stroke-(--c) [stroke-width:calc(2.5px*var(--k,1))] [stroke-linecap:round] [stroke-linejoin:round]";
+  const dotClass = "fill-(--c) stroke-surface-1 [stroke-width:calc(2px*var(--k,1))]";
   const truncate = (s: string, n: number) => ([...s].length > n ? [...s].slice(0, n - 1).join("") + "…" : s);
 
-  // ---------- hover / keyboard ----------
+  // ---------- hover / touch / keyboard ----------
+  // A mouse shows the moment under it while hovering. A finger taps or drags sideways to pick a
+  // moment, which stays after lifting (the finger no longer covers it) until a tap elsewhere; a
+  // vertical swipe still scrolls the page (touch-action: pan-y), and the browser taking the
+  // gesture over (pointercancel) hides it.
   const times = $derived(lines[0]?.points.map((p) => p[0]) ?? []);
   let cursor = $state<number | null>(null); // index into times
   const cursorT = $derived(cursor === null ? null : (times[cursor] ?? null));
+  let plot: SVGSVGElement | undefined = $state();
 
   function nearest(px: number): number | null {
     let best: number | null = null;
@@ -149,9 +157,20 @@
     });
     return best;
   }
-  function onMove(e: PointerEvent) {
+  function pick(e: PointerEvent) {
     const r = (e.currentTarget as SVGElement).getBoundingClientRect();
     cursor = nearest(((e.clientX - r.left) / r.width) * W);
+  }
+  /** A tap: pointerup rather than pointerdown, so a scroll that starts on the chart shows nothing. */
+  function onUp(e: PointerEvent) {
+    if (e.pointerType !== "mouse") pick(e);
+  }
+  function onLeave(e: PointerEvent) {
+    if (e.pointerType === "mouse") cursor = null;
+  }
+  /** A tap anywhere else hides a moment picked by touch. */
+  function onWindowDown(e: PointerEvent) {
+    if (cursor !== null && plot && !plot.contains(e.target as Node)) cursor = null;
   }
   function onKey(e: KeyboardEvent) {
     if (times.length === 0) return;
@@ -167,92 +186,123 @@
   const summary = $derived(lines.map((l) => (data.history ? `${l.name} huippu ${permille(l.peak)} promillea` : `${l.name} ${permille(l.current)} promillea`)).join(", "));
 </script>
 
-<svelte:window bind:innerHeight={viewportHeight} />
+<svelte:window bind:innerHeight={viewportHeight} onpointerdown={onWindowDown} />
 
-<figure class="chart" class:big class:fill style:--k={k}>
+<!-- --k: the scale prop, for a big display -->
+<figure class={["m-0", fill && "flex h-full flex-col"]} style:--k={k}>
   {#if legend && lines.length >= 1}
-    <ul class="legend">
+    <ul
+      class={[
+        "mb-2 flex flex-wrap",
+        big ? "gap-x-[calc(1.6rem*var(--k,1))] gap-y-[calc(0.4rem*var(--k,1))] text-[calc(1.2rem*var(--k,1))]" : "gap-x-[1.1rem] gap-y-1 text-[0.9rem]",
+      ]}
+    >
       {#each drawn as d (d.line.id)}
-        <li>
-          <svg class="key {d.cls}" width="22" height="10" viewBox="0 0 22 10" aria-hidden="true">
-            <line x1="1" x2="21" y1="5" y2="5" /><circle cx="11" cy="5" r="4" />
+        <li class={["flex items-center", big ? "gap-[calc(0.4rem*var(--k,1))]" : "gap-1.5"]}>
+          <svg
+            class={["block flex-none", d.cls, big && "h-[calc(10px*var(--k,1))] w-[calc(22px*var(--k,1))]"]}
+            width="22"
+            height="10"
+            viewBox="0 0 22 10"
+            aria-hidden="true"
+          >
+            <line class="stroke-(--c) stroke-2 [stroke-linecap:round]" x1="1" x2="21" y1="5" y2="5" /><circle class="fill-(--c)" cx="11" cy="5" r="4" />
           </svg>
-          <span class="name">{d.line.name}</span>
-          <span class="val">{permille(d.line.current)}‰</span>
+          <span>{d.line.name}</span>
+          <span class="text-secondary">{permille(d.line.current)}‰</span>
         </li>
       {/each}
     </ul>
   {/if}
 
-  <div class="plot" bind:clientWidth={width} bind:clientHeight={plotHeight}>
+  <div class={["relative", fill && "min-h-0 flex-1 overflow-hidden"]} bind:clientWidth={width} bind:clientHeight={plotHeight}>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
     <svg
+      bind:this={plot}
+      class={["block h-auto w-full touch-pan-y touch-pinch-zoom select-none focus-visible:outline-offset-4 [-webkit-touch-callout:none]", big ? "text-[calc(15px*var(--k,1))]" : "text-[12px]"]}
       viewBox="0 0 {W} {H}"
       width={W}
       height={H}
       role="group"
       aria-label="Arvioitu promillekäyrä. {summary}. Nuolinäppäimillä voit selata hetkiä."
       tabindex="0"
-      onpointermove={onMove}
-      onpointerleave={() => (cursor = null)}
+      onpointermove={pick}
+      onpointerup={onUp}
+      onpointerleave={onLeave}
+      onpointercancel={() => (cursor = null)}
       onkeydown={onKey}
       onblur={() => (cursor = null)}
     >
       {#if !data.history}
-        <rect class="wash" x={nowX} y={M.top} width={Math.max(0, W - M.right - nowX)} height={H - M.top - M.bottom} />
-        <text class="muted" x={W - M.right - 6 * k} y={M.top + 16 * k} text-anchor="end">ennuste</text>
+        <rect class="fill-surface-2 opacity-70" x={nowX} y={M.top} width={Math.max(0, W - M.right - nowX)} height={H - M.top - M.bottom} />
+        <text class="fill-muted" x={W - M.right - 6 * k} y={M.top + 16 * k} text-anchor="end">ennuste</text>
       {/if}
 
       {#each yTicks as v}
-        <line class="grid" class:zero={v === 0} x1={M.left} x2={W - M.right} y1={y(v)} y2={y(v)} />
-        <text class="muted" x={M.left - 8 * k} y={y(v) + 4 * k} text-anchor="end">{permille(v)}</text>
+        <line class={["stroke-1", v === 0 ? "stroke-axis" : "stroke-line"]} x1={M.left} x2={W - M.right} y1={y(v)} y2={y(v)} />
+        <text class="fill-muted" x={M.left - 8 * k} y={y(v) + 4 * k} text-anchor="end">{permille(v)}</text>
       {/each}
       {#each hourTicks as h}
-        <line class="grid" x1={x(h.t)} x2={x(h.t)} y1={M.top} y2={H - M.bottom} />
-        <text class="muted" x={x(h.t)} y={H - M.bottom + 20 * k} text-anchor="middle">{h.label}</text>
+        <line class="stroke-line stroke-1" x1={x(h.t)} x2={x(h.t)} y1={M.top} y2={H - M.bottom} />
+        <text class="fill-muted" x={x(h.t)} y={H - M.bottom + 20 * k} text-anchor="middle">{h.label}</text>
       {/each}
 
       {#if !data.history}
-        <line class="nowline" x1={nowX} x2={nowX} y1={M.top} y2={H - M.bottom} />
-        <text class="secondary" x={nowX} y={M.top - 5 * k} text-anchor="middle">nyt</text>
+        <line class="stroke-muted stroke-1" x1={nowX} x2={nowX} y1={M.top} y2={H - M.bottom} />
+        <text class="fill-secondary" x={nowX} y={M.top - 5 * k} text-anchor="middle">nyt</text>
       {/if}
 
       {#each drawn as d (d.line.id)}
-        {#if d.hasPast}<path class="line {d.cls}" d={d.past} />{/if}
-        {#if d.hasFuture}<path class="line future {d.cls}" d={d.future} />{/if}
+        {#if d.hasPast}<path class={[lineClass, d.cls]} d={d.past} />{/if}
+        {#if d.hasFuture}<path class={[lineClass, "[stroke-dasharray:2_6]", d.cls]} d={d.future} />{/if}
       {/each}
 
       {#if cursorT !== null}
-        <line class="cross" x1={x(cursorT)} x2={x(cursorT)} y1={M.top} y2={H - M.bottom} />
+        <line class="stroke-secondary stroke-1" x1={x(cursorT)} x2={x(cursorT)} y1={M.top} y2={H - M.bottom} />
         {#each drawn as d (d.line.id)}
-          <circle class="dot {d.cls}" cx={x(cursorT)} cy={y(valueAt(d.line, cursorT))} r={4.5 * k} />
+          <circle class={[dotClass, d.cls]} cx={x(cursorT)} cy={y(valueAt(d.line, cursorT))} r={4.5 * k} />
         {/each}
       {:else if !data.history}
         {#each drawn as d (d.line.id)}
-          <circle class="dot {d.cls}" cx={nowX} cy={y(d.line.current)} r={4.5 * k} />
+          <circle class={[dotClass, d.cls]} cx={nowX} cy={y(d.line.current)} r={4.5 * k} />
         {/each}
       {/if}
 
       {#if cursorT === null && !data.history}
         {#each labels as l (l.d.line.id)}
           {#if Math.abs(l.y - 4 * k - l.dotY) > 12 * k}
-            <line class="leader" x1={nowX} y1={l.dotY} x2={l.lx + (l.toRight ? -2 : 2) * k} y2={l.y - 4 * k} />
+            <line class="stroke-muted stroke-1" x1={nowX} y1={l.dotY} x2={l.lx + (l.toRight ? -2 : 2) * k} y2={l.y - 4 * k} />
           {/if}
-          <text class="direct" x={l.lx} y={l.y} text-anchor={l.toRight ? "start" : "end"}>{l.text}</text>
+          <!-- labels are text-token ink with a surface halo, never the series colour -->
+          <text
+            class={[
+              "fill-fg stroke-surface-1 [paint-order:stroke] [stroke-linejoin:round]",
+              big ? "text-[calc(17px*var(--k,1))] [stroke-width:calc(4px*var(--k,1))]" : "stroke-4 text-[13px]",
+            ]}
+            x={l.lx}
+            y={l.y}
+            text-anchor={l.toRight ? "start" : "end"}>{l.text}</text
+          >
         {/each}
       {/if}
       <!-- the pointer target covers the whole plot, not just the painted pixels -->
-      <rect class="hit" x={M.left} y={M.top} width={W - M.left - M.right} height={H - M.top - M.bottom} />
+      <rect class="fill-transparent" x={M.left} y={M.top} width={W - M.left - M.right} height={H - M.top - M.bottom} />
     </svg>
 
     {#if cursorT !== null}
-      <div class="tip" style:left="{tipLeft}px" role="status">
-        <div class="when">{clock(cursorT)}{cursorT > data.now ? " · ennuste" : ""}</div>
+      <div
+        class="pointer-events-none absolute top-0 max-w-[90vw] -translate-x-1/2 rounded-lg border border-line bg-surface-1 px-2.5 py-1.5 text-[0.85rem] whitespace-nowrap shadow-[0_2px_8px_rgb(0_0_0/12%)]"
+        style:left="{tipLeft}px"
+        role="status"
+      >
+        <div class="text-[0.78rem] text-secondary">{clock(cursorT)}{cursorT > data.now ? " · ennuste" : ""}</div>
         {#each [...drawn].sort((a, b) => valueAt(b.line, cursorT!) - valueAt(a.line, cursorT!)) as d (d.line.id)}
-          <div class="row">
-            <svg class="key {d.cls}" width="14" height="8" viewBox="0 0 14 8" aria-hidden="true"><line x1="0" x2="14" y1="4" y2="4" /></svg>
+          <div class="flex items-center gap-1.5">
+            <svg class={["block flex-none", d.cls]} width="14" height="8" viewBox="0 0 14 8" aria-hidden="true"
+              ><line class="stroke-(--c) stroke-2 [stroke-linecap:round]" x1="0" x2="14" y1="4" y2="4" /></svg
+            >
             <strong>{permille(valueAt(d.line, cursorT))}‰</strong>
-            {#if lines.length > 1}<span class="name">{d.line.name}</span>{/if}
+            {#if lines.length > 1}<span class="text-secondary">{d.line.name}</span>{/if}
           </div>
         {/each}
       </div>
@@ -260,208 +310,16 @@
   </div>
 
   {#if !big}
-  <details class="table">
-    <summary>Taulukko</summary>
-    <table>
-      <thead><tr><th>Nimi</th>{#if !data.history}<th>Nyt</th>{/if}<th>Huippu</th></tr></thead>
-      <tbody>
-        {#each lines as l (l.id)}
-          <tr><td>{l.name}</td>{#if !data.history}<td>{permille(l.current)}‰</td>{/if}<td>{permille(l.peak)}‰</td></tr>
-        {/each}
-      </tbody>
-    </table>
-  </details>
+    <details class="mt-2 text-[0.9rem] text-secondary">
+      <summary>Taulukko</summary>
+      <table class="mt-1.5 w-full border-collapse [&_:is(th,td)]:border-b [&_:is(th,td)]:border-line [&_:is(th,td)]:py-1 [&_:is(th,td)]:pr-2 [&_:is(th,td)]:text-left">
+        <thead><tr><th>Nimi</th>{#if !data.history}<th>Nyt</th>{/if}<th>Huippu</th></tr></thead>
+        <tbody>
+          {#each lines as l (l.id)}
+            <tr><td>{l.name}</td>{#if !data.history}<td>{permille(l.current)}‰</td>{/if}<td>{permille(l.peak)}‰</td></tr>
+          {/each}
+        </tbody>
+      </table>
+    </details>
   {/if}
 </figure>
-
-<style>
-  .chart {
-    margin: 0;
-  }
-  /* fill: the figure takes its container's height and the plot whatever the legend leaves */
-  .chart.fill {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-  }
-  .chart.fill .plot {
-    flex: 1;
-    min-height: 0;
-    overflow: hidden;
-  }
-  .plot {
-    position: relative;
-  }
-  svg {
-    display: block;
-    width: 100%;
-    height: auto;
-    font-size: 12px;
-    touch-action: pan-y;
-  }
-  svg:focus-visible {
-    outline-offset: 4px;
-  }
-  /* --k: the scale prop, for a big display */
-  .big svg {
-    font-size: calc(15px * var(--k, 1));
-  }
-
-  .grid {
-    stroke: var(--border);
-    stroke-width: 1;
-  }
-  .grid.zero {
-    stroke: var(--axis);
-  }
-  .muted {
-    fill: var(--text-muted);
-  }
-  .secondary {
-    fill: var(--text-secondary);
-  }
-  .wash {
-    fill: var(--surface-2);
-    opacity: 0.7;
-  }
-  .nowline {
-    stroke: var(--text-muted);
-    stroke-width: 1;
-  }
-  .cross {
-    stroke: var(--text-secondary);
-    stroke-width: 1;
-  }
-  .hit {
-    fill: transparent;
-  }
-  .line {
-    fill: none;
-    stroke: var(--c);
-    stroke-width: calc(2.5px * var(--k, 1));
-    stroke-linejoin: round;
-    stroke-linecap: round;
-  }
-  .line.future {
-    stroke-dasharray: 2 6;
-  }
-  .dot {
-    fill: var(--c);
-    stroke: var(--surface-1);
-    stroke-width: calc(2px * var(--k, 1));
-  }
-  .leader {
-    stroke: var(--text-muted);
-    stroke-width: 1;
-  }
-  /* labels are text-token ink with a surface halo, never the series colour */
-  .direct {
-    fill: var(--text-primary);
-    stroke: var(--surface-1);
-    stroke-width: 4;
-    stroke-linejoin: round;
-    paint-order: stroke;
-    font-size: 13px;
-  }
-  .big .direct {
-    font-size: calc(17px * var(--k, 1));
-    stroke-width: calc(4px * var(--k, 1));
-  }
-
-  .legend {
-    list-style: none;
-    margin: 0 0 0.5rem;
-    padding: 0;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.25rem 1.1rem;
-    font-size: 0.9rem;
-  }
-  .big .legend {
-    font-size: calc(1.2rem * var(--k, 1));
-    gap: calc(0.4rem * var(--k, 1)) calc(1.6rem * var(--k, 1));
-  }
-  .big .legend li {
-    gap: calc(0.4rem * var(--k, 1));
-  }
-  .big .legend .key {
-    width: calc(22px * var(--k, 1));
-    height: calc(10px * var(--k, 1));
-  }
-  .legend li {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-  .legend .val {
-    color: var(--text-secondary);
-  }
-  .key {
-    width: auto;
-    height: auto;
-    flex: none;
-  }
-  .key line {
-    stroke: var(--c);
-    stroke-width: 2;
-    stroke-linecap: round;
-  }
-  .key circle {
-    fill: var(--c);
-  }
-
-  .tip {
-    position: absolute;
-    top: 0;
-    transform: translateX(-50%);
-    background: var(--surface-1);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 0.4rem 0.6rem;
-    font-size: 0.85rem;
-    pointer-events: none;
-    box-shadow: 0 2px 8px rgb(0 0 0 / 12%);
-    white-space: nowrap;
-    max-width: 90vw;
-  }
-  .tip .when {
-    color: var(--text-secondary);
-    font-size: 0.78rem;
-  }
-  .tip .row {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-  .tip .name {
-    color: var(--text-secondary);
-  }
-
-  .table {
-    margin-top: 0.5rem;
-    font-size: 0.9rem;
-    color: var(--text-secondary);
-  }
-  .table table {
-    border-collapse: collapse;
-    margin-top: 0.4rem;
-    width: 100%;
-  }
-  .table th,
-  .table td {
-    text-align: left;
-    padding: 0.25rem 0.5rem 0.25rem 0;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .s1 { --c: var(--series-1); }
-  .s2 { --c: var(--series-2); }
-  .s3 { --c: var(--series-3); }
-  .s4 { --c: var(--series-4); }
-  .s5 { --c: var(--series-5); }
-  .s6 { --c: var(--series-6); }
-  .s7 { --c: var(--series-7); }
-  .s8 { --c: var(--series-8); }
-  .s9 { --c: var(--series-9); }
-  .s10 { --c: var(--series-10); }
-</style>

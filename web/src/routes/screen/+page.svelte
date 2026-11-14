@@ -99,6 +99,10 @@
       localStorage.setItem("kili-screen-board", boardOpen ? "open" : "closed");
     } catch {}
   }
+  const subtitle = "mt-0.75 mb-0 text-[clamp(1rem,1.8vw,calc(1.4rem*var(--k,1)))] text-secondary";
+  const headerButton = "btn flex-none text-[clamp(1rem,1.3vw,calc(1.25rem*var(--k,1)))]";
+  const themeButton =
+    "rounded-sm border border-line bg-raised px-2.5 py-1 text-secondary aria-expanded:bg-surface-2 aria-expanded:text-fg aria-pressed:bg-surface-2 aria-pressed:text-fg";
   const host = typeof location === "undefined" ? "" : location.host;
 
   function applyTheme(t: Theme, save = true) {
@@ -225,41 +229,51 @@
   <meta name="referrer" content="no-referrer" />
 </svelte:head>
 
+<!-- fit (embed, fullscreen, or a roomy window): exactly the window, the chart taking what the
+     heading and footer leave -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<main class="screen" class:embed class:fit style:--k={scale} ondblclick={() => presenting && stopPresenting()}>
+<main
+  class={[
+    "flex flex-col gap-4",
+    fit ? "h-screen min-h-0 overflow-hidden" : "min-h-screen",
+    embed ? "p-[clamp(0.5rem,1.5vw,1rem)]" : "p-[clamp(0.75rem,2.5vw,2rem)]",
+  ]}
+  style:--k={scale}
+  ondblclick={() => presenting && stopPresenting()}
+>
   {#if status === "ended"}
-    <div class="ended">
-      <h1>Näyttölinkki on päättynyt</h1>
+    <div class="m-auto max-w-[30rem] text-center">
+      <h1 class="tracking-normal">Näyttölinkki on päättynyt</h1>
       <p>Linkki on vanhentunut tai peruttu. Pyydä uusi linkki ryhmästä.</p>
     </div>
   {:else if !view}
-    <p class="muted">{status === "reconnecting" ? "Yhteys palvelimeen ei toimi, yritetään uudelleen…" : "Ladataan…"}</p>
+    <p class="text-secondary">{status === "reconnecting" ? "Yhteys palvelimeen ei toimi, yritetään uudelleen…" : "Ladataan…"}</p>
   {:else}
     {#if showTitle || !embed}
-      <header>
-        <div class="titles">
-          <h1>
+      <header class="flex items-start justify-between gap-4">
+        <div class="min-w-0">
+          <h1 class="flex items-center gap-[0.4em] text-[clamp(1.8rem,4.5vw,calc(3.5rem*var(--k,1)))] tracking-normal wrap-anywhere">
             {#if view.photo && !photoFailed}
-              <!-- fetched from Telegram by our server (src/web/photos.ts) -->
-              <img class="group" src="/api/screen/photo" alt="" width="48" height="48" onerror={() => (photoFailed = true)} />
+              <!-- fetched from Telegram by our server (src/web/photos.ts); Telegram shows group photos round -->
+              <img class="size-[0.9em] flex-none rounded-full" src="/api/screen/photo" alt="" width="48" height="48" onerror={() => (photoFailed = true)} />
             {:else}
-              <img src="/kili-256.jpg" alt="" width="48" height="48" />
+              <img class="size-[0.9em] flex-none rounded-[0.1em]" src="/kili-256.jpg" alt="" width="48" height="48" />
             {/if}
             {view.title}
           </h1>
-          {#if castError}<p class="muted" role="alert">{castError}</p>{/if}
-          <p class="muted">Arvioidut promillet · {clock(view.now)}{status === "reconnecting" ? " · yhteys katkesi, yritetään uudelleen…" : ""}</p>
+          {#if castError}<p class={subtitle} role="alert">{castError}</p>{/if}
+          <p class={subtitle}>Arvioidut promillet · {clock(view.now)}{status === "reconnecting" ? " · yhteys katkesi, yritetään uudelleen…" : ""}</p>
         </div>
         {#if !embed && !presenting}
-          <div class="actions">
+          <div class="flex flex-none flex-wrap justify-end gap-2">
             {#if view.members.length > 1}
-              <button class="btn toggle" aria-expanded={showBoard} aria-controls="board" onclick={toggleBoard}>
+              <button class={headerButton} aria-expanded={showBoard} aria-controls="board" onclick={toggleBoard}>
                 <Icon name="list" /> {showBoard ? "Piilota tilanne" : "Näytä tilanne"}
               </button>
             {/if}
             {#if castEnabled}
             <button
-              class="btn toggle"
+              class={headerButton}
               disabled={!linkToken}
               onclick={cast}
               title={linkToken ? "Näytä kuvaaja Chromecastilla tai muulla näytöllä." : "Avaa näyttölinkki uudelleen, jotta voit lähettää kuvan."}
@@ -267,7 +281,7 @@
               <Icon name="cast" /> {casting ? "Lähetetään…" : "Lähetä"}
             </button>
             {/if}
-            <button class="btn toggle" onclick={present} title="Piilottaa painikkeet. Esc tai tuplaklikkaus palauttaa ne.">
+            <button class={headerButton} onclick={present} title="Piilottaa painikkeet. Esc tai tuplaklikkaus palauttaa ne.">
               <Icon name="maximize" /> Koko näyttö
             </button>
           </div>
@@ -275,23 +289,30 @@
       </header>
     {/if}
 
-    <div class="body" class:wide={!showBoard}>
-      <section class="chart">
+    <!-- board closed (or a person's screen): the chart gets the whole width -->
+    <div
+      class={[
+        "grid flex-1 gap-[clamp(1rem,2.5vw,2.5rem)]",
+        showBoard ? "grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)] max-[800px]:grid-cols-[minmax(0,1fr)]" : "grid-cols-[minmax(0,1fr)]",
+        fit ? "min-h-0 grid-rows-[minmax(0,1fr)] items-stretch" : "items-start",
+      ]}
+    >
+      <section class={[fit && "min-h-0"]}>
         {#if view.chart.lines.length}
           <Chart data={view.chart} big legend={showLegend} fill={fit} {scale} />
         {:else}
-          <p class="empty">Ei juomia viimeisen vuorokauden aikana.</p>
+          <p class="text-[calc(1.6rem*var(--k,1))] text-secondary">Ei juomia viimeisen vuorokauden aikana.</p>
         {/if}
       </section>
 
       {#if showBoard}
-        <ol class="board" id="board" aria-label="Tilanne">
+        <ol class={["grid gap-1", fit && "max-h-full self-start overflow-hidden"]} id="board" aria-label="Tilanne">
           {#each view.members.filter((m) => m.permille > 0.005) as m, i (m.name)}
-            <li>
-              <span class="rank">{i + 1}</span>
-              <span class="name">{m.name}</span>
-              <span class="value">{permille(m.permille)}<small>‰</small></span>
-              <span class="muted drinks">{decimal1(m.standardDrinks12h)} ann.</span>
+            <li class="grid grid-cols-[2ch_1fr_auto_auto] items-baseline gap-3.5 border-b border-line-soft py-2.25 text-[clamp(1.1rem,2vw,calc(1.7rem*var(--k,1)))]">
+              <span class="text-muted tabular-nums">{i + 1}</span>
+              <span class="wrap-anywhere">{m.name}</span>
+              <span class="font-bold tabular-nums">{permille(m.permille)}<small class="ml-[0.1em] text-[0.6em] text-secondary">‰</small></span>
+              <span class="text-[0.65em] whitespace-nowrap text-secondary">{decimal1(m.standardDrinks12h)} ann.</span>
             </li>
           {/each}
         </ol>
@@ -301,34 +322,34 @@
 
   {#if !embed}
     {#if panelOpen && !presenting}
-      <section class="panel" id="embed-panel" aria-labelledby="embed-title">
-        <h2 id="embed-title"><Icon name="monitor" /> Upotus OBS:ään tai muuhun lähetysohjelmaan</h2>
-        <p class="muted">
+      <section class="grid gap-2.5 rounded-sm border border-line bg-surface-2 px-5 py-4" id="embed-panel" aria-labelledby="embed-title">
+        <h2 class="flex items-center gap-2 text-[1.15rem]" id="embed-title"><Icon name="monitor" /> Upotus OBS:ään tai muuhun lähetysohjelmaan</h2>
+        <p class="m-0 text-secondary">
           Lisää OBS:ssä lähteeksi <strong>Selain</strong> (Browser) ja liitä osoitteeksi alla oleva linkki. Kuvaaja täyttää lähteen koon.
         </p>
-        <div class="options">
+        <div class="flex flex-wrap items-center gap-x-5 gap-y-2 [&_label]:flex [&_label]:items-center [&_label]:gap-1.75">
           <label><input type="checkbox" bind:checked={opt.title} /> Otsikko</label>
           <label><input type="checkbox" bind:checked={opt.legend} /> Nimet kuvaajan yllä</label>
           <label><input type="checkbox" bind:checked={opt.board} /> Tilanne kuvaajan vieressä</label>
           {#if view?.groupId}<label><input type="checkbox" bind:checked={opt.qr} /> QR-koodi ryhmän sivulle</label>{/if}
           <label><input type="checkbox" bind:checked={opt.transparent} /> Läpinäkyvä tausta</label>
-          <label class="select">Värit
-            <select bind:value={opt.theme}>
+          <label>Värit
+            <select class="w-auto" bind:value={opt.theme}>
               <option value="dark">Tumma</option>
               <option value="light">Vaalea</option>
               <option value="auto">Järjestelmän mukaan</option>
             </select>
           </label>
         </div>
-        <div class="copyrow">
+        <div class="flex gap-2">
           <input type="text" readonly value={embedUrl} onfocus={(e) => e.currentTarget.select()} aria-label="Upotuslinkki" />
           <button class="btn" onclick={copyEmbed}><Icon name={copied ? "check" : "copy"} /> {copied ? "Kopioitu" : "Kopioi"}</button>
           {#if linkToken}<a class="btn" href={embedUrl} target="_blank" rel="noopener">Esikatsele</a>{/if}
         </div>
         {#if linkToken}
-          <p class="muted small">Linkissä on näyttölinkin avain: jaa se vain lähetysohjelmaan.</p>
+          <p class="m-0 text-[0.9rem] text-secondary">Linkissä on näyttölinkin avain: jaa se vain lähetysohjelmaan.</p>
         {:else}
-          <p class="muted small">
+          <p class="m-0 text-[0.9rem] text-secondary">
             Tämä sivu avattiin ilman näyttölinkkiä, joten linkistä puuttuu avain. Lisää perään alkuperäisen näyttölinkin <code>#t=…</code>-osa tai luo uusi näyttölinkki ryhmän sivulla.
           </p>
         {/if}
@@ -337,16 +358,17 @@
   {/if}
 
   {#if !embed || showQr}
-    <footer>
-      <div class="info">
+    <footer class="flex items-end justify-between gap-4 text-[clamp(0.85rem,1.1vw,calc(1rem*var(--k,1)))]">
+      <!-- the QR code, then the notes, at the footer's left -->
+      <div class="flex min-w-0 items-end gap-[calc(1rem*var(--k,1))]">
         {#if showQr}
-          <figure class="qr">
-            <figcaption>Ryhmän sivu</figcaption>
+          <figure class="m-0 w-[calc(5.5rem*var(--k,1))] flex-none text-center">
+            <figcaption class="mb-0.75 text-[0.85em] text-secondary">Ryhmän sivu</figcaption>
             <QrCode text={groupUrl} label="QR-koodi ryhmän sivulle" />
           </figure>
         {/if}
         {#if !embed}
-      <div class="muted note">
+      <div class="max-w-[calc(60rem*var(--k,1))] text-secondary [&_p]:mt-0.75 [&_p]:mb-0">
         {#if view?.kind === "group"}
           <p>
             Nimet ja promillet näkyvät kaikille tämän näytön katsojille.
@@ -359,13 +381,13 @@
         {/if}
       </div>
       {#if !embed}
-      <div class="controls" class:hidden={presenting}>
+      <div class={presenting ? "hidden" : "flex flex-none gap-3"}>
         {#if view}
-          <button class="theme" aria-expanded={panelOpen} aria-controls="embed-panel" onclick={() => (panelOpen = !panelOpen)}>OBS-upotus</button>
+          <button class={themeButton} aria-expanded={panelOpen} aria-controls="embed-panel" onclick={() => (panelOpen = !panelOpen)}>OBS-upotus</button>
         {/if}
-        <span class="themes" role="group" aria-label="Teema">
+        <span class="flex gap-1" role="group" aria-label="Teema">
           {#each [["auto", "Auto"], ["dark", "Tumma"], ["light", "Vaalea"]] as [value, label]}
-            <button class="theme" aria-pressed={theme === value} onclick={() => applyTheme(value as Theme)}>{label}</button>
+            <button class={themeButton} aria-pressed={theme === value} onclick={() => applyTheme(value as Theme)}>{label}</button>
           {/each}
         </span>
       </div>
@@ -373,233 +395,3 @@
     </footer>
   {/if}
 </main>
-
-<style>
-  .screen {
-    min-height: 100vh;
-    padding: clamp(0.75rem, 2.5vw, 2rem);
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-  /* fit (embed, fullscreen, or a roomy window): exactly the window, the chart taking what the
-     heading and footer leave */
-  .screen.fit {
-    height: 100vh;
-    min-height: 0;
-    overflow: hidden;
-  }
-  .screen.embed {
-    padding: clamp(0.5rem, 1.5vw, 1rem);
-  }
-  .fit .body {
-    min-height: 0;
-    grid-template-rows: minmax(0, 1fr);
-    align-items: stretch;
-  }
-  .fit .chart {
-    min-height: 0;
-  }
-  .fit .board {
-    align-self: start;
-    max-height: 100%;
-    overflow: hidden;
-  }
-  header {
-    display: flex;
-    align-items: start;
-    justify-content: space-between;
-    gap: 1rem;
-  }
-  .titles {
-    min-width: 0;
-  }
-  .actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: end;
-    gap: 0.5rem;
-    flex: none;
-  }
-  .controls.hidden {
-    display: none;
-  }
-  .toggle {
-    flex: none;
-    font-size: clamp(1rem, 1.3vw, calc(1.25rem * var(--k, 1)));
-  }
-  header h1 {
-    display: flex;
-    align-items: center;
-    gap: 0.4em;
-    font-size: clamp(1.8rem, 4.5vw, calc(3.5rem * var(--k, 1)));
-    overflow-wrap: anywhere;
-  }
-  header img {
-    width: 0.9em;
-    height: 0.9em;
-    flex: none;
-    border-radius: 0.1em;
-  }
-  /* Telegram shows group photos round */
-  header img.group {
-    border-radius: 50%;
-  }
-  header p {
-    margin: 0.2rem 0 0;
-    font-size: clamp(1rem, 1.8vw, calc(1.4rem * var(--k, 1)));
-  }
-  .body {
-    display: grid;
-    grid-template-columns: minmax(0, 2fr) minmax(16rem, 1fr);
-    gap: clamp(1rem, 2.5vw, 2.5rem);
-    align-items: start;
-    flex: 1;
-  }
-  /* board closed (or a person's screen): the chart gets the whole width */
-  .body.wide {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  @media (max-width: 800px) {
-    .body {
-      grid-template-columns: minmax(0, 1fr);
-    }
-  }
-  .empty {
-    font-size: calc(1.6rem * var(--k, 1));
-    color: var(--text-secondary);
-  }
-  .board {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    gap: 0.25rem;
-  }
-  .board li {
-    display: grid;
-    grid-template-columns: 2ch 1fr auto auto;
-    gap: 0.9rem;
-    align-items: baseline;
-    padding: 0.55rem 0;
-    border-bottom: 1px solid var(--border-soft);
-    font-size: clamp(1.1rem, 2vw, calc(1.7rem * var(--k, 1)));
-  }
-  .rank {
-    color: var(--text-muted);
-    font-variant-numeric: tabular-nums;
-  }
-  .name {
-    overflow-wrap: anywhere;
-  }
-  .value {
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-  }
-  .value small {
-    font-size: 0.6em;
-    color: var(--text-secondary);
-    margin-left: 0.1em;
-  }
-  .drinks {
-    font-size: 0.65em;
-    white-space: nowrap;
-  }
-  .ended {
-    margin: auto;
-    text-align: center;
-    max-width: 30rem;
-  }
-
-  .panel {
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--surface-2);
-    padding: 1rem 1.25rem;
-    display: grid;
-    gap: 0.6rem;
-  }
-  .panel h2 {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 1.15rem;
-  }
-  .panel p {
-    margin: 0;
-  }
-  .options {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem 1.25rem;
-  }
-  .options label {
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-  }
-  .options select {
-    width: auto;
-  }
-  .copyrow {
-    display: flex;
-    gap: 0.5rem;
-  }
-  .small {
-    font-size: 0.9rem;
-  }
-
-  footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: end;
-    gap: 1rem;
-    font-size: clamp(0.85rem, 1.1vw, calc(1rem * var(--k, 1)));
-  }
-  /* the QR code, then the notes, at the footer's left */
-  .info {
-    display: flex;
-    align-items: end;
-    gap: calc(1rem * var(--k, 1));
-    min-width: 0;
-  }
-  .qr {
-    flex: none;
-    width: calc(5.5rem * var(--k, 1));
-    margin: 0;
-    text-align: center;
-  }
-  .qr figcaption {
-    margin-bottom: 0.2rem;
-    color: var(--text-secondary);
-    font-size: 0.85em;
-  }
-  .note {
-    max-width: calc(60rem * var(--k, 1));
-  }
-  .note p {
-    margin: 0.2rem 0 0;
-  }
-  .controls {
-    display: flex;
-    gap: 0.75rem;
-    flex: none;
-  }
-  .themes {
-    display: flex;
-    gap: 0.25rem;
-  }
-  .theme {
-    background: var(--raised);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 0.25rem 0.6rem;
-    color: var(--text-secondary);
-  }
-  .theme[aria-pressed="true"],
-  .theme[aria-expanded="true"] {
-    background: var(--surface-2);
-    color: var(--text-primary);
-  }
-</style>

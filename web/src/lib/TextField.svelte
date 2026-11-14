@@ -92,7 +92,7 @@
   }}
 />
 
-<span class="wrap" bind:this={root}>
+<span class="relative block" bind:this={root}>
   <input
     type="text"
     inputmode="numeric"
@@ -100,30 +100,41 @@
     autocomplete="off"
     aria-label={label}
     aria-invalid={invalid}
-    class:invalid
-    class:withbutton={kind === "date"}
+    class={[invalid && "border-danger", kind === "date" && "pr-10"]}
     bind:value={text}
     onchange={commit}
     onkeydown={(e) => e.key === "Enter" && commit()}
   />
   {#if kind === "date"}
-    <button type="button" class="open" aria-label="Avaa kalenteri" aria-expanded={open} onclick={toggle}><Icon name="calendar" /></button>
+    <button
+      type="button"
+      class="absolute inset-y-0 right-0 grid w-[2.4rem] place-items-center bg-transparent text-secondary hover:text-fg"
+      aria-label="Avaa kalenteri"
+      aria-expanded={open}
+      onclick={toggle}><Icon name="calendar" /></button
+    >
     {#if open}
-      <div class="cal" role="dialog" aria-label="Kalenteri">
-        <div class="head">
-          <button type="button" class="btn ghost small icon" aria-label="Edellinen kuukausi" disabled={prevOut} onclick={() => step(-1)}><Icon name="chevronLeft" /></button>
+      <div
+        class="absolute top-[calc(100%+0.3rem)] left-0 z-20 w-[17rem] max-w-[calc(100vw-2rem)] rounded-md border border-line bg-surface-1 p-2.5 shadow-[0_8px_24px_rgb(0_0_0/0.35)]"
+        role="dialog"
+        aria-label="Kalenteri"
+      >
+        <div class="mb-1.5 flex items-center justify-between capitalize">
+          <button type="button" class="btn btn-ghost btn-sm btn-icon" aria-label="Edellinen kuukausi" disabled={prevOut} onclick={() => step(-1)}><Icon name="chevronLeft" /></button>
           <strong>{monthName.format(new Date(year, month, 1))}</strong>
-          <button type="button" class="btn ghost small icon" aria-label="Seuraava kuukausi" disabled={nextOut} onclick={() => step(1)}><Icon name="chevronRight" /></button>
+          <button type="button" class="btn btn-ghost btn-sm btn-icon" aria-label="Seuraava kuukausi" disabled={nextOut} onclick={() => step(1)}><Icon name="chevronRight" /></button>
         </div>
-        <div class="grid">
-          {#each WEEKDAYS as w}<span class="dow">{w}</span>{/each}
+        <div class="grid grid-cols-7 gap-[2px] text-center">
+          {#each WEEKDAYS as w}<span class="py-0.75 text-[0.8rem] text-muted">{w}</span>{/each}
           {#each cells as iso}
             {#if iso}
               <button
                 type="button"
-                class="day"
-                class:selected={iso === value}
-                class:today={iso === today}
+                class={[
+                  "aspect-square rounded-sm border tabular-nums disabled:cursor-default disabled:text-muted disabled:opacity-40",
+                  iso === today ? "border-line" : "border-transparent",
+                  iso === value ? "bg-brand-2 text-white" : "bg-transparent text-fg hover:enabled:bg-surface-2",
+                ]}
                 disabled={isOut(iso)}
                 aria-pressed={iso === value}
                 onclick={() => pick(iso)}>{Number(iso.slice(8))}</button
@@ -133,101 +144,11 @@
             {/if}
           {/each}
         </div>
-        <div class="foot">
-          <button type="button" class="btn small" disabled={isOut(today)} onclick={() => pick(today)}>Tänään</button>
-          {#if value}<button type="button" class="btn ghost small" onclick={() => pick("")}>Tyhjennä</button>{/if}
+        <div class="mt-2 flex justify-between">
+          <button type="button" class="btn btn-sm" disabled={isOut(today)} onclick={() => pick(today)}>Tänään</button>
+          {#if value}<button type="button" class="btn btn-ghost btn-sm" onclick={() => pick("")}>Tyhjennä</button>{/if}
         </div>
       </div>
     {/if}
   {/if}
 </span>
-
-<style>
-  .wrap {
-    position: relative;
-    display: block;
-  }
-  .invalid {
-    border-color: var(--danger);
-  }
-  .withbutton {
-    padding-right: 2.5rem;
-  }
-  .open {
-    position: absolute;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: 2.4rem;
-    display: grid;
-    place-items: center;
-    border: 0;
-    background: transparent;
-    color: var(--text-secondary);
-    cursor: pointer;
-  }
-  .open:hover {
-    color: var(--text-primary);
-  }
-  .cal {
-    position: absolute;
-    z-index: 20;
-    top: calc(100% + 0.3rem);
-    left: 0;
-    width: 17rem;
-    max-width: calc(100vw - 2rem);
-    padding: 0.6rem;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--surface-1);
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
-  }
-  .head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 0.4rem;
-    text-transform: capitalize;
-  }
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 2px;
-    text-align: center;
-  }
-  .dow {
-    color: var(--text-muted);
-    font-size: 0.8rem;
-    padding: 0.2rem 0;
-  }
-  .day {
-    aspect-ratio: 1;
-    border: 1px solid transparent;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--text-primary);
-    font: inherit;
-    font-variant-numeric: tabular-nums;
-    cursor: pointer;
-  }
-  .day:hover:not(:disabled) {
-    background: var(--surface-2);
-  }
-  .day.today {
-    border-color: var(--border);
-  }
-  .day.selected {
-    background: var(--brand-2);
-    color: #fff;
-  }
-  .day:disabled {
-    color: var(--text-muted);
-    opacity: 0.4;
-    cursor: default;
-  }
-  .foot {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 0.5rem;
-  }
-</style>

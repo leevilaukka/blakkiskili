@@ -1,4 +1,5 @@
 import adapter from "@sveltejs/adapter-static";
+import tailwindcss from "@tailwindcss/vite";
 import { sveltekit } from "@sveltejs/kit/vite";
 import { defineConfig } from "vite";
 
@@ -6,6 +7,7 @@ import { defineConfig } from "vite";
 // WEB_ORIGIN=http://localhost:5173 in the bot's .env so its same-origin check accepts the browser.
 export default defineConfig({
   plugins: [
+    tailwindcss(),
     sveltekit({
       // A single-page app: the bot's web server answers every route with index.html (src/web/static.ts).
       adapter: adapter({ pages: "build", assets: "build", fallback: "index.html", strict: false }),

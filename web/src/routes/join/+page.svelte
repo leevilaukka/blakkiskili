@@ -51,11 +51,11 @@
 <svelte:window onhashchange={() => new URLSearchParams(location.hash.slice(1)).has("c") && location.reload()} />
 
 <main class="page">
-<div class="col">
-  <div class="head"><h1>Liity ryhmään</h1></div>
-  {#if working}<p class="muted">Liitytään…</p>{/if}
+<div class="mx-auto max-w-[46rem]">
+  <div class="mb-5"><h1>Liity ryhmään</h1></div>
+  {#if working}<p class="text-secondary">Liitytään…</p>{/if}
   {#if error}
-    <p class="error" role="alert">{error}</p>
+    <p class="text-danger" role="alert">{error}</p>
     <a class="btn" href="/groups">Omat ryhmät</a>
   {/if}
 </div>

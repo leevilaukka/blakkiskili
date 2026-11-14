@@ -100,14 +100,14 @@
 
 {#if ean === null}
   <BarcodeScanner onCode={lookup} disabled={busy} />
-  <p class="muted small">Kuva luetaan selaimessasi. Palvelimelle lähetetään vain viivakoodin numero.</p>
+  <p class="mt-3 mb-0 text-sm text-secondary">Kuva luetaan selaimessasi. Palvelimelle lähetetään vain viivakoodin numero.</p>
 {:else}
-  <div class="result" aria-live="polite">
+  <div class="grid gap-3" aria-live="polite">
     {#if loading}
-      <p class="muted">Haetaan viivakoodia <code>{ean}</code>…</p>
+      <p class="m-0 text-secondary">Haetaan viivakoodia <code>{ean}</code>…</p>
     {:else if error}
-      <p class="error" role="alert">{error}</p>
-      <button class="btn small" onclick={() => ean && lookup(ean)}><Icon name="repeat" /> Yritä uudelleen</button>
+      <p class="m-0 text-danger" role="alert">{error}</p>
+      <button class="btn btn-sm" onclick={() => ean && lookup(ean)}><Icon name="repeat" /> Yritä uudelleen</button>
     {:else if result}
       {#if notice}<p class="notice"><Icon name="check" /> {notice}</p>{/if}
       {#if editing}
@@ -115,94 +115,59 @@
       {:else if result.status === "found"}
         {@const custom = result.custom}
         {@const product = result.product}
-        <p>
+        <p class="m-0">
           Viivakoodi <code>{result.ean}</code> kuuluu tälle {custom ? "käyttäjien lisäämälle tuotteelle" : "tuotteelle"}.
         </p>
         <ProductCard {product} {busy} onLog={(serving) => log({ kind: "product", productId: product.id, serving })}>
           {#if custom}
-            <p class="details">
+            <p class="m-0 text-sm text-secondary">
               {KIND_NAMES[custom.kind]}{#if custom.kcal100 !== null}{" · "}{num(custom.kcal100)} kcal / 100 ml{/if}<br />
-              <span class="muted">Käyttäjän lisäämä tuote, ei Alkon valikoimassa.</span>
+              <span>Käyttäjän lisäämä tuote, ei Alkon valikoimassa.</span>
             </p>
           {/if}
         </ProductCard>
         {#if custom?.canEdit}
-          <div class="buttons">
-            <button class="btn small" onclick={() => (editing = true)}><Icon name="edit" /> Muokkaa tuotetta</button>
-            <button class="btn small danger" onclick={() => remove(custom)}><Icon name="trash" /> Poista tuote</button>
+          <div class="flex flex-wrap gap-1.5">
+            <button class="btn btn-sm" onclick={() => (editing = true)}><Icon name="edit" /> Muokkaa tuotetta</button>
+            <button class="btn btn-sm btn-danger" onclick={() => remove(custom)}><Icon name="trash" /> Poista tuote</button>
           </div>
         {:else if custom && reporting}
-          <form class="report" onsubmit={(e) => sendReport(e, custom)}>
-            <label class="field"
+          <form class="grid gap-2.5" onsubmit={(e) => sendReport(e, custom)}>
+            <label class="grid gap-1.25"
               >Mikä tuotteessa on vialla?
               <!-- svelte-ignore a11y_autofocus -->
               <input type="text" bind:value={reportText} maxlength="300" placeholder="Esim. prosentti on 5,5 eikä 4,5" required autofocus />
             </label>
-            {#if reportError}<p class="error" role="alert">{reportError}</p>{/if}
-            <div class="buttons">
-              <button class="btn small primary" type="submit" disabled={sending || !reportText.trim()}><Icon name="send" /> Lähetä</button>
-              <button class="btn small ghost" type="button" disabled={sending} onclick={closeReport}>Peruuta</button>
+            {#if reportError}<p class="m-0 text-danger" role="alert">{reportError}</p>{/if}
+            <div class="flex flex-wrap gap-1.5">
+              <button class="btn btn-sm btn-primary" type="submit" disabled={sending || !reportText.trim()}><Icon name="send" /> Lähetä</button>
+              <button class="btn btn-sm btn-ghost" type="button" disabled={sending} onclick={closeReport}>Peruuta</button>
             </div>
-            <p class="muted hint">Viesti menee ylläpitäjille, jotka korjaavat tuotteen. He eivät näe, kuka ilmoitti.</p>
+            <p class="m-0 text-sm text-secondary">Viesti menee ylläpitäjille, jotka korjaavat tuotteen. He eivät näe, kuka ilmoitti.</p>
           </form>
         {:else if custom}
-          <div class="buttons">
-            <button class="btn small ghost" onclick={() => ((reporting = true), (notice = ""))}><Icon name="flag" /> Ilmoita virheestä</button>
+          <div class="flex flex-wrap gap-1.5">
+            <button class="btn btn-sm btn-ghost" onclick={() => ((reporting = true), (notice = ""))}><Icon name="flag" /> Ilmoita virheestä</button>
           </div>
         {/if}
       {:else if result.status === "alcohol_free"}
-        <p>Viivakoodi <code>{result.ean}</code> kuuluu tuotteelle <b>{result.name}</b>, mutta se on alkoholiton (alle 1 %), joten sitä ei voi merkitä juomaksi.</p>
+        <p class="m-0">Viivakoodi <code>{result.ean}</code> kuuluu tuotteelle <b>{result.name}</b>, mutta se on alkoholiton (alle 1 %), joten sitä ei voi merkitä juomaksi.</p>
       {:else}
-        <p>
+        <p class="m-0">
           {#if result.status === "gone"}
             Viivakoodi <code>{result.ean}</code> kuuluu tuotteelle, jota ei enää löydy Alkon valikoimasta. Jos tuotetta myydään muualla, voit lisätä sen itse.
           {:else}
             Alko ei tunne viivakoodia <code>{result.ean}</code>. Voit hakea tuotetta nimellä, tai jos se on esimerkiksi kaupan tuote, lisätä sen itse.
           {/if}
         </p>
-        <button class="btn primary" onclick={() => (editing = true)}><Icon name="plus" /> Lisää tuote</button>
+        <button class="btn btn-primary" onclick={() => (editing = true)}><Icon name="plus" /> Lisää tuote</button>
       {/if}
     {/if}
     {#if !editing && !loading}
-      <div class="again">
+      <div class="border-t border-line-soft pt-3">
         <button class="btn" onclick={reset}><Icon name="camera" /> Lue toinen viivakoodi</button>
       </div>
     {/if}
   </div>
 {/if}
 
-<style>
-  .result {
-    display: grid;
-    gap: 0.75rem;
-  }
-  .result p,
-  .small {
-    margin: 0;
-  }
-  .small {
-    margin-top: 0.75rem;
-    font-size: 0.93rem;
-  }
-  .details {
-    margin: -0.25rem 0 0.5rem;
-    color: var(--text-secondary);
-    font-size: 0.93rem;
-  }
-  .buttons {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-  }
-  .report {
-    display: grid;
-    gap: 0.6rem;
-  }
-  .hint {
-    font-size: 0.93rem;
-  }
-  .again {
-    padding-top: 0.75rem;
-    border-top: 1px solid var(--border-soft);
-  }
-</style>

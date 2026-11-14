@@ -14,86 +14,38 @@
   let noPhoto = $state(false);
 </script>
 
-<div class="product">
+<div class="flex gap-3.5">
   <!-- Through our server, so the browser never contacts Alko (src/web/photos.ts) -->
-  <div class="thumb" aria-hidden="true">
-    <span class="emoji">{p.emoji}</span>
+  <!-- Alko's photos are white-backed bottles; the box stays white in dark mode too, like Alkometriikka's.
+       It fills the card's height; the photo is inset so the bottle doesn't touch the edges. -->
+  <div class="relative grid min-h-[4.5rem] w-16 flex-none place-items-center self-stretch overflow-hidden rounded-sm bg-white" aria-hidden="true">
+    <span class="text-2xl">{p.emoji}</span>
     {#if p.photo && !noPhoto}
-      <img src="/api/products/{encodeURIComponent(p.id)}/photo" alt="" loading="lazy" decoding="async" width="160" height="192" onerror={() => (noPhoto = true)} />
+      <img
+        class="absolute inset-1.5 h-[calc(100%-0.75rem)] w-[calc(100%-0.75rem)] bg-white object-contain"
+        src="/api/products/{encodeURIComponent(p.id)}/photo"
+        alt=""
+        loading="lazy"
+        decoding="async"
+        width="160"
+        height="192"
+        onerror={() => (noPhoto = true)}
+      />
     {/if}
   </div>
-  <div class="info">
-    <p class="pname">
-      <span class="title">{p.name}</span>
-      <span class="abv">{p.abv.toString().replace(".", ",")} %</span>
+  <div class="min-w-0 flex-1">
+    <p class="mt-0 mb-2 flex items-baseline gap-1.5">
+      <span class="font-bold">{p.name}</span>
+      <span class="whitespace-nowrap text-secondary">{p.abv.toString().replace(".", ",")} %</span>
     </p>
-    {#if p.maker}<p class="maker">{p.maker}</p>{/if}
+    {#if p.maker}<p class="-mt-1.5 mb-2 text-sm text-secondary">{p.maker}</p>{/if}
     {@render children?.()}
-    <div class="servings">
+    <div class="flex flex-wrap gap-1.5">
       {#each p.servings as s (s.key)}
-        <button class="btn small" disabled={busy} onclick={() => onLog(s.key)}>
-          {s.label} <span class="muted">{decimal1(s.standardDrinks)} ann.</span>
+        <button class="btn btn-sm" disabled={busy} onclick={() => onLog(s.key)}>
+          {s.label} <span class="text-secondary">{decimal1(s.standardDrinks)} ann.</span>
         </button>
       {/each}
     </div>
   </div>
 </div>
-
-<style>
-  .product {
-    display: flex;
-    gap: 0.9rem;
-  }
-  /* Alko's photos are white-backed bottles; the box stays white in dark mode too, like Alkometriikka's */
-  /* Fills the card's height (stretch); the photo is inset so the bottle doesn't touch the edges */
-  .thumb {
-    position: relative;
-    flex: none;
-    align-self: stretch;
-    display: grid;
-    place-items: center;
-    width: 4rem;
-    min-height: 4.5rem;
-    border-radius: 4px;
-    background: #fff;
-    overflow: hidden;
-  }
-  .thumb .emoji {
-    font-size: 1.6rem;
-  }
-  .thumb img {
-    position: absolute;
-    inset: 0.4rem;
-    width: calc(100% - 0.8rem);
-    height: calc(100% - 0.8rem);
-    object-fit: contain;
-    background: #fff;
-  }
-  .info {
-    flex: 1;
-    min-width: 0;
-  }
-  .maker {
-    margin: -0.35rem 0 0.5rem;
-    color: var(--text-secondary);
-    font-size: 0.93rem;
-  }
-  .pname {
-    display: flex;
-    align-items: baseline;
-    gap: 0.4rem;
-    margin: 0 0 0.5rem;
-  }
-  .title {
-    font-weight: 700;
-  }
-  .abv {
-    color: var(--text-secondary);
-    white-space: nowrap;
-  }
-  .servings {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-  }
-</style>

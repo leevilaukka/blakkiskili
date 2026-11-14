@@ -137,19 +137,19 @@
 <svelte:document onvisibilitychange={onVisibility} />
 
 {#if active}
-  <div class="viewfinder">
+  <div class="relative mb-3 aspect-[4/3] max-h-[60vh] overflow-hidden rounded-sm bg-black">
     <!-- svelte-ignore a11y_media_has_caption -->
-    <video bind:this={video} muted playsinline></video>
-    <div class="guide" aria-hidden="true"></div>
-    <p class="hint">Osoita kameralla viivakoodia</p>
+    <video class="block size-full object-cover" bind:this={video} muted playsinline></video>
+    <div class="absolute inset-x-[12%] top-1/2 h-[2px] bg-brand-1 shadow-[0_0_0_1px_rgb(255_255_255/40%)]" aria-hidden="true"></div>
+    <p class="absolute inset-x-0 bottom-0 m-0 bg-black/45 p-1.5 text-center text-sm text-white">Osoita kameralla viivakoodia</p>
   </div>
 {/if}
 
-<div class="ways">
+<div class="flex flex-wrap gap-2">
   {#if active}
     <button class="btn" onclick={stop}><Icon name="x" /> Sulje kamera</button>
   {:else if hasCamera}
-    <button class="btn primary" disabled={disabled || starting} onclick={start}><Icon name="camera" /> {starting ? "Avataan kameraa…" : "Avaa kamera"}</button>
+    <button class="btn btn-primary" disabled={disabled || starting} onclick={start}><Icon name="camera" /> {starting ? "Avataan kameraa…" : "Avaa kamera"}</button>
   {/if}
   <button class="btn" disabled={disabled || reading} onclick={() => fileInput?.click()}>
     <Icon name="image" /> {reading ? "Luetaan kuvaa…" : "Valitse kuva"}
@@ -157,66 +157,11 @@
   <input class="sr-only" type="file" accept="image/*" tabindex="-1" aria-hidden="true" bind:this={fileInput} onchange={photo} />
 </div>
 
-<form class="typed" onsubmit={submit}>
+<form class="mt-3 flex gap-2" onsubmit={submit}>
   <label class="sr-only" for="ean">Viivakoodin numerot</label>
-  <input id="ean" type="text" inputmode="numeric" autocomplete="off" placeholder="Tai kirjoita viivakoodin numerot" bind:value={typed} maxlength="20" />
+  <input id="ean" class="min-w-0 flex-1" type="text" inputmode="numeric" autocomplete="off" placeholder="Tai kirjoita viivakoodin numerot" bind:value={typed} maxlength="20" />
   <button class="btn" type="submit" disabled={disabled || !typed.trim()}><Icon name="search" /> Hae</button>
 </form>
 
-{#if error}<p class="error" role="alert">{error}</p>{/if}
+{#if error}<p class="mt-3 mb-0 text-danger" role="alert">{error}</p>{/if}
 
-<style>
-  .viewfinder {
-    position: relative;
-    aspect-ratio: 4 / 3;
-    max-height: 60vh;
-    margin-bottom: 0.75rem;
-    border-radius: 4px;
-    overflow: hidden;
-    background: #000;
-  }
-  video {
-    display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-  .guide {
-    position: absolute;
-    left: 12%;
-    right: 12%;
-    top: 50%;
-    height: 2px;
-    background: var(--brand-1);
-    box-shadow: 0 0 0 1px rgb(255 255 255 / 40%);
-  }
-  .hint {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    margin: 0;
-    padding: 0.4rem;
-    color: #fff;
-    background: rgb(0 0 0 / 45%);
-    text-align: center;
-    font-size: 0.93rem;
-  }
-  .ways {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-  .typed {
-    display: flex;
-    gap: 0.5rem;
-    margin-top: 0.75rem;
-  }
-  .typed input {
-    flex: 1;
-    min-width: 0;
-  }
-  .error {
-    margin: 0.75rem 0 0;
-  }
-</style>

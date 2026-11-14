@@ -42,20 +42,12 @@
 </script>
 
 <script lang="ts">
-  let { name }: { name: IconName } = $props();
+  let { name, class: cls = "" }: { name: IconName; class?: string } = $props();
 </script>
 
-<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">{@html ICONS[name]}</svg>
-
-<style>
-  .icon {
-    width: 1.15em;
-    height: 1.15em;
-    flex: none;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-</style>
+<svg
+  class={["inline-block size-[1.15em] flex-none fill-none stroke-current stroke-2 [stroke-linecap:round] [stroke-linejoin:round]", cls]}
+  viewBox="0 0 24 24"
+  aria-hidden="true"
+  focusable="false">{@html ICONS[name]}</svg
+>

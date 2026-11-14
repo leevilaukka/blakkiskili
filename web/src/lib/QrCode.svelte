@@ -13,16 +13,8 @@
   );
 </script>
 
-<svg class="qr" viewBox="0 0 {qr.size} {qr.size}" role="img" aria-label={label} shape-rendering="crispEdges">
+<svg class="block h-auto w-full rounded-sm" viewBox="0 0 {qr.size} {qr.size}" role="img" aria-label={label} shape-rendering="crispEdges">
   <rect width={qr.size} height={qr.size} fill="#fff" />
   <path {d} fill="#000" />
 </svg>
 
-<style>
-  .qr {
-    display: block;
-    width: 100%;
-    height: auto;
-    border-radius: 4px;
-  }
-</style>

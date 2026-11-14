@@ -25,6 +25,7 @@
   ];
   // Only for admins (ADMIN_IDS); the API answers 404 to everyone else anyway.
   const links = $derived(session.me?.admin ? [...nav, { href: "/admin", label: "Ylläpito", icon: "shield" as IconName }] : nav);
+  const navButton = "btn gap-1.75 px-2.5 [&_svg]:size-[1.3rem]";
   const current = (href: string) => page.url.pathname === href || page.url.pathname.startsWith(`${href}/`);
 
   onMount(async () => {
@@ -61,19 +62,25 @@
 
 <svelte:head><title>Bläkkiskili</title></svelte:head>
 
+{#snippet brand(href: string, label: string, crowded: boolean)}
+  <a class="mr-auto flex shrink-0 items-center gap-3 no-underline" {href} aria-label={label}>
+    <img class="block size-[40px] rounded-md" src="/kili-head-96.jpg" alt="" width="40" height="40" />
+    <!-- the wordmark only where it still fits beside the buttons (one more of them for admins) -->
+    <span class={["text-[1.75rem] leading-none tracking-tight text-wordmark max-[40rem]:text-[1.45rem] max-[25rem]:hidden", crowded && "max-[28rem]:hidden"]}>Bläkkiskili</span>
+  </a>
+{/snippet}
+
 {#if session.me && !onScreen}
-  <header class="top" class:crowded={links.length > nav.length}>
-    <a class="brand" href="/" aria-label="Bläkkiskili, etusivu">
-      <img src="/kili-head-96.jpg" alt="" width="40" height="40" />
-      <span class="word">Bläkkiskili</span>
-    </a>
-    <nav aria-label="Päävalikko">
+  <header class="flex items-center gap-3 border-b border-line bg-surface-1 px-4 py-2">
+    {@render brand("/", "Bläkkiskili, etusivu", links.length > nav.length)}
+    <!-- phones: icons only -->
+    <nav class="flex items-center gap-2 max-[40rem]:gap-1.5" aria-label="Päävalikko">
       {#each links as item (item.href)}
-        <a class="btn" href={item.href} aria-current={current(item.href) ? "page" : undefined} aria-label={item.label}>
-          <span class="label">{item.label}</span><Icon name={item.icon} />
+        <a class={navButton} href={item.href} aria-current={current(item.href) ? "page" : undefined} aria-label={item.label}>
+          <span class="max-[40rem]:hidden">{item.label}</span><Icon name={item.icon} />
         </a>
       {/each}
-      <button class="btn" onclick={logout} aria-label="Kirjaudu ulos" title="Kirjaudu ulos">
+      <button class={navButton} onclick={logout} aria-label="Kirjaudu ulos" title="Kirjaudu ulos">
         <Icon name="logout" />
       </button>
     </nav>
@@ -82,29 +89,26 @@
 
 {#if session.ready && !session.me && onDocs}
   <!-- Signed out on a public text: the way back to the sign-in. -->
-  <header class="top">
-    <a class="brand" href="/login" aria-label="Bläkkiskili, kirjautuminen">
-      <img src="/kili-head-96.jpg" alt="" width="40" height="40" />
-      <span class="word">Bläkkiskili</span>
-    </a>
-    <nav aria-label="Päävalikko">
-      <a class="btn" href="/login"><span class="label">Kirjaudu</span><Icon name="login" /></a>
+  <header class="flex items-center gap-3 border-b border-line bg-surface-1 px-4 py-2">
+    {@render brand("/login", "Bläkkiskili, kirjautuminen", false)}
+    <nav class="flex items-center gap-2 max-[40rem]:gap-1.5" aria-label="Päävalikko">
+      <a class={navButton} href="/login"><span class="max-[40rem]:hidden">Kirjaudu</span><Icon name="login" /></a>
     </nav>
   </header>
 {/if}
 
 {#if !session.ready}
-  <p class="page muted">Ladataan…</p>
+  <p class="page text-secondary">Ladataan…</p>
 {:else if session.offline && !session.me && !onLogin && !onScreen && !onDocs}
-  <p class="page error">Yhteys palvelimeen ei toimi. Päivitä sivu hetken päästä.</p>
+  <p class="page text-danger">Yhteys palvelimeen ei toimi. Päivitä sivu hetken päästä.</p>
 {:else}
   {@render children()}
 {/if}
 
 {#if !onScreen && session.ready}
-  <footer class="foot">
+  <footer class="mx-auto flex w-[calc(100%-2rem)] max-w-[74rem] flex-wrap justify-between gap-x-6 gap-y-1 border-t border-line-soft pt-5 pb-6 text-xs text-muted [&_a]:text-inherit">
     <span>Promillet ovat laskennallisia arvioita, eivät mittaustulos.</span>
-    <span class="links">
+    <span class="flex flex-wrap gap-x-6 gap-y-1">
       <a href="/help">Ohje</a>
       <a href="/terms">Käyttöehdot</a>
       <a href="/privacy">Yksityisyys</a>
@@ -112,93 +116,3 @@
     </span>
   </footer>
 {/if}
-
-<style>
-  .top {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 1rem;
-    border-bottom: 1px solid var(--border);
-    background: var(--surface-1);
-  }
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    flex-shrink: 0;
-    text-decoration: none;
-    margin-right: auto;
-  }
-  .brand img {
-    display: block;
-    width: 40px;
-    height: 40px;
-    border-radius: 6px;
-  }
-  .word {
-    color: var(--wordmark);
-    font-size: 1.75rem;
-    line-height: 1;
-    letter-spacing: -0.01em;
-  }
-  nav {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  nav .btn {
-    gap: 0.45rem;
-    padding-inline: 0.6rem;
-  }
-  nav .btn :global(.icon) {
-    font-size: 1.3rem;
-    width: 1.3rem;
-    height: 1.3rem;
-  }
-  /* phones: icons only, and the wordmark only where it still fits beside them */
-  @media (max-width: 40rem) {
-    .label {
-      display: none;
-    }
-    nav {
-      gap: 0.4rem;
-    }
-    .word {
-      font-size: 1.45rem;
-    }
-  }
-  /* Where the wordmark no longer fits beside the buttons (one more of them for admins). */
-  @media (max-width: 25rem) {
-    .word {
-      display: none;
-    }
-  }
-  @media (max-width: 28rem) {
-    .crowded .word {
-      display: none;
-    }
-  }
-
-  .foot {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 0.25rem 1.5rem;
-    width: calc(100% - 2rem);
-    max-width: 74rem;
-    margin: 0 auto;
-    padding: 1.25rem 0 1.5rem;
-    border-top: 1px solid var(--border-soft);
-    color: var(--text-muted);
-    font-size: 0.86rem;
-  }
-  .links {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.25rem 1.5rem;
-  }
-  .foot a {
-    color: inherit;
-  }
-</style>

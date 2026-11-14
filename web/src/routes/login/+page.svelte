@@ -136,67 +136,30 @@
 <svelte:document onvisibilitychange={onVisible} />
 
 <main class="page">
-  <div class="box">
-    <img class="logo" src="/kili-256.jpg" alt="" width="128" height="128" />
-    <h1>Bläkkiskili</h1>
-    <p class="lead">Promillearviot, illan juomat ja ryhmän kuvaaja selaimessa.</p>
+  <div class="mx-auto max-w-[28rem] pt-10 text-center">
+    <img class="mx-auto mb-4 block size-[128px] rounded-xl" src="/kili-256.jpg" alt="" width="128" height="128" />
+    <h1 class="text-4xl font-medium text-wordmark">Bläkkiskili</h1>
+    <p class="mt-1.5 mb-6 text-lg text-secondary">Promillearviot, illan juomat ja ryhmän kuvaaja selaimessa.</p>
 
-    <section class="card panel">
+    <section class="card card-panel text-left">
       {#if working}
         <p>Kirjaudutaan…</p>
       {:else}
         <h2>Kirjaudu Telegramilla</h2>
-        <p class="muted">
+        <p class="text-secondary">
           Tunnus luodaan Telegramissa botin kanssa: sivusto käyttää samoja tietoja.
           {#if botUsername}
             <a href="https://t.me/{botUsername}" target="_blank" rel="noopener">Avaa botti Telegramissa (@{botUsername})</a>
           {/if}
         </p>
-        <div class="widget">
-          <button class="btn primary" disabled={!botId} onclick={signInWithTelegram}>Kirjaudu Telegramilla</button>
+        <div class="my-4">
+          <button class="btn btn-primary" disabled={!botId} onclick={signInWithTelegram}>Kirjaudu Telegramilla</button>
         </div>
-        <p class="muted hint">
+        <p class="mb-0 text-sm text-secondary">
           Jos Telegram-kirjautuminen ei toimi, lähetä botille <code>/web</code>, niin saat kertakäyttöisen kirjautumislinkin.
         </p>
       {/if}
-      {#if error}<p class="error" role="alert">{error}</p>{/if}
+      {#if error}<p class="text-danger" role="alert">{error}</p>{/if}
     </section>
   </div>
 </main>
-
-<style>
-  .box {
-    max-width: 28rem;
-    margin: 0 auto;
-    padding-top: 2.5rem;
-    text-align: center;
-  }
-  .logo {
-    display: block;
-    width: 128px;
-    height: 128px;
-    margin: 0 auto 1rem;
-    border-radius: 12px;
-  }
-  h1 {
-    font-size: 2.25rem;
-    color: var(--wordmark);
-    font-weight: 500;
-    letter-spacing: -0.01em;
-  }
-  .lead {
-    color: var(--text-secondary);
-    font-size: 1.07rem;
-    margin: 0.4rem 0 1.5rem;
-  }
-  .card {
-    text-align: left;
-  }
-  .widget {
-    margin: 1rem 0;
-  }
-  .hint {
-    font-size: 0.93rem;
-    margin-bottom: 0;
-  }
-</style>

@@ -43,41 +43,26 @@
 {/snippet}
 
 <main class="page">
-  <article class="col doc">
-    <h1>{title}</h1>
+  <article class="mx-auto max-w-[46rem]">
+    <h1 class="tracking-normal">{title}</h1>
     {#if error}
-      <p class="error" role="alert">{error}</p>
+      <p class="text-danger" role="alert">{error}</p>
     {:else if !loaded}
-      <p class="muted">Ladataan…</p>
+      <p class="text-secondary">Ladataan…</p>
     {/if}
     {#each groups as g}
       {#if g.type === "section"}
-        <h2>{@render text(g.block)}</h2>
+        <h2 class="mt-8">{@render text(g.block)}</h2>
       {:else if g.type === "heading"}
-        {#if nested}<h3>{@render text(g.block)}</h3>{:else}<h2>{@render text(g.block)}</h2>{/if}
+        {#if nested}<h3 class="mt-5.5 mb-1.5 text-lg">{@render text(g.block)}</h3>{:else}<h2 class="mt-8">{@render text(g.block)}</h2>{/if}
       {:else if g.type === "paragraph"}
         <p>{@render text(g.block)}</p>
       {:else if g.type === "list"}
-        <ul>
-          {#each g.items as item}<li>{@render text(item)}</li>{/each}
+        <ul class="my-[1em] list-disc pl-5">
+          {#each g.items as item}<li class="my-1.5">{@render text(item)}</li>{/each}
         </ul>
       {/if}
     {/each}
   </article>
 </main>
 
-<style>
-  .doc h2 {
-    margin-top: 2rem;
-  }
-  .doc h3 {
-    margin: 1.4rem 0 0.4rem;
-    font-size: 1.07rem;
-  }
-  .doc ul {
-    padding-left: 1.25rem;
-  }
-  .doc li {
-    margin: 0.35rem 0;
-  }
-</style>
