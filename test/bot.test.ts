@@ -14,6 +14,7 @@ import type { Config } from "../src/config.ts";
 import { toCsv } from "../src/lib/csv.ts";
 import { legacyHash } from "../src/lib/ids.ts";
 import { setup, TEST_SECRET } from "./helpers.ts";
+import { PRODUCTS_PER_ACCOUNT } from "../src/services/customproducts.ts";
 
 const config: Config = {
   botToken: "123:TEST",
@@ -62,12 +63,18 @@ function harness(
 
   const calls: Call[] = [];
   let messageId = 100;
+  // Who Telegram says is in which chat ("chat:user"), for getChatMember. "down" makes it fail.
+  const chatMembers = new Set<string>();
+  let telegramDown = false;
   bot.api.config.use(async (_prev, method, payload) => {
     const p = payload as Record<string, any>;
     calls.push({ method, payload: p });
     if (typeof p.text === "string" && p.parse_mode === "HTML") assertTelegramHtml(p.text);
+    if (method === "getChatMember" && telegramDown) return { ok: false, error_code: 502, description: "Bad Gateway" } as any;
     const result: unknown =
       method === "getFile" ? { file_id: p.file_id, file_unique_id: "u", file_path: `docs/${p.file_id}` }
+      : method === "getChatMember"
+        ? { status: chatMembers.has(`${p.chat_id}:${p.user_id}`) ? "member" : "left", user: { id: p.user_id, is_bot: false, first_name: "x" } }
       : method.startsWith("send") || method === "editMessageText"
         ? { message_id: ++messageId, date: 0, chat: { id: p.chat_id ?? 0, type: "private" }, text: p.text ?? "" }
         : true;
@@ -174,11 +181,35 @@ function harness(
     return calls.slice(before);
   };
 
+  /** A service message: someone left the chat or was removed from it. */
+  const leaveChat = async (left: number, group: { id: number; title: string }, by = left) => {
+    const before = calls.length;
+    await bot.handleUpdate({
+      update_id: ++updateId,
+      message: { message_id: ++messageId, date: 0, from: user(by, `user${by}`), chat: chatOf(group.id, group.title), left_chat_member: user(left, `user${left}`) },
+    } as Update);
+    return calls.slice(before);
+  };
+
+  /** A chat_member update (sent when the bot is an admin of the chat). */
+  const memberChange = async (who: number, group: { id: number; title: string }, from: string, to: string) => {
+    const before = calls.length;
+    const member = (status: string) => ({ status, user: user(who, `user${who}`), ...(status === "kicked" ? { until_date: 0 } : {}) });
+    await bot.handleUpdate({
+      update_id: ++updateId,
+      chat_member: { chat: chatOf(group.id, group.title), from: user(1, "admin"), date: 0, old_chat_member: member(from), new_chat_member: member(to) },
+    } as Update);
+    return calls.slice(before);
+  };
+
   /** Account id of a Telegram user (accounts have random ids; logins point at them). */
   const account = (telegramId: number) =>
     env.services.accounts.byIdentity(env.crypto.identityKey("telegram", telegramId))?.id ?? "none";
 
-  return { ...env, bot, calls, send, press, sendDocument, sendPhoto, inlineQuery, chooseInline, sendViaBot, account };
+  return {
+    ...env, bot, calls, send, press, sendDocument, sendPhoto, inlineQuery, chooseInline, sendViaBot, account, leaveChat, memberChange, chatMembers,
+    setTelegramDown: (down: boolean) => (telegramDown = down),
+  };
 }
 
 const textOf = (calls: Call[]) => calls.filter((c) => typeof c.payload.text === "string").map((c) => c.payload.text as string).join("\n---\n");
@@ -385,10 +416,73 @@ describe("bot end-to-end", () => {
     const uid = h.account(B);
     expect(h.services.accounts.get(uid)).toMatchObject({ weight: 70, gender: "nainen", name: "user3003" });
 
-    // The old group starts using the new bot: the imported member shows up without /moro
+    // The old group starts using the new bot: the imported member shows up without /moro,
+    // once Telegram confirms they are in the chat
+    h.chatMembers.add(`-100555:${B}`);
     const listing = await h.send(9, "/promillet", { id: -100555, title: "Vanha ryhmä" });
     expect(textOf(listing)).toContain("Toin 1 vanhan");
     expect(textOf(listing)).toContain("user3003...");
+  });
+
+  test("an imported group membership is adopted only for people Telegram says are in the chat", async () => {
+    const h = harness();
+    const G = { id: -100777, title: "Yksityinen" };
+    // Anyone can write a chat's hash into groups.csv: the file proves only who uploaded it
+    const importGroups = async (id: number) => {
+      const old = legacyHash(id);
+      files.set(`user-${id}`, toCsv(["userid", "nick", "weight", "gender", "height"], [{ userid: old, nick: "x", weight: 70, gender: "mies", height: 170 }]));
+      files.set(`groups-${id}`, toCsv(["userid", "groupid"], [{ userid: old, groupid: legacyHash(G.id) }]));
+      await h.send(id, "/tuo");
+      await h.press(id, "m:i:y");
+      expect(textOf(await h.sendDocument(id, `user-${id}`))).toContain("Tunnus luotu");
+      expect(textOf(await h.sendDocument(id, `groups-${id}`))).toContain("1 ryhmäjäsenyyttä");
+    };
+    const OUTSIDER = 4001, MEMBER = 4002, SPEAKER = 4003;
+    for (const id of [OUTSIDER, MEMBER, SPEAKER]) await importGroups(id);
+    h.chatMembers.add(`${G.id}:${MEMBER}`);
+    const isMember = (id: number) => h.services.groups.isMember(h.account(id), G.id);
+
+    // Telegram can't be asked: nobody is adopted or forgotten yet
+    h.setTelegramDown(true);
+    expect(textOf(await h.send(9, "/promillet", G))).not.toContain("Toin");
+    expect(h.services.groups.legacyMembers(G.id)).toHaveLength(3);
+
+    // Writing in the chat proves you're in it; the others are asked from Telegram
+    h.setTelegramDown(false);
+    const listing = await h.send(SPEAKER, "/promillet", G);
+    expect(textOf(listing)).toContain("Toin 2 vanhan");
+    expect(listing.filter((c) => c.method === "getChatMember").map((c) => c.payload.user_id).sort()).toEqual([OUTSIDER, MEMBER]);
+    expect([isMember(OUTSIDER), isMember(MEMBER), isMember(SPEAKER)]).toEqual([false, true, true]);
+    expect(h.services.groups.legacyMembers(G.id)).toEqual([]); // the outsider's row is forgotten
+    expect(textOf(await h.send(9, "/promillet", G))).not.toContain("Toin");
+  });
+
+  test("leaving or being removed from the Telegram group takes you off its listings", async () => {
+    const h = harness();
+    const G = { id: -100888, title: "Porukka" };
+    const [A, B] = [5001, 5002];
+    for (const id of [A, B]) {
+      await registerUser(h, id);
+      await h.send(id, "/moro", G);
+    }
+    const isMember = (id: number) => h.services.groups.isMember(h.account(id), G.id);
+    expect([isMember(A), isMember(B)]).toEqual([true, true]);
+
+    // "A left the group": quietly, nothing is said in the chat
+    expect(await h.leaveChat(A, G)).toEqual([]);
+    expect([isMember(A), isMember(B)]).toEqual([false, true]);
+
+    // chat_member updates (the bot is an admin): a promotion keeps you, a ban removes you
+    await h.memberChange(B, G, "member", "administrator");
+    expect(isMember(B)).toBe(true);
+    await h.memberChange(B, G, "administrator", "kicked");
+    expect(isMember(B)).toBe(false);
+
+    // Someone without an account, and the bot itself, leaving changes nothing
+    await h.send(A, "/moro", G);
+    await h.leaveChat(777, G);
+    await h.memberChange(42, G, "member", "left");
+    expect(isMember(A)).toBe(true);
   });
 
   test("flooding is rate limited per user", async () => {
@@ -690,6 +784,44 @@ describe("barcodes", () => {
     expect(textOf(hit)).toContain("Karjala");
     expect(buttonsOf(hit).some((b) => b.callback_data.startsWith("m:ps:700004"))).toBe(true);
     expect(worker.requests).toEqual([]);
+  });
+
+  test("crafted add-product buttons can't give a code Alko knows a product of its own", async () => {
+    const { h } = barcodeHarness();
+    await registerUser(h, 6003);
+    for (const data of [`m:bn:${WORKER_EAN}`, `m:bk:${WORKER_EAN}:olut`]) {
+      const shown = textOf(await h.press(6003, data));
+      expect(shown).toContain("Karjala"); // Alko's product instead of the add flow
+      expect(shown).not.toContain("Mikä juoma");
+    }
+    expect(h.services.pending.get(h.crypto.identityKey("telegram", 6003))).toBeNull();
+    expect(textOf(await h.press(6003, "m:bn:4006381333962"))).toContain("ei onnistunut"); // Worker down: not now
+  });
+
+  test("someone at the product limit is told so, and the admins hear about it once", async () => {
+    const { h } = barcodeHarness();
+    const U = 6004;
+    await registerUser(h, U);
+    for (let i = 0; i < PRODUCTS_PER_ACCOUNT; i++) {
+      const body = `400638${String(2_000_000 + i).slice(1)}`;
+      const sum = [...body].reduce((s, d, k) => s + Number(d) * (k % 2 ? 3 : 1), 0);
+      expect(h.services.customProducts.save({ ean: body + ((10 - (sum % 10)) % 10), kind: "olut", name: `Olut ${i}`, sizeL: 0.33, abv: 4.7, kcal100: null }, h.account(U), false).ok).toBe(true);
+    }
+    const tryToAdd = async () => {
+      await h.press(U, `m:bk:${UNKNOWN_EAN}:olut`);
+      await h.send(U, "Liikaa olutta");
+      await h.send(U, "0,5l 4.7%");
+      return h.press(U, "m:bs");
+    };
+    const first = await tryToAdd();
+    expect(textOf(first.filter((c) => c.payload.chat_id === U || c.method === "editMessageText"))).toContain(`Olet lisännyt jo ${PRODUCTS_PER_ACCOUNT} tuotetta`);
+    const toAdmin = first.filter((c) => c.method === "sendMessage" && c.payload.chat_id === 1);
+    expect(toAdmin).toHaveLength(1);
+    expect(toAdmin[0]!.payload.text).toContain("<b>user6004</b> yritti lisätä viivakoodituotteen");
+    expect(toAdmin[0]!.payload.text).toContain("https://kili.test/admin");
+    // Trying again the same day doesn't message the admins again
+    expect((await tryToAdd()).filter((c) => c.method === "sendMessage" && c.payload.chat_id === 1)).toEqual([]);
+    expect(h.services.customProducts.get(UNKNOWN_EAN)).toBeNull();
   });
 
   test("other barcodes are asked from the Worker, which gets only the number", async () => {

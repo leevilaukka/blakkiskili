@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { onMount } from "svelte";
-  import type { AdminProduct, AdminView } from "../../../../shared/api.ts";
+  import type { AdminAdder, AdminProduct, AdminView } from "../../../../shared/api.ts";
   import { api, ApiError, errorText } from "#lib/api.ts";
   import { clock } from "#lib/format.ts";
   import Icon from "#lib/Icon.svelte";
@@ -12,6 +12,7 @@
   let error = $state("");
   let busy = $state(false);
   let filter = $state("");
+  let notice = $state("");
 
   const KINDS: Record<AdminProduct["kind"], string> = { olut: "Olut", viini: "Viini", kuohu: "Kuohuviini", vakeva: "Väkevä", muu: "Muu" };
   const n = new Intl.NumberFormat("fi-FI");
@@ -21,10 +22,21 @@
   const productRow = "flex justify-between gap-3 border-t border-line-soft py-2.25";
   const stats = "grid grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))] gap-2.5";
 
+  const plural = (x: number, one: string, many: string) => `${n.format(x)} ${x === 1 ? one : many}`;
+  const adderDetails = (a: AdminAdder) =>
+    [
+      a.fullName,
+      plural(a.products, "tuote", "tuotetta"),
+      a.openReports ? plural(a.openReports, "virheilmoitus", "virheilmoitusta") : null,
+      a.lastAddedAt ? `viimeksi ${date(a.lastAddedAt)}` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
   const products = $derived.by(() => {
     const items = view?.customProducts.items ?? [];
     const q = filter.trim().toLowerCase();
-    return q ? items.filter((p) => p.name.toLowerCase().includes(q) || p.ean.includes(q)) : items;
+    return q ? items.filter((p) => p.name.toLowerCase().includes(q) || p.ean.includes(q) || p.adderName?.toLowerCase().includes(q)) : items;
   });
 
   async function load() {
@@ -51,6 +63,25 @@
     busy = true;
     try {
       await api.adminClearReports(p.ean);
+      await load();
+    } catch (e) {
+      error = errorText(e);
+    } finally {
+      busy = false;
+    }
+  }
+
+  /** Verified adders have no limit on adding products. */
+  async function setTrusted(a: AdminAdder, trusted: boolean) {
+    if (!trusted && !confirm(`Perutaanko käyttäjän ${a.name} vahvistus? Hän voi sen jälkeen lisätä enintään ${view?.adders.limit} tuotetta.`)) return;
+    busy = true;
+    try {
+      const r = await api.adminTrustAdder(a.ref, trusted);
+      notice = !trusted
+        ? `Käyttäjän ${a.name} vahvistus peruttu.`
+        : r.notified
+          ? `${a.name} vahvistettu. Hänelle kerrottiin siitä Telegramissa.`
+          : `${a.name} vahvistettu, mutta viestiä ei saatu lähetettyä hänelle Telegramiin.`;
       await load();
     } catch (e) {
       error = errorText(e);
@@ -168,7 +199,7 @@
                       {KINDS[p.kind]} · {n.format(Math.round(p.sizeL * 1000) / 10)} cl · {n.format(p.abv)} %{#if p.kcal100 !== null} · {n.format(p.kcal100)} kcal/100 ml{/if}
                     </span>
                     <span class="text-[0.9rem] text-secondary">
-                      <code>{p.ean}</code> · lisätty {date(p.createdAt)}{#if p.updatedAt !== p.createdAt} · muutettu {date(p.updatedAt)}{/if}{#if p.orphan} · lisääjä poistanut tunnuksensa{/if}
+                      <code>{p.ean}</code> · lisätty {date(p.createdAt)}{p.adderName ? ` (${p.adderName})` : ""}{#if p.updatedAt !== p.createdAt} · muutettu {date(p.updatedAt)}{/if}{#if p.orphan} · lisääjä poistanut tunnuksensa{/if}
                     </span>
                   </span>
                   <button class="btn btn-ghost btn-sm btn-icon" disabled={busy} onclick={() => removeProduct(p)} aria-label="Poista {p.name}" title="Poista tuote"><Icon name="trash" /></button>
@@ -182,6 +213,36 @@
       </div>
 
       <div class="grid min-w-0 gap-4">
+        <section class="card">
+          <h2 class="flex items-center gap-2">Tuotteiden lisääjät <span class={count}>{n.format(view.adders.items.length)}</span></h2>
+          <p class="text-[0.9rem] text-secondary">
+            Muut voivat lisätä enintään {view.adders.limit} tuotetta. Tässä näkyvät ne, joilla on vähintään {view.adders.shownFrom}, ja vahvistetut.
+            Vahvista ne, joiden tuotteet ovat kunnossa: vahvistetuilla ei ole rajaa.
+          </p>
+          {#if notice}<p class="notice" role="status">{notice}</p>{/if}
+          {#if view.adders.items.length}
+            <ul>
+              {#each view.adders.items as a (a.ref)}
+                <li class={[productRow, "items-center"]}>
+                  <span class="grid min-w-0 gap-0.5 wrap-anywhere">
+                    <strong class="flex items-center gap-1">{a.name}{#if a.trusted}<span class="text-positive" title="Vahvistettu"><Icon name="check" /></span>{/if}</strong>
+                    <span class="text-[0.9rem] text-secondary">{adderDetails(a)}</span>
+                  </span>
+                  <span class="flex flex-none gap-1">
+                    {#if a.products}<button class="btn btn-ghost btn-sm" disabled={busy} onclick={() => (filter = a.name)} title="Näytä hänen tuotteensa listassa">Tuotteet</button>{/if}
+                    {#if a.trusted}
+                      <button class="btn btn-sm" disabled={busy} onclick={() => setTrusted(a, false)}>Peru vahvistus</button>
+                    {:else}
+                      <button class="btn btn-primary btn-sm" disabled={busy} onclick={() => setTrusted(a, true)}><Icon name="check" /> Vahvista</button>
+                    {/if}
+                  </span>
+                </li>
+              {/each}
+            </ul>
+          {:else}
+            <p class="text-secondary">Kukaan ei ole lähellä rajaa.</p>
+          {/if}
+        </section>
         <section class="card">
           <h2 class="flex items-center gap-2">Eniten juomia</h2>
           {#if view.bot.top.length}

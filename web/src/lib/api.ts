@@ -105,6 +105,7 @@ export const api = {
   admin: () => request<AdminView>("GET", "/api/admin"),
   adminDeleteProduct: (ean: string) => request<{ ok: true }>("DELETE", `/api/admin/products/${ean}`),
   adminClearReports: (ean: string) => request<{ ok: true }>("DELETE", `/api/admin/products/${ean}/reports`),
+  adminTrustAdder: (ref: string, trusted: boolean) => request<{ ok: true; notified: boolean }>("PUT", `/api/admin/adders/${ref}`, { trusted }),
 
   groups: () => request<{ groups: GroupSummary[] }>("GET", "/api/groups"),
   createGroup: (name: string) => request<GroupSummary>("POST", "/api/groups", { name }),
@@ -170,6 +171,8 @@ export function errorText(e: unknown): string {
     no_serving: "Tästä ei saa järkevän kokoista annosta. Tarkista koko ja prosentti.",
     in_catalogue: "Viivakoodi löytyy Alkon valikoimasta, joten sille ei voi lisätä omaa tuotetta.",
     not_allowed: "Vain tuotteen lisääjä tai ylläpitäjä voi muuttaa sitä.",
+    too_many_products: "Olet lisännyt jo niin monta tuotetta, ettei enempää voi lisätä. Ylläpitäjät voivat vahvistaa tunnuksesi, jolloin rajaa ei ole.",
+    products_full: "Tuotteita on lisätty jo niin paljon, ettei uusia voi lisätä juuri nyt. Kerro ylläpitäjille.",
     invalid_report: "Kirjoita viesti, enintään 300 merkkiä.",
     too_many_reports: "Sinulla on jo monta käsittelemätöntä ilmoitusta. Kokeile uudelleen, kun ylläpitäjät ovat käsitelleet niitä.",
     invalid_time: "Ajan pitää olla enintään viikon takaa, eikä tulevaisuudessa.",

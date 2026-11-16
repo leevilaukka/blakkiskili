@@ -81,7 +81,17 @@ export class WebSessions {
   }
 
   revoke(sessionToken: string) {
-    this.deps.db.query("DELETE FROM web_sessions WHERE token_hash = ?").run(this.deps.crypto.webTokenKey(sessionToken));
+    this.deps.db.query("DELETE FROM web_sessions WHERE token_hash = ?").run(this.tokenHash(sessionToken));
+  }
+
+  /** What a session is known by (live streams keep this, not the token). */
+  tokenHash(sessionToken: string): string {
+    return this.deps.crypto.webTokenKey(sessionToken);
+  }
+
+  /** Whether the session with this hash exists and hasn't expired. Doesn't slide the expiry. */
+  isActive(tokenHash: string): boolean {
+    return !!this.deps.db.query("SELECT 1 FROM web_sessions WHERE token_hash = ? AND expires_at > ?").get(tokenHash, this.deps.now());
   }
 
   /** Signs the account out everywhere. Returns how many sessions ended. */

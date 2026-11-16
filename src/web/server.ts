@@ -16,6 +16,8 @@ export interface WebServerOptions {
   botUsername: WebAppOptions["botUsername"];
   /** Telegram messages to the admins (see WebAppOptions.notifyAdmins). */
   notifyAdmins?: (html: string) => Promise<void>;
+  /** Telegram messages to one account (see WebAppOptions.messageAccount). */
+  messageAccount?: WebAppOptions["messageAccount"];
   /** Tests shorten these; production uses the defaults. */
   idleTimeout?: number;
   live?: WebAppOptions["live"];
@@ -45,7 +47,7 @@ export function serveWebApp(app: WebApp, { port, idleTimeout, site }: { port: nu
   });
 }
 
-export function startWebServer({ config, services, botUsername, notifyAdmins, idleTimeout, live }: WebServerOptions) {
+export function startWebServer({ config, services, botUsername, notifyAdmins, messageAccount, idleTimeout, live }: WebServerOptions) {
   const app = createWebApp({
     services,
     botToken: config.botToken,
@@ -53,6 +55,7 @@ export function startWebServer({ config, services, botUsername, notifyAdmins, id
     origin: config.web.origin,
     adminIds: config.adminIds,
     notifyAdmins,
+    messageAccount,
     docs: docsHtml(config),
     live,
   });

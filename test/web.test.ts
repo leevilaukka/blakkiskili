@@ -13,6 +13,8 @@ import { HOUR_MS, MINUTE_MS } from "../src/lib/units.ts";
 import { LOGIN_LINK_TTL_MS, SESSION_TTL_MS } from "../src/services/websessions.ts";
 import { Products } from "../src/services/products.ts";
 import { Barcodes } from "../src/services/barcodes.ts";
+import { PRODUCTS_PER_ACCOUNT } from "../src/services/customproducts.ts";
+import { ADDERS_SHOWN_FROM } from "../src/web/api/admin.ts";
 import { ProductPhotos } from "../src/web/photos.ts";
 import { catalogJson } from "./fixtures.ts";
 import { serveTestApp, setup, testConfig, tg } from "./helpers.ts";
@@ -35,12 +37,19 @@ afterEach(() => {
 });
 
 function world(
-  extra: { products?: Products; barcodes?: Barcodes; photos?: ProductPhotos; adminIds?: number[]; notifyAdmins?: (html: string) => Promise<void> } = {},
+  extra: {
+    products?: Products;
+    barcodes?: Barcodes;
+    photos?: ProductPhotos;
+    adminIds?: number[];
+    notifyAdmins?: (html: string) => Promise<void>;
+    messageAccount?: (accountId: string, html: string) => Promise<boolean>;
+  } = {},
 ) {
   const w = setup(undefined, [], extra.products, extra.barcodes);
   const alice = w.services.accounts.register(tg(1), { name: "alice", fullName: "Alice A", weight: 70, height: 170, gender: "nainen" }).profile;
   const bob = w.services.accounts.register(tg(2), { name: "bob", weight: 90, height: 185, gender: "mies" }).profile;
-  const app = serveTestApp({ services: w.services, botToken: BOT_TOKEN, botUsername: "kili_bot", origin: ORIGIN, photos: extra.photos, adminIds: extra.adminIds, notifyAdmins: extra.notifyAdmins, docs: docsHtml(testConfig()) });
+  const app = serveTestApp({ services: w.services, botToken: BOT_TOKEN, botUsername: "kili_bot", origin: ORIGIN, photos: extra.photos, adminIds: extra.adminIds, notifyAdmins: extra.notifyAdmins, messageAccount: extra.messageAccount, docs: docsHtml(testConfig()) });
   apps.push(app);
   apps.push(app);
   const cookieOf = (accountId: string, identityId: string | null = null) =>
@@ -283,6 +292,90 @@ describe("API: admin", () => {
     expect((await call("DELETE", "/api/admin/products/4006381333931", { cookie })).status).toBe(200);
     expect(services.customProducts.get("4006381333931")).toBeNull();
     expect((await call("DELETE", "/api/admin/products/4006381333931", { cookie })).status).toBe(404);
+  });
+
+  test("an admin can verify someone who adds good products, which lifts their limit", async () => {
+    const toAdmins: string[] = [];
+    const toUsers: [string, string][] = [];
+    const { call, alice, bob, services, telegramCookie, cookieOf } = world({
+      adminIds: [1],
+      barcodes: new Barcodes({ url: "https://api.test", fetch: (async () => new Response("{}", { status: 404 })) as unknown as typeof fetch }), // knows no codes
+      notifyAdmins: async (html) => void toAdmins.push(html),
+      messageAccount: async (id, html) => (toUsers.push([id, html]), true),
+    });
+    const cookie = telegramCookie(alice.id, 1);
+    const ean = (i: number) => {
+      const body = `400638${String(1_000_000 + i).slice(1)}`;
+      const sum = [...body].reduce((s, d, k) => s + Number(d) * (k % 2 ? 3 : 1), 0);
+      return body + ((10 - (sum % 10)) % 10);
+    };
+    const add = (i: number, by = bob.id) => services.customProducts.save({ ean: ean(i), kind: "olut", name: `Olut ${i}`, sizeL: 0.33, abv: 4.7, kcal100: null }, by, false);
+    const adders = async () => ((await (await call("GET", "/api/admin", { cookie })).json()) as any).adders;
+
+    // Listed only near the limit (but their products still say who added them)
+    for (let i = 0; i < ADDERS_SHOWN_FROM - 1; i++) expect(add(i).ok).toBe(true);
+    expect((await adders()).items).toEqual([]);
+    const early = (await (await call("GET", "/api/admin", { cookie })).json()) as any;
+    expect(early.customProducts.items[0]).toMatchObject({ adderName: "bob", adderRef: expect.stringMatching(/^[0-9a-f]{16}$/) });
+    expect(early.adders.shownFrom).toBe(ADDERS_SHOWN_FROM);
+    expect(add(ADDERS_SHOWN_FROM - 1).ok).toBe(true);
+    expect((await adders()).items.map((a: any) => a.name)).toEqual(["bob"]);
+    expect(add(1000, alice.id).ok).toBe(true); // alice has one: not listed
+
+    for (let i = ADDERS_SHOWN_FROM; i < PRODUCTS_PER_ACCOUNT; i++) expect(add(i).ok).toBe(true);
+    expect(add(PRODUCTS_PER_ACCOUNT)).toEqual({ ok: false, reason: "too_many" });
+    services.customProducts.report(ean(0), alice.id, "väärä prosentti");
+
+    // Hitting the limit on the website tells the admins, once a day however often it's retried
+    const beer = { kind: "olut", name: "Yksi liikaa", sizeL: 0.33, abv: 4.7 };
+    for (let i = 0; i < 2; i++) {
+      const over = await call("PUT", `/api/barcodes/${ean(500)}/product`, { cookie: cookieOf(bob.id), body: beer });
+      expect([over.status, ((await over.json()) as any).error]).toEqual([409, "too_many_products"]);
+    }
+    expect(toAdmins).toHaveLength(1);
+    expect(toAdmins[0]).toContain("<b>bob</b> yritti lisätä");
+    expect(toAdmins[0]).toContain(`${ORIGIN}/admin`);
+
+    const before = await adders();
+    expect(before.limit).toBe(PRODUCTS_PER_ACCOUNT);
+    expect(before.items).toEqual([{ ref: expect.stringMatching(/^[0-9a-f]{16}$/), name: "bob", fullName: null, products: PRODUCTS_PER_ACCOUNT, openReports: 1, lastAddedAt: expect.any(Number), trusted: false }]);
+    expect(JSON.stringify(before)).not.toContain(bob.id); // a handle, not the account id
+    const ref = before.items[0].ref;
+    const view = (await (await call("GET", "/api/admin", { cookie })).json()) as any;
+    expect(view.customProducts.items.filter((p: any) => p.adderName === "bob").every((p: any) => p.adderRef === ref)).toBe(true);
+
+    // Only admins, only for real adders, and only same-origin
+    expect((await call("PUT", `/api/admin/adders/${ref}`, { cookie: cookieOf(bob.id), body: { trusted: true } })).status).toBe(404);
+    expect((await call("PUT", `/api/admin/adders/${ref}`, { cookie, body: { trusted: true }, csrf: false })).status).toBe(403);
+    expect((await call("PUT", `/api/admin/adders/${"0".repeat(16)}`, { cookie, body: { trusted: true } })).status).toBe(404);
+    expect((await call("PUT", `/api/admin/adders/${ref}`, { cookie, body: { trusted: "yes" } })).status).toBe(400);
+
+    const verified = await call("PUT", `/api/admin/adders/${ref}`, { cookie, body: { trusted: true } });
+    expect(await verified.json()).toEqual({ ok: true, notified: true });
+    expect(toUsers).toEqual([[bob.id, expect.stringContaining("Tunnuksesi on vahvistettu")]]);
+    // Already verified: not told again
+    expect(await (await call("PUT", `/api/admin/adders/${ref}`, { cookie, body: { trusted: true } })).json()).toEqual({ ok: true, notified: false });
+    expect(toUsers).toHaveLength(1);
+    expect((await adders()).items[0].trusted).toBe(true);
+    expect(add(PRODUCTS_PER_ACCOUNT)).toMatchObject({ ok: true, created: true });
+
+    // Taken back: the limit applies again (they keep what they added)
+    expect((await call("PUT", `/api/admin/adders/${ref}`, { cookie, body: { trusted: false } })).status).toBe(200);
+    expect(toUsers).toHaveLength(1); // taking it back sends nothing
+    expect(add(PRODUCTS_PER_ACCOUNT + 1)).toEqual({ ok: false, reason: "too_many" });
+    expect((await adders()).items[0]).toMatchObject({ trusted: false, products: PRODUCTS_PER_ACCOUNT + 1 });
+
+    // A verified adder stays listed whatever their count, so it can be taken back
+    const aliceRef = view.customProducts.items.find((p: any) => p.adderName === "alice").adderRef;
+    expect((await call("PUT", `/api/admin/adders/${aliceRef}`, { cookie, body: { trusted: true } })).status).toBe(200);
+    expect((await adders()).items.map((a: any) => [a.name, a.trusted])).toEqual([["bob", false], ["alice", true]]);
+    services.customProducts.setTrusted(alice.id, false);
+
+    // Verified, then the account is deleted: nothing about them is left
+    services.customProducts.setTrusted(bob.id, true);
+    services.accounts.delete(bob.id);
+    expect((await adders()).items).toEqual([]);
+    expect(services.deps.db.query("SELECT count(*) AS n FROM trusted_product_adders").get()).toEqual({ n: 0 });
   });
 });
 
@@ -760,6 +853,11 @@ describe("API: barcodes", () => {
       return [res.status, ((await res.json()) as any).error];
     };
     expect(await put(beer, BEER_EAN)).toEqual([409, "in_catalogue"]);
+    // Not only the catalogue: a request straight to the API can't hide what the Worker knows
+    expect(await put(beer, WORKER_EAN)).toEqual([409, "in_catalogue"]);
+    expect(await put(beer, ALCOHOL_FREE_EAN)).toEqual([409, "in_catalogue"]);
+    expect(await put(beer, DOWN_EAN)).toEqual([503, "barcode_unavailable"]);
+    expect((await put(beer, GONE_EAN))[0]).toBe(201); // discontinued at Alko: may be sold elsewhere
     expect(await put({ ...beer, kind: "mehu" })).toEqual([422, "invalid_kind"]);
     expect(await put({ ...beer, name: "   " })).toEqual([422, "invalid_product_name"]);
     expect(await put({ ...beer, name: "x".repeat(61) })).toEqual([422, "invalid_product_name"]);
@@ -768,6 +866,21 @@ describe("API: barcodes", () => {
     expect(await put({ ...beer, abv: 0.5 })).toEqual([422, "invalid_abv"]);
     expect(await put({ ...beer, kcal100: -1 })).toEqual([422, "invalid_kcal"]);
     expect((await call("PUT", `/api/barcodes/${UNKNOWN_EAN}/product`, { cookie: alice, body: beer, csrf: false })).status).toBe(403);
+  });
+
+  test("each account may add a limited number of products; admins any number", async () => {
+    const w = barcodeWorld();
+    const ean = (i: number) => {
+      const body = `400638${String(1_000_000 + i).slice(1)}`; // 12 digits
+      const sum = [...body].reduce((s, d, k) => s + Number(d) * (k % 2 ? 3 : 1), 0);
+      return body + ((10 - (sum % 10)) % 10);
+    };
+    for (let i = 0; i < PRODUCTS_PER_ACCOUNT; i++) expect(w.services.customProducts.save({ ...beer, kind: "olut", ean: ean(i) }, w.aliceId, false).ok).toBe(true);
+    const over = await w.call("PUT", `/api/barcodes/${ean(PRODUCTS_PER_ACCOUNT)}/product`, { cookie: w.alice, body: beer });
+    expect([over.status, ((await over.json()) as any).error]).toEqual([409, "too_many_products"]);
+    // Changing one of them is still fine, and so is adding for an admin
+    expect((await w.call("PUT", `/api/barcodes/${ean(0)}/product`, { cookie: w.alice, body: { ...beer, name: "Uusi nimi" } })).status).toBe(200);
+    expect(w.services.customProducts.save({ ...beer, kind: "olut", ean: ean(PRODUCTS_PER_ACCOUNT) }, w.aliceId, true).ok).toBe(true);
   });
 
   test("are off without the catalogue and the Worker", async () => {

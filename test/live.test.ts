@@ -292,6 +292,38 @@ describe("GET /api/events", () => {
     expect((await open()).status).toBe(401);
   });
 
+  test("signing out ends that browser's open streams, not the account's others", async () => {
+    const { open, app, cookie, services, alice } = world();
+    const phone = `__Host-kili=${services.webSessions.createSession(alice.id, null).sessionToken}`;
+    const here = reader(await open());
+    const there = reader(await open(phone));
+    await here.next();
+    await there.next();
+    const out = await app(
+      new Request(`${ORIGIN}/api/auth/logout`, { method: "POST", headers: { cookie, origin: ORIGIN, "x-kili": "1" }, body: "{}" }),
+      "1.1.1.1",
+    );
+    expect(out.status).toBe(200);
+    expect((await here.next())?.event).toBe("end");
+    expect(await here.next()).toBeNull(); // closed by the server
+    expect(app.viewers()).toBe(1);
+    services.drinks.add(alice.id, 12_000, "still here");
+    expect((await there.next())?.event).toBe("update");
+    await there.cancel();
+  });
+
+  test("a stream ends at the next tick once its session has expired or was revoked elsewhere", async () => {
+    const { open, app, cookie, clock } = world({ tickMs: 30, minGapMs: 10 });
+    const events = reader(await open());
+    await events.next();
+    clock.now += 31 * 24 * 60 * 60_000; // past the 30-day session
+    let last = await events.next();
+    while (last?.event === "update") last = await events.next();
+    expect(last?.event).toBe("end");
+    expect(app.viewers()).toBe(0);
+    expect((await open(cookie)).status).toBe(401);
+  });
+
   test("limits the streams per account and frees them when the page goes away", async () => {
     const { open, app } = world({ tickMs: 1_000_000, minGapMs: 10, maxPerOwner: 2 } as any);
     const a = reader(await open());

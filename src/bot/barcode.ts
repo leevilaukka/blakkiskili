@@ -5,6 +5,7 @@ import { barcodeView } from "./menu.ts";
 import { back, sendHtml, sendView } from "./ui.ts";
 import { S } from "../strings.ts";
 import { normalizeEan } from "../lib/ean.ts";
+import { describeError } from "../lib/redact.ts";
 
 /** Photo plumbing, replaceable in tests. */
 export interface BarcodeIO {
@@ -68,7 +69,7 @@ export async function handleBarcodePhoto(ctx: BotContext, io: BarcodeIO): Promis
   try {
     ean = await io.decode(await io.download(ctx, largest.file_id));
   } catch (e) {
-    console.error("Barcode photo failed:", e);
+    console.error("Barcode photo failed:", describeError(e));
     await sendHtml(ctx, S.barcode.photo_failed, [back("j")]);
     return;
   }

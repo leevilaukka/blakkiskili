@@ -9,17 +9,20 @@ import { createCrypto } from "./lib/ids.ts";
 import { createServices } from "./services/index.ts";
 import { ALLOWED_UPDATES, createBot, publishCommandMenus } from "./bot/index.ts";
 import { runInactivityJob } from "./bot/inactivity.ts";
-import { createAdminAlerts, notifyAdmins } from "./bot/admin.ts";
+import { createAdminAlerts, messageAccount, notifyAdmins } from "./bot/admin.ts";
 import { writeSnapshot } from "./ops/backup.ts";
 import { startJobs, type Job } from "./ops/scheduler.ts";
 import { Products } from "./services/products.ts";
 import { Barcodes } from "./services/barcodes.ts";
 import { startWebServer } from "./web/server.ts";
+import { describeError, installLogRedaction } from "./lib/redact.ts";
 
 // Everything this process creates (database, WAL, snapshots) is readable by its owner only.
 process.umask(0o077);
 
 const config = loadConfig();
+// Bot API URLs contain the token, and network errors carry their URL: never let it reach the logs.
+installLogRedaction([config.botToken]);
 if (config.dbPath !== ":memory:") mkdirSync(dirname(config.dbPath), { recursive: true, mode: 0o700 });
 const db = openDatabase(config.dbPath);
 const products = new Products({
@@ -87,7 +90,7 @@ if (config.inactivity.deleteAfterDays > 0) {
   });
 }
 const stopJobs = startJobs(jobs, (job, err) => {
-  void alert(job, err instanceof Error ? err.message : String(err));
+  void alert(job, describeError(err));
 });
 
 // The website must never take the bot down: if it can't start, say so and carry on without it.
@@ -99,6 +102,7 @@ if (config.web.enabled) {
       services,
       botUsername: () => (bot.isInited() ? bot.botInfo.username : ""), // "" until Telegram answers getMe
       notifyAdmins: (html) => notifyAdmins(bot.api, config.adminIds, html),
+      messageAccount: (accountId, html) => messageAccount(bot.api, services, accountId, html),
     });
   } catch (e) {
     console.error("Web: could not start, continuing without the website:", e);
@@ -125,11 +129,11 @@ for (let attempt = 1; ; attempt++) {
     await bot.init(AbortSignal.timeout(30_000) as Parameters<typeof bot.init>[0]);
     break;
   } catch (e) {
-    console.warn(`Telegram getMe failed (attempt ${attempt}), retrying in 10 s:`, e instanceof Error ? e.message : e);
+    console.warn(`Telegram getMe failed (attempt ${attempt}), retrying in 10 s:`, describeError(e));
     await Bun.sleep(10_000);
   }
 }
-void publishCommandMenus(bot, config).catch((e) => console.warn("Could not set command menus:", e));
+void publishCommandMenus(bot, config).catch((e) => console.warn("Could not set command menus:", describeError(e)));
 
 if (config.mode === "webhook") {
   const handle = webhookCallback(bot, "std/http", {

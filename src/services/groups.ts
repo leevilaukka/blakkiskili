@@ -106,11 +106,23 @@ export class Groups {
   leave(userId: string, chatId: number) {
     const groupId = this.deps.crypto.groupKey(chatId);
     this.deps.db.query("DELETE FROM group_members WHERE user_id = ? AND group_id = ?").run(userId, groupId);
+    this.revokeScreensOf(userId, groupId);
     // Also forget an imported membership so the user isn't re-added automatically.
     this.deps.db
       .query("DELETE FROM legacy_group_memberships WHERE user_id = ? AND legacy_group_id = ?")
       .run(userId, legacyHash(chatId));
     this.bus.emit({ accountId: userId, groupId });
+  }
+
+  /**
+   * A former member's screen links of the group stop working (the link is a credential they
+   * hold); open screens are told to stop. Links others made stay.
+   */
+  private revokeScreensOf(accountId: string, groupId: string) {
+    const gone = this.deps.db
+      .query("DELETE FROM screen_tokens WHERE group_id = ? AND created_by = ? RETURNING token_hash")
+      .all(groupId, accountId) as { token_hash: string }[];
+    for (const r of gone) this.bus.emit({ screenHash: r.token_hash });
   }
 
   isMember(userId: string, chatId: number): boolean {
@@ -206,6 +218,7 @@ export class Groups {
   leaveGroup(accountId: string, groupId: string): boolean {
     const left = this.deps.db.query("DELETE FROM group_members WHERE user_id = ? AND group_id = ?").run(accountId, groupId).changes > 0;
     if (!left) return false;
+    this.revokeScreensOf(accountId, groupId);
     this.deps.db.query("DELETE FROM groups WHERE id = ? AND kind = 'web' AND NOT EXISTS (SELECT 1 FROM group_members WHERE group_id = ?1)").run(groupId);
     this.bus.emit({ accountId, groupId });
     return true;
@@ -327,21 +340,31 @@ export class Groups {
     return a + b;
   }
 
-  /**
-   * Turns memberships imported from the original bot's groups.csv into real memberships
-   * of this chat. Returns how many users were added.
-   */
-  adoptLegacyMembers(chatId: number): number {
-    const legacyId = legacyHash(chatId);
-    const rows = this.deps.db
-      .query("SELECT user_id FROM legacy_group_memberships WHERE legacy_group_id = ?")
-      .all(legacyId) as { user_id: string }[];
-    if (rows.length === 0) return 0;
+  // Memberships imported from the original bot's groups.csv wait in legacy_group_memberships
+  // until the bot is used in that chat. The file only proves who the uploader is, not that they
+  // are in the group (anyone who knows a chat's id can write its hash), so the bot checks each
+  // person's membership with Telegram before adopting them (see bot/groupmembers.ts).
+
+  /** Accounts with an imported membership of this chat that hasn't been adopted yet. */
+  legacyMembers(chatId: number): string[] {
+    return (
+      this.deps.db.query("SELECT user_id FROM legacy_group_memberships WHERE legacy_group_id = ?").all(legacyHash(chatId)) as { user_id: string }[]
+    ).map((r) => r.user_id);
+  }
+
+  /** Makes an imported membership real; call only once the account is known to be in the chat. */
+  adoptLegacyMember(accountId: string, chatId: number) {
     this.deps.db.transaction(() => {
-      for (const r of rows) this.join(r.user_id, chatId);
-      this.deps.db.query("DELETE FROM legacy_group_memberships WHERE legacy_group_id = ?").run(legacyId);
+      this.join(accountId, chatId);
+      this.dropLegacyMember(accountId, chatId);
     })();
-    return rows.length;
+  }
+
+  /** Forgets an imported membership (the person isn't in the chat). */
+  dropLegacyMember(accountId: string, chatId: number) {
+    this.deps.db
+      .query("DELETE FROM legacy_group_memberships WHERE user_id = ? AND legacy_group_id = ?")
+      .run(accountId, legacyHash(chatId));
   }
 
   /** Members who have drunk within the estimate window, with their recent drinks (ascending). */

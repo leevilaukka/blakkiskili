@@ -38,7 +38,8 @@ import {
 } from "../lib/servings.ts";
 import type { Energy } from "../services/drinks.ts";
 import { MAX_FAVORITES } from "../services/favorites.ts";
-import type { CustomProduct } from "../services/customproducts.ts";
+import { alkoKnows, PRODUCTS_PER_ACCOUNT, type CustomProduct } from "../services/customproducts.ts";
+import { limitNotice, notifyAdmins } from "./admin.ts";
 
 type Handler = (ctx: BotContext, arg: string | undefined) => View | Promise<View>;
 
@@ -319,6 +320,12 @@ export function saveCustomProduct(
   const r = customProducts.save(data, profile.id, isAdmin(ctx));
   if (!r.ok) {
     if (r.reason === "not_allowed") return productView(ctx, customDrinkId(data.ean), S.custom.not_allowed);
+    if (r.reason === "too_many" || r.reason === "full") {
+      const { config } = ctx.kili;
+      const notice = limitNotice(ctx.kili.services, profile.id, r.reason, config.web.enabled ? config.web.origin : undefined);
+      if (notice) void notifyAdmins(ctx.api, config.adminIds, notice);
+      return juoView(ctx, profile, r.reason === "full" ? S.custom.full : fmt(S.custom.too_many, { max: PRODUCTS_PER_ACCOUNT }));
+    }
     return juoView(ctx, profile, S.custom.no_serving); // the flow validates first; not expected
   }
   if (r.created) console.log(`Custom barcode product added: ${r.product.ean} ${JSON.stringify(r.product.name)}`);
@@ -326,13 +333,15 @@ export function saveCustomProduct(
 }
 
 /** Why the add/edit flow can't go on for this barcode (Alko knows it, or not the user's product), or null. */
-function customBlockedView(ctx: BotContext, ean: string): View | null {
-  const { products, customProducts } = ctx.kili.services;
+async function customBlockedView(ctx: BotContext, ean: string): Promise<View | null> {
+  const { products, barcodes, customProducts } = ctx.kili.services;
   const alkoId = products.productIdByEan(ean);
   if (alkoId && products.get(alkoId)) return productView(ctx, alkoId, fmt(S.custom.in_catalogue, { ean }));
   const existing = customProducts.get(ean);
-  if (existing && !canEditCustom(ctx, existing)) return productView(ctx, customDrinkId(ean), S.custom.not_allowed);
-  return null;
+  if (existing) return canEditCustom(ctx, existing) ? null : productView(ctx, customDrinkId(ean), S.custom.not_allowed);
+  // A new one: not for codes the Worker knows (callback data can name any code). The barcode
+  // view then shows Alko's product, or that the lookup failed.
+  return (await alkoKnows(ean, products, barcodes)) === "no" ? null : barcodeView(ctx, ean);
 }
 
 /** "Ilmoita virheestä": asks what is wrong with a user-added product. */
@@ -644,17 +653,17 @@ const NODES: Record<string, Handler> = {
     return customAmountView(drink);
   }),
   // ➕ Lisää tuote / ✏️ Muokkaa tuotetta (user-added barcode products): pick the kind of drink
-  bn: withProfile((ctx, p, arg) => {
+  bn: withProfile(async (ctx, p, arg) => {
     const ean = normalizeEan(arg ?? "");
     if (!ean) return juoView(ctx, p);
-    return customBlockedView(ctx, ean) ?? customKindView(ctx, ean);
+    return (await customBlockedView(ctx, ean)) ?? customKindView(ctx, ean);
   }),
   // The kind was picked: the next message is the name
-  bk: withProfile((ctx, p, arg) => {
+  bk: withProfile(async (ctx, p, arg) => {
     const [rawEan, kind] = (arg ?? "").split(":");
     const ean = normalizeEan(rawEan ?? "");
     if (!ean || !kind || !isCustomKind(kind)) return juoView(ctx, p);
-    const blocked = customBlockedView(ctx, ean);
+    const blocked = await customBlockedView(ctx, ean);
     if (blocked) return blocked;
     ctx.kili.services.pending.set(ctx.kili.identityId!, { kind: "customProduct", ean, productKind: kind, step: "name" });
     return customStepView(ctx, ean, "name");

@@ -70,12 +70,14 @@ const screen = services.screens.create({ groupId: group.id }, demo.id);
 services.customProducts.save({ ean: "4006381333931", kind: "olut", name: "Kauppakalja", sizeL: 0.33, abv: 4.6, kcal100: 42 }, friend.id, false);
 services.customProducts.save({ ean: "96385074", kind: "viini", name: "Kotiviini", sizeL: 0.75, abv: 12.5, kcal100: null }, extra[0]!.id, false);
 services.customProducts.report("4006381333931", extra[1]!.id, "Prosentti on 5,2 eikä 4,6");
+services.customProducts.setTrusted(extra[0]!.id, true); // a verified adder
 
 startWebServer({
   config,
   services,
   botUsername: "demo_bot",
   notifyAdmins: async (html) => console.log(`[to admins] ${html}`),
+  messageAccount: async (accountId, html) => (console.log(`[to ${accountId}] ${html}`), true),
 });
 const { token } = services.webSessions.createLoginLink(demo.id, services.identities.key({ platform: "telegram", platformUserId: 1 }));
 console.log(`\nSign in (valid for ${(10 * MINUTE_MS) / MINUTE_MS} minutes, once):\n  ${origin}/login#t=${token}\n`);

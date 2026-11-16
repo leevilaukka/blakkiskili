@@ -86,7 +86,7 @@ Without inline mode, the 🔎 button in the Juo menu falls back to typed search 
 2. In the new bot, they run `/tuo`, accept the terms and send `user.csv`, `drinks.csv` and `groups.csv`, in any order.
 3. Each row's `userid` must equal `sha256(sender's Telegram id)`. That's how the old bot stored IDs, so a file only imports into the account that downloaded it.
 4. Drinks are de-duplicated, so importing twice is harmless.
-5. `groups.csv` memberships are remembered as old-format group hashes. The first time someone uses a command in that group with the new bot, those members are added automatically, so nobody has to `/moro` again.
+5. `groups.csv` memberships are remembered as old-format group hashes. The first time someone uses a command in that group with the new bot, those members are added automatically, so nobody has to `/moro` again. The file only proves who uploaded it, not that they are in the group, so each member is first checked with Telegram (`getChatMember`); people who aren't in the chat are dropped (`src/bot/groupmembers.ts`).
 
 ## Privacy and security
 

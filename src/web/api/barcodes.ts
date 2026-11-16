@@ -4,8 +4,8 @@
 
 import { normalizeEan } from "../../lib/ean.ts";
 import { customCatalogDrink, isCustomKind } from "../../lib/servings.ts";
-import { ABV_MAX, ABV_MIN, cleanProductName, SIZE_MAX_L, SIZE_MIN_L, type CustomProduct } from "../../services/customproducts.ts";
-import { productReportNotice } from "../../bot/admin.ts";
+import { ABV_MAX, ABV_MIN, alkoKnows, cleanProductName, SIZE_MAX_L, SIZE_MIN_L, type CustomProduct } from "../../services/customproducts.ts";
+import { limitNotice, productReportNotice } from "../../bot/admin.ts";
 import type { BarcodeResult } from "../../../shared/api.ts";
 import { fail, json } from "../http.ts";
 import type { Api, Ctx, Handler, Routes } from "./context.ts";
@@ -78,8 +78,23 @@ export function barcodeRoutes({ services, opts, limits }: Api): Routes {
     // The catalogue always wins, as in the bot.
     const alkoId = products.productIdByEan(ean);
     if (alkoId && products.get(alkoId)) return fail(409, "in_catalogue");
+    // A new product would hide Alko's from everyone: only for codes the Worker doesn't know either.
+    if (!customProducts.get(ean)) {
+      if (limits.barcode.hit(c.user.id) !== "ok") return fail(429, "rate_limited");
+      const known = await alkoKnows(ean, products, barcodes);
+      if (known === "unavailable") return fail(503, "barcode_unavailable");
+      if (known === "yes") return fail(409, "in_catalogue");
+    }
     const r = customProducts.save({ ean, kind, name, sizeL, abv, kcal100 }, c.user.id, c.admin);
-    if (!r.ok) return r.reason === "not_allowed" ? fail(403, "not_allowed") : fail(422, "no_serving");
+    if (!r.ok) {
+      if (r.reason === "not_allowed") return fail(403, "not_allowed");
+      if (r.reason === "too_many" || r.reason === "full") {
+        const notice = limitNotice(services, c.user.id, r.reason, opts.origin);
+        if (notice) void opts.notifyAdmins?.(notice);
+        return fail(409, r.reason === "full" ? "products_full" : "too_many_products");
+      }
+      return fail(422, "no_serving");
+    }
     if (r.created) console.log(`Custom barcode product added (web): ${r.product.ean} ${JSON.stringify(r.product.name)}`);
     return json(foundCustom(r.product, c), r.created ? 201 : 200);
   }

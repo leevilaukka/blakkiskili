@@ -29,6 +29,8 @@ export interface WebAppOptions {
   adminIds?: readonly number[];
   /** Sends a Telegram HTML message to the admins (new "Ilmoita virheestä" reports). Never throws. */
   notifyAdmins?: (html: string) => Promise<void>;
+  /** Sends a Telegram HTML message to an account, in private (an adder was verified). False if it couldn't. Never throws. */
+  messageAccount?: (accountId: string, html: string) => Promise<boolean>;
   /** The help, terms and privacy texts as Telegram HTML (bot/context.ts docsHtml), shown at /help, /terms and /privacy. */
   docs?: Record<string, string>;
   /** Live-update timing; tests shorten it. */

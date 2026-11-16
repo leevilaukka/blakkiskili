@@ -23,10 +23,17 @@ export interface HubOptions {
   /** Open streams in total, and per owner (an account, or a screen token). */
   maxTotal?: number;
   maxPerOwner?: number;
+  /**
+   * Whether the sign-in session a stream was opened with still holds; checked every tick, so a
+   * stream ends within `tickMs` of its session expiring or being revoked anywhere.
+   */
+  sessionAlive?: (session: string) => boolean;
 }
 
 interface Viewer {
   owner: string;
+  /** The sign-in session the stream belongs to (an account's page; not event screens). */
+  session?: string;
   send: (text: string) => void;
   close?: () => void;
 }
@@ -72,11 +79,11 @@ export class Hub {
 
   /**
    * Starts sending to `send`, beginning with the current data. `close` ends the response (used by
-   * endOwner). Returns how to stop, or null when full.
+   * endOwner and endSession). Returns how to stop, or null when full.
    */
-  subscribe(channel: string, owner: string, send: (text: string) => void, close?: () => void): (() => void) | null {
+  subscribe(channel: string, owner: string, send: (text: string) => void, close?: () => void, session?: string): (() => void) | null {
     if (!this.hasRoom(owner)) return null;
-    const viewer: Viewer = { owner, send, close };
+    const viewer: Viewer = { owner, session, send, close };
     let ch = this.channels.get(channel);
     if (!ch) this.channels.set(channel, (ch = { viewers: new Set(), lastPush: 0 }));
     ch.viewers.add(viewer);
@@ -91,10 +98,19 @@ export class Hub {
 
   /** Tells every stream of `owner` to stop and closes them (the account signed out everywhere). */
   endOwner(owner: string): number {
+    return this.endWhere((v) => v.owner === owner);
+  }
+
+  /** Tells every stream opened with `session` to stop and closes them (that browser signed out). */
+  endSession(session: string): number {
+    return this.endWhere((v) => v.session === session);
+  }
+
+  private endWhere(match: (v: Viewer) => boolean): number {
     let ended = 0;
     for (const [channel, ch] of [...this.channels]) {
       for (const v of [...ch.viewers]) {
-        if (v.owner !== owner) continue;
+        if (!match(v)) continue;
         this.remove(channel, v);
         ended += 1;
         try {
@@ -191,6 +207,12 @@ export class Hub {
   }
 
   private tick() {
+    const alive = this.opts.sessionAlive;
+    if (alive) {
+      const sessions = new Set<string>();
+      for (const ch of this.channels.values()) for (const v of ch.viewers) if (v.session) sessions.add(v.session);
+      for (const s of sessions) if (!alive(s)) this.endSession(s);
+    }
     for (const channel of [...this.channels.keys()]) this.deliver(channel);
   }
 }

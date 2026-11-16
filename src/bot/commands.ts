@@ -15,6 +15,8 @@ import { LOGIN_LINK_TTL_MS } from "../services/websessions.ts";
 import { chartLabel, type Profile } from "../services/accounts.ts";
 import type { Config } from "../config.ts";
 import type { InlineKeyboardButton } from "grammy/types";
+import { describeError } from "../lib/redact.ts";
+import { adoptLegacyMembers } from "./groupmembers.ts";
 
 /** Callback data prefix of the /kuvaaja page buttons. */
 export const CB_CHART = "kg:";
@@ -195,7 +197,7 @@ async function swapChartPage(ctx: BotContext, page: ReturnType<typeof chartPage>
       { type: "photo", media: page.photo, caption: page.caption, parse_mode: "HTML" },
       { reply_markup: { inline_keyboard: page.keyboard } },
     )
-    .catch((e) => console.error("Could not change chart page:", e));
+    .catch((e) => console.error("Could not change chart page:", describeError(e)));
 }
 
 export const COMMANDS: CommandDef[] = [
@@ -297,7 +299,7 @@ export function registerCommands(bot: Bot<BotContext>) {
       if (priv && identityId) services.pending.clear(identityId);
 
       if (!priv && ctx.chat) {
-        const adopted = services.groups.adoptLegacyMembers(ctx.chat.id);
+        const adopted = await adoptLegacyMembers(ctx);
         if (adopted > 0) await sendHtml(ctx, fmt(S.commands.adopted, { count: adopted }));
       }
 

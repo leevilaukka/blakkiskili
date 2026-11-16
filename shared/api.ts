@@ -287,6 +287,9 @@ export interface AdminProduct {
   kcal100: number | null;
   /** The account that added it no longer exists. */
   orphan: boolean;
+  /** Who added it (null when orphaned): their handle, and their name, also when they aren't in AdminView.adders. */
+  adderRef: string | null;
+  adderName: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -294,6 +297,22 @@ export interface AdminProduct {
 /** A user-added product with open "Ilmoita virheestä" reports, newest first. */
 export interface AdminReportedProduct extends AdminProduct {
   reports: { message: string; createdAt: number }[];
+}
+
+/**
+ * Someone who has added barcode products (or was verified). Verified adders have no limit on how
+ * many they add; PUT /api/admin/adders/<ref> { trusted } changes it.
+ */
+export interface AdminAdder {
+  /** Opaque handle, not the account id. */
+  ref: string;
+  /** Their Telegram name, and full name when known. */
+  name: string;
+  fullName: string | null;
+  products: number;
+  openReports: number;
+  lastAddedAt: number | null;
+  trusted: boolean;
 }
 
 /** GET /api/admin: only for sessions signed in with a Telegram account in ADMIN_IDS. */
@@ -326,6 +345,11 @@ export interface AdminView {
   customProducts: { total: number; items: AdminProduct[] };
   /** Products users have reported; cleared with DELETE /api/admin/products/<ean>/reports. */
   reported: AdminReportedProduct[];
+  /**
+   * The people who add products, most products first: only those near the limit (at least
+   * `shownFrom` products), and the verified. `limit` is what the unverified may add.
+   */
+  adders: { limit: number; shownFrom: number; items: AdminAdder[] };
 }
 
 export interface ApiError {

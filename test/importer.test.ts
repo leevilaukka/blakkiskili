@@ -69,6 +69,8 @@ describe("importer", () => {
     expect(services.importer.import(drinksCsv(), TG_ID, "n")).toEqual({ ok: false, reason: "no_account" });
     expect(services.importer.import("foo,bar\r\n1,2\r\n", TG_ID, "n")).toEqual({ ok: false, reason: "unknown_format" });
     expect(services.importer.peek(drinksCsv())).toBe("drinks");
+    const wide = Array.from({ length: 100 }, (_, i) => `c${i}`).join(",") + "\r\n";
+    expect(services.importer.import(wide, TG_ID, "n")).toEqual({ ok: false, reason: "too_big" });
   });
 
   test("imported group memberships are adopted when the group uses the bot", () => {
@@ -76,10 +78,11 @@ describe("importer", () => {
     services.importer.import(userCsv(), TG_ID, "n");
     services.importer.import(groupsCsv(), TG_ID, "n");
     const uid = services.identities.accountOf(crypto.identityKey("telegram", TG_ID))!;
-    expect(services.groups.adoptLegacyMembers(-42)).toBe(0); // some other chat
-    expect(services.groups.adoptLegacyMembers(-1001234567890)).toBe(1);
+    expect(services.groups.legacyMembers(-42)).toEqual([]); // some other chat
+    expect(services.groups.legacyMembers(-1001234567890)).toEqual([uid]);
+    services.groups.adoptLegacyMember(uid, -1001234567890);
     expect(services.groups.isMember(uid, -1001234567890)).toBe(true);
-    expect(services.groups.adoptLegacyMembers(-1001234567890)).toBe(0); // only once
+    expect(services.groups.legacyMembers(-1001234567890)).toEqual([]); // only once
   });
 
   test("our own /data export can be re-imported", () => {

@@ -13,6 +13,7 @@ export function createLive(services: Services, views: Views, timing?: Pick<HubOp
   const hub = new Hub({
     bus: services.bus,
     ...timing,
+    sessionAlive: (hash) => services.webSessions.isActive(hash),
     channelsFor(change, watched) {
       const groupIds = new Set<string>(change.groupId ? [change.groupId] : []);
       if (change.accountId && watched.some((w) => !w.startsWith("u:"))) for (const g of services.groups.groupIdsOf(change.accountId)) groupIds.add(g);
@@ -52,8 +53,12 @@ export function createLive(services: Services, views: Views, timing?: Pick<HubOp
     },
   });
 
-  /** An event stream of `channel`; `owner` (an account or a screen) has a limit on open streams. */
+  /**
+   * An event stream of `channel`; `owner` (an account or a screen) has a limit on open streams.
+   * A signed-in request's stream is bound to its session and ends when that session does.
+   */
   function stream(c: Ctx, channel: string, owner: string): Response {
+    const session = c.sessionToken ? services.webSessions.tokenHash(c.sessionToken) : undefined;
     if (!hub.hasRoom(owner)) return fail(429, "too_many_streams");
     // Streams stay open for hours; Bun would close them after its idle timeout.
     c.server.timeout(c.req, 0);
@@ -66,6 +71,7 @@ export function createLive(services: Services, views: Views, timing?: Pick<HubOp
           owner,
           (text) => controller.enqueue(encoder.encode(text)),
           () => controller.close(),
+          session,
         );
       },
       cancel() {
@@ -81,6 +87,8 @@ export function createLive(services: Services, views: Views, timing?: Pick<HubOp
     stream,
     /** Tells the owner's open pages to stop (signed out everywhere). */
     endOwner: (owner: string) => hub.endOwner(owner),
+    /** Tells the open pages of one browser's session to stop (signed out). */
+    endSession: (sessionToken: string) => hub.endSession(services.webSessions.tokenHash(sessionToken)),
     viewers: () => hub.viewers,
     close: () => hub.close(),
   };

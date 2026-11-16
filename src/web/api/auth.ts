@@ -58,9 +58,11 @@ export function authRoutes({ services, opts, cookies, live, now }: Api): Routes 
       }),
     },
 
+    // This browser's open live pages are told to stop too.
     "/api/auth/logout": {
       POST: user((c) => {
         services.webSessions.revoke(c.sessionToken!);
+        live.endSession(c.sessionToken!);
         return signedOut({});
       }),
     },

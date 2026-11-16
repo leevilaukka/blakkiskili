@@ -6,6 +6,8 @@
 import { normalizeEan } from "../lib/ean.ts";
 import { customCatalogDrink, isCustomKind, type CatalogDrink, type CustomKind, type CustomProductData } from "../lib/servings.ts";
 import type { Deps } from "./index.ts";
+import type { Barcodes } from "./barcodes.ts";
+import type { Products } from "./products.ts";
 
 export interface CustomProduct extends CustomProductData {
   addedBy: string | null; // account id; null once that account is deleted
@@ -71,10 +73,63 @@ export type ReportResult =
 
 export type SaveResult =
   | { ok: true; created: boolean; product: CustomProduct }
-  | { ok: false; reason: "invalid" | "not_allowed" };
+  | { ok: false; reason: "invalid" | "not_allowed" | "too_many" | "full" };
+
+/**
+ * Products one account may have added, and in all. Shared data, so capped; admins and the adders
+ * they have verified have no limit.
+ */
+export const PRODUCTS_PER_ACCOUNT = 30;
+export const PRODUCTS_MAX = 5000;
+/** The admins hear about one person (or the total cap) being at the limit at most this often. */
+export const LIMIT_NOTICE_EVERY_MS = 24 * 3600_000;
+
+/**
+ * Whether Alko sells (or sold as alcohol-free) the product behind a barcode, asking the API Worker
+ * when the catalogue doesn't know the code. A user-added product would hide Alko's from everyone
+ * (lookups find user-added ones before asking the Worker), so new ones are only allowed for "no":
+ * codes nobody knows, or products Alko has discontinued. "unavailable" when the Worker can't
+ * answer now.
+ */
+export async function alkoKnows(ean: string, products: Products, barcodes: Barcodes): Promise<"yes" | "no" | "unavailable"> {
+  let id = products.productIdByEan(ean) ?? null;
+  if (!id) {
+    const hit = await barcodes.resolve(ean);
+    if (!hit.ok) return hit.reason === "invalid" ? "no" : "unavailable";
+    id = hit.productId;
+  }
+  return id && (products.get(id) || products.notDrinkable(id)) ? "yes" : "no";
+}
+
+/** An account that has added products, for the admin page. */
+export interface ProductAdder {
+  accountId: string;
+  name: string;
+  fullName: string | null;
+  products: number;
+  /** Open "Ilmoita virheestä" reports on their products. */
+  openReports: number;
+  lastAddedAt: number | null;
+  /** Verified by an admin (no limit on adding): since when, or null. */
+  trustedSince: number | null;
+}
 
 export class CustomProducts {
+  private readonly limitNoticed = new Map<string, number>();
+
   constructor(private readonly deps: Deps) {}
+
+  /**
+   * Whether to tell the admins that `key` (an account, or "full" for the total cap) hit the limit:
+   * true at most once per LIMIT_NOTICE_EVERY_MS, so retrying doesn't spam them. In memory only.
+   */
+  limitNotice(key: string): boolean {
+    const now = this.deps.now();
+    const last = this.limitNoticed.get(key);
+    if (last !== undefined && now - last < LIMIT_NOTICE_EVERY_MS) return false;
+    this.limitNoticed.set(key, now);
+    return true;
+  }
 
   get(input: string): CustomProduct | null {
     const ean = normalizeEan(input);
@@ -121,6 +176,11 @@ export class CustomProducts {
         .run(clean.kind, name, clean.sizeL, clean.abv, clean.kcal100, now, ean);
       return { ok: true, created: false, product: this.get(ean)! };
     }
+    if (!isAdmin && !this.isTrusted(accountId)) {
+      const mine = this.deps.db.query("SELECT count(*) AS n FROM custom_products WHERE added_by = ?").get(accountId) as { n: number };
+      if (mine.n >= PRODUCTS_PER_ACCOUNT) return { ok: false, reason: "too_many" };
+      if (this.count() >= PRODUCTS_MAX) return { ok: false, reason: "full" };
+    }
     this.deps.db
       .query(
         `INSERT INTO custom_products (ean, kind, name, size_l, abv, kcal100, added_by, created_at, updated_at)
@@ -135,6 +195,49 @@ export class CustomProducts {
     const p = this.get(input);
     if (!p || !this.canEdit(p, accountId, isAdmin)) return false;
     return this.deps.db.query("DELETE FROM custom_products WHERE ean = ?").run(p.ean).changes > 0;
+  }
+
+  // ---------- verified adders (the admin page) ----------
+
+  isTrusted(accountId: string): boolean {
+    return !!this.deps.db.query("SELECT 1 FROM trusted_product_adders WHERE user_id = ?").get(accountId);
+  }
+
+  /**
+   * Verifies the account (no limit on adding products), or takes it back. Returns whether that
+   * changed anything (false when it already was so, or there is no such account).
+   */
+  setTrusted(accountId: string, trusted: boolean): boolean {
+    if (!trusted) return this.deps.db.query("DELETE FROM trusted_product_adders WHERE user_id = ?").run(accountId).changes > 0;
+    if (!this.deps.db.query("SELECT 1 FROM users WHERE id = ?").get(accountId)) return false;
+    return this.deps.db.query("INSERT OR IGNORE INTO trusted_product_adders (user_id, granted_at) VALUES (?, ?)").run(accountId, this.deps.now()).changes > 0;
+  }
+
+  /**
+   * Everyone who has added a product, or has been verified, with how their products have fared:
+   * how many, and how many open error reports they have. Most products first.
+   */
+  adders(): ProductAdder[] {
+    const rows = this.deps.db
+      .query(
+        `SELECT u.id, u.name_enc, u.full_name_enc, t.granted_at,
+                (SELECT count(*) FROM custom_products p WHERE p.added_by = u.id) AS products,
+                (SELECT max(created_at) FROM custom_products p WHERE p.added_by = u.id) AS last_added_at,
+                (SELECT count(*) FROM custom_product_reports r JOIN custom_products p ON p.ean = r.ean WHERE p.added_by = u.id) AS reports
+         FROM users u LEFT JOIN trusted_product_adders t ON t.user_id = u.id
+         WHERE t.user_id IS NOT NULL OR EXISTS (SELECT 1 FROM custom_products p WHERE p.added_by = u.id)
+         ORDER BY products DESC, last_added_at DESC`,
+      )
+      .all() as { id: string; name_enc: string; full_name_enc: string | null; granted_at: number | null; products: number; last_added_at: number | null; reports: number }[];
+    return rows.map((r) => ({
+      accountId: r.id,
+      name: this.deps.crypto.decrypt(r.name_enc),
+      fullName: r.full_name_enc === null ? null : this.deps.crypto.decrypt(r.full_name_enc),
+      products: r.products,
+      openReports: r.reports,
+      lastAddedAt: r.last_added_at,
+      trustedSince: r.granted_at,
+    }));
   }
 
   /** All user-added products, newest change first (for the admin page). */

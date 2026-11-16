@@ -257,6 +257,15 @@ const MIGRATIONS: string[] = [
     UNIQUE (user_id, description, alcohol_mg)
   ) STRICT;
   `,
+
+  /* 15: verified adders of barcode products */ `
+  -- Accounts an admin has verified on /admin for adding good barcode products: they have no limit on
+  -- how many they add (CustomProducts.save). Gone with the account.
+  CREATE TABLE trusted_product_adders (
+    user_id    TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    granted_at INTEGER NOT NULL                  -- epoch ms
+  ) STRICT;
+  `,
 ];
 
 export function openDatabase(path: string): Database {

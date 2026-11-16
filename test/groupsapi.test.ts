@@ -258,6 +258,34 @@ describe("event screens", () => {
     expect((await w.call("GET", "/api/screen", { cookie: second.cookie })).status).toBe(401);
   });
 
+  test("a member's links stop working when they leave or are removed; others' links stay", async () => {
+    const w = world();
+    const { id } = await w.party();
+    const open = async (as: { id: string }) => {
+      const link = await w.json(await w.call("POST", `/api/groups/${id}/screens`, { as, body: {} }));
+      return (await w.call("POST", "/api/screen/open", { body: { token: link.token } })).headers.get("set-cookie")!.split(";")[0]!;
+    };
+    const status = async (cookie: string) => (await w.call("GET", "/api/screen", { cookie })).status;
+    const alices = await open(w.alice);
+    const bobs = await open(w.bob);
+    const bobRef = (await w.json(await w.call("GET", `/api/groups/${id}`, { as: w.alice }))).members.find((m: any) => !m.isMe).ref;
+    expect((await w.call("DELETE", `/api/groups/${id}/members/${bobRef}`, { as: w.alice })).status).toBe(200);
+    expect(await status(bobs)).toBe(401);
+    expect(await status(alices)).toBe(200);
+
+    // Telegram groups: leaving the chat (or /poistu) does the same
+    const chat = -100321;
+    w.services.groups.join(w.bob.id, chat);
+    w.services.groups.join(w.carol.id, chat);
+    const tgId = w.services.groups.listFor(w.bob.id).find((g) => g.kind === "telegram")!.id;
+    const tgLink = (as: { id: string }) => w.services.screens.create({ groupId: tgId }, as.id) as { token: string };
+    const bobsTg = tgLink(w.bob).token;
+    const carolsTg = tgLink(w.carol).token;
+    w.services.groups.leave(w.bob.id, chat);
+    expect(w.services.screens.authenticate(bobsTg)).toBeNull();
+    expect(w.services.screens.authenticate(carolsTg)).not.toBeNull();
+  });
+
   test("opening a screen is a same-origin POST like every other write", async () => {
     const w = world();
     const { link } = await screen(w);

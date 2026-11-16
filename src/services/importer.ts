@@ -3,7 +3,7 @@
 // which proves the export belongs to the person sending it.
 
 import { isGender, isValidHeight, isValidWeight, type Accounts } from "./accounts.ts";
-import { parseCsv, unescapeFormulaGuard, type CsvRow } from "../lib/csv.ts";
+import { CsvLimitError, parseCsv, parseCsvHeader, unescapeFormulaGuard, type CsvRow } from "../lib/csv.ts";
 import { legacyHash } from "../lib/ids.ts";
 import { SINGLE_DRINK_ALCOHOL_LIMIT_MG } from "../lib/units.ts";
 import type { Deps } from "./index.ts";
@@ -15,7 +15,7 @@ export type ImportResult =
   | { ok: true; kind: "user"; created: boolean }
   | { ok: true; kind: "drinks"; inserted: number; duplicates: number; invalid: number }
   | { ok: true; kind: "groups"; groups: number }
-  | { ok: false; reason: "unknown_format" | "not_yours" | "empty" | "invalid_profile" | "no_account" | "parse_error" | "barcodes" | "reports" };
+  | { ok: false; reason: "unknown_format" | "not_yours" | "empty" | "invalid_profile" | "no_account" | "parse_error" | "too_big" | "barcodes" | "reports" };
 
 export function detectKind(columns: readonly string[]): CsvKind | null {
   const has = (...c: string[]) => c.every((x) => columns.includes(x));
@@ -38,10 +38,10 @@ export class Importer {
     private readonly identities: Identities,
   ) {}
 
-  /** Parses just enough to tell which file it is (to order processing). */
+  /** Reads only the header, to tell which file it is (to order processing). */
   peek(text: string): CsvKind | null {
     try {
-      return detectKind(parseCsv(text).columns);
+      return detectKind(parseCsvHeader(text));
     } catch {
       return null;
     }
@@ -52,8 +52,8 @@ export class Importer {
     let parsed: { columns: string[]; rows: CsvRow[] };
     try {
       parsed = parseCsv(text);
-    } catch {
-      return { ok: false, reason: "parse_error" };
+    } catch (e) {
+      return { ok: false, reason: e instanceof CsvLimitError ? "too_big" : "parse_error" };
     }
     const kind = detectKind(parsed.columns);
     // barcodes.csv from our /data: those products are shared and still in the bot.

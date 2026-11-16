@@ -9,16 +9,19 @@ import { handleFlowText, handleImportDocument } from "./flows.ts";
 import { CB_MENU, sendHtml, sendView } from "./ui.ts";
 import { RateLimiter, rateLimit } from "./ratelimit.ts";
 import { registerInline, type InlineOptions } from "./inline.ts";
+import { registerMembershipUpdates } from "./groupmembers.ts";
 import { barcodeFromText, defaultBarcodeIO, handleBarcodePhoto, type BarcodeIO } from "./barcode.ts";
 import { S } from "../strings.ts";
 import { splitAmount } from "../lib/servings.ts";
 import { fmt, longDate, raw } from "../lib/format.ts";
+import { describeError } from "../lib/redact.ts";
 
 /**
  * Update types the bot asks Telegram for. Telegram only delivers these, so every type that
  * has a handler must be listed (tests deliver updates through this filter too).
  */
-export const ALLOWED_UPDATES = ["message", "callback_query", "inline_query", "chosen_inline_result"] as const;
+// chat_member arrives only in groups where the bot is an admin (see groupmembers.ts).
+export const ALLOWED_UPDATES = ["message", "callback_query", "inline_query", "chosen_inline_result", "chat_member"] as const;
 
 export interface BotOptions extends InlineOptions {
   /** Default: 30 updates per minute per user, far above normal use. */
@@ -68,7 +71,7 @@ export function createBot(config: Config, services: Services, opts: BotOptions =
         const text = unseen
           .map((a) => fmt(S.announcement, { date: longDate(a.publishedAt), text: raw(a.text) }))
           .join("\n\n");
-        await sendHtml(ctx, text).catch((e) => console.error("Could not send announcements:", e));
+        await sendHtml(ctx, text).catch((e) => console.error("Could not send announcements:", describeError(e)));
       }
     }
     await next();
@@ -77,6 +80,7 @@ export function createBot(config: Config, services: Services, opts: BotOptions =
   // Before commands and the text handler: messages sent "via" the bot are not typed input.
   registerInline(bot, opts);
   registerCommands(bot);
+  registerMembershipUpdates(bot);
 
   bot.on("callback_query:data", async (ctx) => {
     const data = ctx.callbackQuery.data;
@@ -99,8 +103,9 @@ export function createBot(config: Config, services: Services, opts: BotOptions =
 
   bot.catch(async (err) => {
     const e = err.error;
-    if (e instanceof GrammyError) console.error("Telegram API error:", e.description);
-    else if (e instanceof HttpError) console.error("Could not reach Telegram:", e);
+    // Never the raw error of a Bot API call: its URL contains the token.
+    if (e instanceof GrammyError) console.error("Telegram API error:", describeError(e));
+    else if (e instanceof HttpError) console.error("Could not reach Telegram:", describeError(e));
     else console.error("Error while handling update", err.ctx.update.update_id, e);
     await err.ctx.reply(S.error).catch(() => {});
   });
