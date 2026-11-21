@@ -4,6 +4,8 @@
 // over the internal network. That is why CF-Connecting-IP is trusted for rate limiting: nothing
 // else can talk to this port. Never publish it.
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { docsHtml } from "../bot/context.ts";
 import type { Config } from "../config.ts";
 import type { Services } from "../services/index.ts";
@@ -47,6 +49,15 @@ export function serveWebApp(app: WebApp, { port, idleTimeout, site }: { port: nu
   });
 }
 
+/** The logo for link preview cards, from the built site (it is web/static/kili-256.jpg). */
+function readLogo(distDir: string): Uint8Array | undefined {
+  try {
+    return new Uint8Array(readFileSync(join(distDir, "kili-256.jpg")));
+  } catch {
+    return undefined;
+  }
+}
+
 export function startWebServer({ config, services, botUsername, notifyAdmins, messageAccount, idleTimeout, live }: WebServerOptions) {
   const app = createWebApp({
     services,
@@ -58,9 +69,10 @@ export function startWebServer({ config, services, botUsername, notifyAdmins, me
     messageAccount,
     docs: docsHtml(config),
     auth: config.auth,
+    ogLogo: readLogo(config.web.distDir),
     live,
   });
-  const site = new StaticSite(config.web.distDir);
+  const site = new StaticSite(config.web.distDir, app.meta);
   if (!site.available) console.warn(`Web: no build in ${config.web.distDir}; only the API works (bun run web:build).`);
   const server = serveWebApp(app, { port: config.web.port, idleTimeout, site });
   console.log(`Web: listening on :${server.port} (${config.web.origin})`);

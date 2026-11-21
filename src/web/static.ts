@@ -53,11 +53,46 @@ export function withSecurityHeaders(res: Response, csp?: string): Response {
   return res;
 }
 
+/** A page's link preview (Open Graph): crawlers don't run the app, so the server writes these. */
+export interface PageMeta {
+  title: string;
+  description: string;
+  url: string;
+  image: string;
+  imageWidth: number;
+  imageHeight: number;
+  imageAlt: string;
+}
+
+const attr = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/** index.html with the build's generic preview tags replaced by `meta`'s. */
+export function withMeta(html: string, meta: PageMeta): string {
+  const stripped = html.replace(/[ \t]*<meta (?:property="og:(?:title|description|url|image[^"]*)"|name="(?:twitter:card|description)")[^>]*>\n?/g, "");
+  const tags = [
+    `<meta property="og:title" content="${attr(meta.title)}" />`,
+    `<meta property="og:description" content="${attr(meta.description)}" />`,
+    `<meta property="og:url" content="${attr(meta.url)}" />`,
+    `<meta property="og:image" content="${attr(meta.image)}" />`,
+    `<meta property="og:image:width" content="${meta.imageWidth}" />`,
+    `<meta property="og:image:height" content="${meta.imageHeight}" />`,
+    `<meta property="og:image:alt" content="${attr(meta.imageAlt)}" />`,
+    `<meta name="twitter:card" content="summary_large_image" />`,
+    `<meta name="description" content="${attr(meta.description)}" />`,
+  ];
+  const title = `<title>${attr(meta.title)}</title>`;
+  return stripped.replace("</head>", `    ${[...tags, title].join("\n    ")}\n  </head>`);
+}
+
 export class StaticSite {
   private readonly root: string;
   private readonly htmlCache = new Map<string, { modified: number; html: string; csp: string }>();
 
-  constructor(distDir: string) {
+  /** `meta`: a page's link preview by its path (src/web/api/og.ts); the build's generic one without. */
+  constructor(
+    distDir: string,
+    private readonly meta?: (pathname: string) => PageMeta,
+  ) {
     this.root = resolve(distDir);
   }
 
@@ -102,8 +137,10 @@ export class StaticSite {
       cached = { modified, html, csp: contentSecurityPolicy(hashes) };
       this.htmlCache.set(file, cached);
     }
+    // Only the app's shell gets the page's preview; the meta tags don't change the script hashes.
+    const html = this.meta && file === join(this.root, "index.html") ? withMeta(cached.html, this.meta(pathname)) : cached.html;
     return withSecurityHeaders(
-      new Response(cached.html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } }),
+      new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } }),
       cached.csp,
     );
   }

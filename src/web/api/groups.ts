@@ -54,20 +54,10 @@ export function groupRoutes({ services, views, live, groupAdmins }: Api): Routes
     "/api/jam/preview": {
       POST: userOrVisitor(true)(async (c) => {
         const code = jamCode(await c.body());
-        const jam = code ? groups.jamByCode(code) : null;
-        const info = jam ? groups.get(jam.groupId) : null;
-        if (!jam || !info) return fail(404, "invalid_jam");
-        const members = groups.members(jam.groupId);
-        const starter = members.find((m) => m.userId === jam.startedBy);
-        return json({
-          groupName: info.name ?? "Ryhmä",
-          // Someone who appears anonymously on screens isn't named to people outside the group either.
-          startedBy: starter && !starter.hideOnScreen ? chartLabel(starter) : "Ryhmän jäsen",
-          memberCount: info.memberCount,
-          expiresAt: jam.expiresAt,
-          member: c.hasUser && groups.isMemberOf(c.user.id, jam.groupId),
-          groupId: c.hasUser && groups.isMemberOf(c.user.id, jam.groupId) ? jam.groupId : null,
-        } satisfies JamPreview);
+        const p = code ? pikakutsu(services, code) : null;
+        if (!p) return fail(404, "invalid_jam");
+        const member = c.hasUser && groups.isMemberOf(c.user.id, p.groupId);
+        return json({ ...p.public, member, groupId: member ? p.groupId : null } satisfies JamPreview);
       }),
     },
 
@@ -189,10 +179,33 @@ export function groupRoutes({ services, views, live, groupAdmins }: Api): Routes
   };
 }
 
+const JAM_CODE = /^[A-Za-z0-9_-]{16,64}$/;
+export const isJamCode = (code: unknown): code is string => typeof code === "string" && JAM_CODE.test(code);
+
 /** A jam link's code from a request body, or null. */
 function jamCode(data: Record<string, unknown> | null): string | null {
-  const code = data?.code;
-  return typeof code === "string" && /^[A-Za-z0-9_-]{16,64}$/.test(code) ? code : null;
+  return isJamCode(data?.code) ? data.code : null;
+}
+
+/**
+ * What a pikakutsu link shows anyone who has it: its /liity page, and its link preview (og.ts).
+ * Null when the code is unknown or the jam is over.
+ */
+export function pikakutsu(services: Services, code: string): { groupId: string; public: Omit<JamPreview, "member" | "groupId"> } | null {
+  const jam = services.groups.jamByCode(code);
+  const info = jam ? services.groups.get(jam.groupId) : null;
+  if (!jam || !info) return null;
+  const starter = services.groups.members(jam.groupId).find((m) => m.userId === jam.startedBy);
+  return {
+    groupId: jam.groupId,
+    public: {
+      groupName: info.name ?? "Ryhmä",
+      // Someone who appears anonymously on screens isn't named to people outside the group either.
+      startedBy: starter && !starter.hideOnScreen ? chartLabel(starter) : "Ryhmän jäsen",
+      memberCount: info.memberCount,
+      expiresAt: jam.expiresAt,
+    },
+  };
 }
 
 /** The answer to joining a group. */

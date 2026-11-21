@@ -101,7 +101,7 @@
     { label: "Viikon", hours: () => 7 * 24 },
   ];
   let jamLength = $state(0);
-  const jamUrl = $derived(view?.jam ? `${origin()}/liity#k=${view.jam.code}` : "");
+  const jamUrl = $derived(view?.jam ? `${origin()}/liity/${view.jam.code}` : "");
   const jamText = $derived(view ? `Liity ryhmään ${view.group.name} Bläkkiskilissä: ${jamUrl}` : "");
   const canShare = typeof navigator !== "undefined" && "share" in navigator;
 

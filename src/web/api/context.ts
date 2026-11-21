@@ -42,6 +42,8 @@ export interface WebAppOptions {
   auth?: Config["auth"];
   /** The OpenID Connect providers' token and key endpoints; tests pass a fake. */
   oidcFetch?: typeof fetch;
+  /** The site's logo (kili-256.jpg) for link preview cards (api/og.ts); cards without it otherwise. */
+  ogLogo?: Uint8Array;
   /** Live-update timing; tests shorten it. */
   live?: { tickMs?: number; minGapMs?: number; maxTotal?: number; maxPerOwner?: number };
 }

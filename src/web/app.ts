@@ -19,6 +19,7 @@ import { favoriteRoutes } from "./api/favorites.ts";
 import { groupRoutes } from "./api/groups.ts";
 import { sameOrigin } from "./api/guards.ts";
 import { createLive } from "./api/live.ts";
+import { createOg } from "./api/og.ts";
 import { loginRoutes } from "./api/logins.ts";
 import { passkeyRoutes } from "./api/passkeys.ts";
 import { FlowStore } from "./authflows.ts";
@@ -98,10 +99,14 @@ export function createWebApp(opts: WebAppOptions) {
       routes[path] = Object.fromEntries(Object.entries(methods).map(([method, h]) => [method, toBun(h)]));
     }
   }
+  const og = createOg(api);
+  for (const [path, methods] of Object.entries(og.routes)) {
+    routes[path] = Object.fromEntries(Object.entries(methods).map(([method, h]) => [method, toBun(h)]));
+  }
   // Unknown paths and methods (Bun falls through to here when a route lacks the method).
   routes["/api/*"] = async () => withSecurityHeaders(fail(404, "not_found"));
 
-  return { routes, close: () => api.live.close(), viewers: () => api.live.viewers() };
+  return { routes, meta: og.meta, close: () => api.live.close(), viewers: () => api.live.viewers() };
 }
 
 export type WebApp = ReturnType<typeof createWebApp>;
