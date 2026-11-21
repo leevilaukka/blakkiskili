@@ -6,17 +6,28 @@
   import Icon from "#lib/Icon.svelte";
   import { decodeTelegramResult, goToProvider, goToTelegram, passkeysSupported, signInWithPasskey } from "#lib/logins.ts";
   import { session, takeReturn } from "#lib/session.svelte.ts";
+  import { finishMove, isMoving, setMoving } from "#lib/local/migrate.ts";
 
   let error = $state("");
   let working = $state(false);
   let botUsername = $state("");
   let botId = $state(0);
   let providers = $state<LoginProvider[]>([]);
+  let localAccounts = $state(false);
+  // Moving this device's local account online ("Siirrä verkkoon" in Settings).
+  const moving = isMoving();
   const oauth = $derived(providers.filter((p): p is "google" | "microsoft" => p === "google" || p === "microsoft"));
   const passkeys = $derived(providers.includes("passkey") && passkeysSupported());
 
   async function done() {
+    session.local = false; // a server session now; a local account on the device stays until moved
     session.me = await api.me();
+    try {
+      const moved = await finishMove();
+      if (moved) session.notice = moved;
+    } catch (e) {
+      session.notice = `Tietojen siirto ei onnistunut: ${errorText(e)} Yritä uudelleen asetuksista.`;
+    }
     // An invite link opened while signed out is waiting in sessionStorage (see /join).
     let pendingInvite = false;
     try {
@@ -133,7 +144,7 @@
   }
 
   onMount(async () => {
-    if (session.me && !location.hash.includes("signedin")) return goto("/", { replaceState: true });
+    if (session.me && !session.local && !location.hash.includes("signedin")) return goto("/", { replaceState: true });
     // (a signed-in visitor never sees this page)
 
     if (handleFragment()) return;
@@ -145,6 +156,7 @@
       botUsername = config.botUsername;
       botId = config.botId;
       providers = config.loginProviders;
+      localAccounts = config.localAccounts;
     } catch (e) {
       error = errorText(e);
     }
@@ -165,6 +177,14 @@
       {#if working}
         <p>Kirjaudutaan…</p>
       {:else}
+        {#if moving}
+          <div class="notice mb-4">
+            <div>
+              <p class="mt-0">Kirjaudu tai luo tunnus: tämän laitteen juomat ja suosikit siirretään siihen.</p>
+              <a href="/settings" onclick={() => setMoving(false)}>Peru siirto</a>
+            </div>
+          </div>
+        {/if}
         <h2>Kirjaudu</h2>
         <div class="my-4 grid gap-2.5">
           <button class="btn btn-primary justify-center" disabled={!botId} onclick={() => goToTelegram(botId, "/login")}>Kirjaudu Telegramilla</button>
@@ -192,6 +212,14 @@
         {#if passkeys}
           <a class="btn" href="/signup?passkey"><Icon name="key" /> Luo tunnus pääsyavaimella</a>
           <p class="mt-2 mb-0 text-sm text-secondary">Pääsyavain toimii puhelimen tai tietokoneen lukituksella: ei salasanaa eikä muita palveluita.</p>
+        {/if}
+        {#if localAccounts && !session.local && !moving}
+          <h2 class="mt-6">Ilman tunnusta</h2>
+          <p class="text-secondary">
+            Voit käyttää Bläkkiskiliä myös ilman tunnusta: tiedot tallennetaan vain tähän selaimeen, eikä niitä lähetetä minnekään.
+            Ryhmät tarvitsevat tunnuksen, ja tiedot voi siirtää tunnukseen myöhemmin.
+          </p>
+          <a class="btn" href="/signup?local"><Icon name="monitor" /> Käytä vain tällä laitteella</a>
         {/if}
       {/if}
       {#if error}<p class="text-danger" role="alert">{error}</p>{/if}

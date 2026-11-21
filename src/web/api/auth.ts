@@ -23,6 +23,7 @@ export function authRoutes({ services, opts, cookies, live, now, auth }: Api): R
           catalogue: services.products.ready,
           barcodes: services.barcodes.enabled || services.products.enabled,
           loginProviders: auth.providers,
+          localAccounts: auth.local,
           presets: CATALOG.flatMap((c) =>
             c.presets.map((pr) => ({
               id: pr.id,

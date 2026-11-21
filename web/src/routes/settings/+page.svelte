@@ -7,6 +7,9 @@
   import Icon from "#lib/Icon.svelte";
   import { addPasskey, decodeTelegramResult, goToProvider, goToTelegram, LOGIN_NAMES, passkeysSupported } from "#lib/logins.ts";
   import { session } from "#lib/session.svelte.ts";
+  import { moveToAccount, setMoving } from "#lib/local/migrate.ts";
+  import { clearLocal, loadLocal } from "#lib/local/store.ts";
+  import type { LocalData } from "#lib/local/core.ts";
 
   const me = session.me!;
   let name = $state(me.name);
@@ -98,7 +101,43 @@
     }
   }
 
+  // A local account (this page then manages it), or one left on this device next to a server account.
+  let localData = $state<LocalData | null>(null);
+  let persisted = $state<boolean | null>(null);
+  let moveBusy = $state(false);
+  let moveError = $state("");
+
+  function startMove() {
+    setMoving(true);
+    goto("/login");
+  }
+
+  async function moveHere() {
+    moveBusy = true;
+    moveError = "";
+    try {
+      const r = await moveToAccount(localData);
+      localData = null;
+      if (r) session.notice = `Tämän laitteen tiedot siirrettiin tunnukseen: ${r.inserted} juomaa${r.favorites ? ` ja ${r.favorites} suosikkia` : ""}.`;
+    } catch (err) {
+      moveError = errorText(err);
+    } finally {
+      moveBusy = false;
+    }
+  }
+
+  async function dropLocal() {
+    if (!confirm("Poistetaanko tämän laitteen paikalliset tiedot? Niitä ei voi palauttaa.")) return;
+    await clearLocal();
+    localData = null;
+  }
+
   onMount(async () => {
+    localData = await loadLocal();
+    if (session.local) {
+      persisted = (await navigator.storage?.persisted?.().catch(() => null)) ?? null;
+      return; // no server account: nothing else to load
+    }
     void handleFragment();
     sessions = await api.sessions().then((r) => r.count, () => null);
     const [view, config] = await Promise.all([api.logins().catch(() => null), api.config().catch(() => null)]);
@@ -185,6 +224,7 @@
     deleteError = "";
     try {
       await api.deleteAccount();
+      session.local = false;
       session.me = null;
       goto("/login");
     } catch (err) {
@@ -234,7 +274,7 @@
       <label class="mb-5 grid max-w-[22rem] gap-1.25">
         <span class="text-xl font-bold">Nimimerkki</span>
         <input type="text" bind:value={name} minlength="2" maxlength="32" autocomplete="nickname" required />
-        <span class="text-sm text-secondary">Näkyy ryhmissä ja kuvaajissa muille.</span>
+        <span class="text-sm text-secondary">{session.local ? "Näkyy kuvaajassa." : "Näkyy ryhmissä ja kuvaajissa muille."}</span>
       </label>
     {/if}
 
@@ -258,6 +298,35 @@
       </div>
     </div>
   </form>
+
+  {#if session.local}
+    <section class="card card-panel mt-4">
+      <h2>Tiedot vain tällä laitteella</h2>
+      <p class="text-secondary">
+        Käytät Bläkkiskiliä ilman tunnusta: {localData?.drinks.length ?? 0} juomaa ja {localData?.favorites.length ?? 0} suosikkia on tallennettu vain tähän selaimeen.
+        Jos selaimen tiedot tyhjennetään tai laite vaihtuu, ne häviävät.
+        {#if persisted === false}Selain voi myös poistaa ne itse, jos tila käy vähiin: sovelluksena asennettuna (Lisää aloitusnäyttöön) ne säilyvät varmemmin.{/if}
+      </p>
+      <p class="text-secondary">
+        Siirrä tiedot verkkoon, niin voit käyttää ryhmiä, Telegram-bottia ja muita laitteita. Kirjaudu tai luo tunnus, ja juomasi ja suosikkisi siirretään siihen.
+      </p>
+      <button class="btn btn-primary" onclick={startMove}><Icon name="upload" /> Siirrä tiedot verkkoon</button>
+    </section>
+  {:else}
+  {#if localData}
+    <section class="card card-panel mt-4">
+      <h2>Tällä laitteella on paikallisia tietoja</h2>
+      <p class="text-secondary">
+        Tähän selaimeen on tallennettu ilman tunnusta {localData.drinks.length} juomaa ({localData.profile.name}). Voit siirtää ne tähän tunnukseen
+        (samoja juomia ei lisätä kahdesti) tai poistaa ne laitteelta.
+      </p>
+      <div class="flex flex-wrap items-center gap-2.5">
+        <button class="btn btn-primary" disabled={moveBusy} onclick={moveHere}><Icon name="upload" /> Siirrä tähän tunnukseen</button>
+        <button class="btn btn-ghost" disabled={moveBusy} onclick={dropLocal}><Icon name="trash" /> Poista laitteelta</button>
+      </div>
+      {#if moveError}<p class="text-danger" role="alert">{moveError}</p>{/if}
+    </section>
+  {/if}
 
   <section class="card card-panel mt-4">
     <h2>Kirjautumistavat</h2>
@@ -363,10 +432,16 @@
     {#if dataError}<p class="text-danger" role="alert">{dataError}</p>{/if}
   </section>
 
+  {/if}
+
   <section class="card card-panel mt-4">
     <h2>Poista tunnus</h2>
     <p class="text-secondary">
-      Tunnuksen poistaminen poistaa kaiken sinuun liittyvän tiedon heti: juomat, suosikit, ryhmäjäsenyydet ja kirjautumiset. Sitä ei voi perua. Lataa tietosi ensin talteen, jos haluat pitää ne.
+      {#if session.local}
+        Poistaa tältä laitteelta kaikki tiedot: juomat, suosikit ja kehon tiedot. Sitä ei voi perua.
+      {:else}
+        Tunnuksen poistaminen poistaa kaiken sinuun liittyvän tiedon heti: juomat, suosikit, ryhmäjäsenyydet ja kirjautumiset. Sitä ei voi perua. Lataa tietosi ensin talteen, jos haluat pitää ne.
+      {/if}
     </p>
     <details>
       <summary class="cursor-pointer font-semibold">Haluan poistaa tunnukseni</summary>

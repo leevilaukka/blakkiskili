@@ -27,7 +27,7 @@ const config: Config = {
   backup: { everyMinutes: 60 },
   accountLinking: false,
   web: { enabled: true, origin: "https://kili.test", port: 0, distDir: "./web/build" },
-  auth: { passkeys: false },
+  auth: { passkeys: false, local: false },
 };
 
 interface Call {

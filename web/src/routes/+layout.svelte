@@ -7,6 +7,8 @@
   import { api, ApiError } from "#lib/api.ts";
   import Icon, { type IconName } from "#lib/Icon.svelte";
   import { rememberReturn, session, takeReturn } from "#lib/session.svelte.ts";
+  import { me as localMe } from "#lib/local/core.ts";
+  import { loadLocal } from "#lib/local/store.ts";
 
   let { children } = $props();
 
@@ -38,9 +40,17 @@
       session.me = await api.me();
     } catch (e) {
       session.me = null;
-      // Only a 401 means signed out. A 5xx or 429 (the bot restarting, Cloudflare's 502) must not
-      // send a signed-in person to the sign-in page as if they had been logged out.
-      session.offline = !(e instanceof ApiError && e.status === 401);
+      // Not signed in on the server (or it can't be reached): a local account on this device is
+      // used as it is. It works offline too, except for the catalogue search.
+      const local = await loadLocal();
+      if (local) {
+        session.local = true;
+        session.me = localMe(local);
+      } else {
+        // Only a 401 means signed out. A 5xx or 429 (the bot restarting, Cloudflare's 502) must not
+        // send a signed-in person to the sign-in page as if they had been logged out.
+        session.offline = !(e instanceof ApiError && e.status === 401);
+      }
     }
     session.ready = true;
   });
@@ -54,6 +64,7 @@
   });
 
   async function logout() {
+    if (session.local) return;
     await api.logout().catch(() => {});
     session.me = null;
     await goto("/login");
@@ -81,9 +92,12 @@
           <span class="max-[40rem]:hidden">{item.label}</span><Icon name={item.icon} />
         </a>
       {/each}
-      <button class={navButton} onclick={logout} aria-label="Kirjaudu ulos" title="Kirjaudu ulos">
-        <Icon name="logout" />
-      </button>
+      <!-- A local account has nothing to sign out of (Settings can delete it or move it online). -->
+      {#if !session.local}
+        <button class={navButton} onclick={logout} aria-label="Kirjaudu ulos" title="Kirjaudu ulos">
+          <Icon name="logout" />
+        </button>
+      {/if}
     </nav>
   </header>
 {/if}
@@ -96,6 +110,13 @@
       <a class={navButton} href="/login"><span class="max-[40rem]:hidden">Kirjaudu</span><Icon name="login" /></a>
     </nav>
   </header>
+{/if}
+
+{#if session.notice}
+  <div class="notice mx-auto mt-4 w-[calc(100%-2rem)] max-w-[74rem]" role="status">
+    <span>{session.notice}</span>
+    <button class="btn btn-ghost btn-sm ml-auto" onclick={() => (session.notice = "")} aria-label="Sulje"><Icon name="x" /></button>
+  </div>
 {/if}
 
 {#if !session.ready}

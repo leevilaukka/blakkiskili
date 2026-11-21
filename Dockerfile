@@ -11,6 +11,8 @@ WORKDIR /app/web
 COPY web/package.json web/bun.lock ./
 RUN bun install --frozen-lockfile
 COPY shared /app/shared
+# Local accounts run the bot's estimate and chart code in the browser (web/src/lib/local/).
+COPY src/lib /app/src/lib
 COPY web ./
 RUN bun run build
 

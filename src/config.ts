@@ -29,6 +29,11 @@ export interface Config {
     google?: OAuthClient; // GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET
     microsoft?: OAuthClient; // MICROSOFT_CLIENT_ID + MICROSOFT_CLIENT_SECRET
     passkeys: boolean; // PASSKEYS
+    /**
+     * LOCAL_ACCOUNTS: the website can be used without an account, data kept only in the browser
+     * (web/src/lib/local/). Opens catalogue search to signed-out visitors (rate limited per address).
+     */
+    local: boolean;
   };
 }
 
@@ -120,6 +125,7 @@ export function loadConfig(): Config {
       google: oauthClient("GOOGLE"),
       microsoft: oauthClient("MICROSOFT"),
       passkeys: isOn("PASSKEYS"),
+      local: isOn("LOCAL_ACCOUNTS"),
     },
   };
   if (config.web.enabled) {

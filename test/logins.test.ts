@@ -148,7 +148,7 @@ afterEach(() => {
 
 const PROFILE = { name: "Kalle", weight: 80, height: 180, gender: "mies", acceptTerms: true };
 
-function world(auth: Config["auth"] = { google: GOOGLE, microsoft: MICROSOFT, passkeys: true }) {
+function world(auth: Config["auth"] = { google: GOOGLE, microsoft: MICROSOFT, passkeys: true, local: false }) {
   const w = setup();
   const provider = fakeProvider();
   const alice = w.services.accounts.register(tg(1), { name: "alice", weight: 70, height: 170, gender: "nainen" }).profile;
@@ -214,7 +214,7 @@ describe("switches (Config.auth)", () => {
   };
 
   test("a provider is on only with both of its variables; one alone stops the start", () => {
-    expect(load({})).toEqual({ google: undefined, microsoft: undefined, passkeys: false });
+    expect(load({})).toEqual({ google: undefined, microsoft: undefined, passkeys: false, local: false });
     expect(load({ GOOGLE_CLIENT_ID: "id", GOOGLE_CLIENT_SECRET: "s" }).google).toEqual({ clientId: "id", clientSecret: "s" });
     expect(() => load({ GOOGLE_CLIENT_ID: "id" })).toThrow("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET");
     expect(() => load({ MICROSOFT_CLIENT_SECRET: "s" })).toThrow("MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET");
@@ -223,14 +223,14 @@ describe("switches (Config.auth)", () => {
   });
 
   test("/api/config lists only what is configured; the others' routes don't exist", async () => {
-    const off = world({ passkeys: false }).browser();
+    const off = world({ passkeys: false, local: false }).browser();
     expect(((await (await off.call("GET", "/api/config")).json()) as { loginProviders: string[] }).loginProviders).toEqual(["telegram"]);
     for (const path of ["/api/auth/google/start", "/api/auth/microsoft/start", "/api/auth/passkey/login/options", "/api/auth/passkey/signup/options"]) {
       expect((await off.call("POST", path, {})).status).toBe(404);
     }
     expect((await off.call("GET", "/api/auth/google/callback?code=x&state=y")).status).toBe(404);
 
-    const some = world({ microsoft: MICROSOFT, passkeys: false }).browser();
+    const some = world({ microsoft: MICROSOFT, passkeys: false, local: false }).browser();
     expect(((await (await some.call("GET", "/api/config")).json()) as { loginProviders: string[] }).loginProviders).toEqual(["telegram", "microsoft"]);
     expect((await some.call("POST", "/api/auth/google/start", {})).status).toBe(404);
 
@@ -239,25 +239,25 @@ describe("switches (Config.auth)", () => {
   });
 
   test("a signup with a passkey answer is refused when passkeys are off", async () => {
-    const b = world({ google: GOOGLE, passkeys: false }).browser();
+    const b = world({ google: GOOGLE, passkeys: false, local: false }).browser();
     expect((await b.call("POST", "/api/auth/signup", { ...PROFILE, passkey: {} })).status).toBe(404);
   });
 
   test("the privacy text names exactly the configured methods", () => {
     const base = testConfig();
     const web = { ...base, web: { ...base.web, enabled: true } };
-    const off = docsHtml({ ...web, auth: { passkeys: false } }).privacy;
+    const off = docsHtml({ ...web, auth: { passkeys: false, local: false } }).privacy;
     expect(off).toContain("kirjaudutaan Telegramilla tai botin /web-linkillä");
     expect(off).not.toContain("Google");
     expect(off).not.toContain("Pääsyavaimesta");
-    const on = docsHtml({ ...web, auth: { google: GOOGLE, passkeys: true } }).privacy;
+    const on = docsHtml({ ...web, auth: { google: GOOGLE, passkeys: true, local: false } }).privacy;
     expect(on).toContain("kirjaudutaan Telegramilla, Googlella, pääsyavaimella tai botin /web-linkillä");
     expect(on).toContain("Kun kirjaudut Googlella, palvelu kertoo");
     expect(on).toContain("Google näkee");
     expect(on).not.toContain("Microsoft");
     expect(on).toContain("Pääsyavaimesta tallennetaan");
     expect(on).toContain(`ei ole käytetty ${base.inactivity.deleteAfterDays} päivään`);
-    const both = docsHtml({ ...web, auth: { google: GOOGLE, microsoft: MICROSOFT, passkeys: false } }).privacy;
+    const both = docsHtml({ ...web, auth: { google: GOOGLE, microsoft: MICROSOFT, passkeys: false, local: false } }).privacy;
     expect(both).toContain("Kun kirjaudut Googlella tai Microsoftilla");
     expect(both).toContain("Google tai Microsoft näkee");
   });
@@ -473,7 +473,7 @@ describe("linking and removing logins", () => {
   });
 
   test("a login whose provider has been switched off doesn't count as a way in", async () => {
-    const w = world({ passkeys: false }); // no Google configured
+    const w = world({ passkeys: false, local: false }); // no Google configured
     w.services.identities.attach(w.alice.id, { platform: "google", platformUserId: "g-alice" });
     const g = w.browser();
     g.jar.set("__Host-kili", w.services.webSessions.createSession(w.alice.id, w.services.identities.key({ platform: "google", platformUserId: "g-alice" })).sessionToken);

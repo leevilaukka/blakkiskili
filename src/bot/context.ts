@@ -53,7 +53,7 @@ export function retentionText(config: Config) {
 export function webPrivacyText(config: Config) {
   if (!config.web.enabled) return raw("");
   const t = S.privacy_logins;
-  const auth = config.auth ?? { passkeys: false };
+  const auth = config.auth ?? { passkeys: false, local: false };
   const oidc = (["google", "microsoft"] as const).filter((p) => auth[p]);
   const methods = [t.methods.telegram, ...oidc.map((p) => t.methods[p]), ...(auth.passkeys ? [t.methods.passkey] : [])];
   // "Telegramilla, Googlella" + " tai botin /web-linkillä" in the text itself.
@@ -69,6 +69,7 @@ export function webPrivacyText(config: Config) {
     const days = config.inactivity.deleteAfterDays;
     logins += days > 0 ? fmt(t.account, { days }) : t.account_forever;
   }
+  if (auth.local) logins += t.local;
   return raw(fmt(S.privacy_web, { methods: methods.join(", "), logins: raw(logins) }));
 }
 

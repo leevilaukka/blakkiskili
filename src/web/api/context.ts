@@ -81,6 +81,8 @@ export interface Api {
     /** Configured sign-in methods, Telegram first (Config.loginProviders). */
     providers: LoginProvider[];
     oidc: Partial<Record<OidcPlatform, OidcClient>>;
+    /** LOCAL_ACCOUNTS: signed-out visitors may search the catalogue (local accounts). */
+    local: boolean;
     /** Passkeys' relying party id: the site's host name. */
     rpId: string;
     flows: { oauth: FlowStore<OAuthFlow>; passkey: FlowStore<PasskeyFlow>; signup: FlowStore<SignupTicket> };
@@ -140,6 +142,11 @@ export class Ctx {
   set session(s: WebSession) {
     this.#session = s;
   }
+  /** Whether the user guard ran (userOrVisitor: a signed-in person rather than a visitor). */
+  get hasUser(): boolean {
+    return this.#user !== undefined;
+  }
+
   /** The signed-in account. Set by the user guard. */
   get user(): Profile {
     return need(this.#user, "user");

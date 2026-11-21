@@ -58,6 +58,36 @@ export interface LoginsView {
   passkeys: { id: string; createdAt: number; lastUsedAt: number | null }[];
 }
 
+/** One drink of a local account (kept in the browser), as uploaded when the account moves online. */
+export interface LocalDrink {
+  alcoholMg: number;
+  description: string;
+  createdAt: number;
+  productId: string | null;
+  kcal: number | null;
+}
+
+/** POST /api/account/local-import: a batch of a local account's data, added to the signed-in account. */
+export interface LocalImportRequest {
+  drinks: LocalDrink[];
+  favorites?: Omit<LocalDrink, "createdAt">[];
+}
+
+export interface LocalImportResult {
+  inserted: number;
+  duplicates: number;
+  invalid: number;
+  favorites: number;
+}
+
+/** GET /api/products/:id/servings/:key: what logging this serving stores (local accounts log it themselves). */
+export interface ServingDrink {
+  description: string;
+  alcoholMg: number;
+  kcal: number | null;
+  productId: string | null;
+}
+
 /** POST /api/auth/signup: a new account for the login that was just used (or the passkey made for it). */
 export interface SignupRequest {
   name: string;
@@ -148,6 +178,8 @@ export interface Config {
   barcodes: boolean; // barcode lookups are available (the catalogue or the API Worker)
   /** Sign-in methods this site has configured, in the order to show them. Telegram is always first. */
   loginProviders: LoginProvider[];
+  /** The site can be used without an account, data only in this browser (LOCAL_ACCOUNTS). */
+  localAccounts: boolean;
   presets: PresetItem[];
 }
 

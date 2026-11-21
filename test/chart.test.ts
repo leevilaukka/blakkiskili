@@ -156,3 +156,13 @@ describe("permille chart", () => {
     expect(png.length).toBeGreaterThan(5000);
   });
 });
+
+describe("sha256Hex (colour slots, also run in the browser)", () => {
+  test("matches node:crypto", async () => {
+    const { createHash } = await import("node:crypto");
+    const { sha256Hex } = await import("../src/lib/sha256.ts");
+    for (const s of ["", "abc", "local", "ä€😀", "x".repeat(55), "x".repeat(56), "y".repeat(64), "z".repeat(200)]) {
+      expect(sha256Hex(s)).toBe(createHash("sha256").update(s).digest("hex"));
+    }
+  });
+});

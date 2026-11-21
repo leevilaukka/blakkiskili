@@ -1,7 +1,6 @@
 // Logging drinks, the logbook, undo and delete.
 
 import { findPreset } from "../../lib/catalog.ts";
-import { customCatalogDrink, eanOfCustomDrinkId, isAlkoProductId, resolveServing, servingDescription, type CatalogDrink } from "../../lib/servings.ts";
 import { buildChartData } from "../../lib/chart.ts";
 import { alcoholMgFromClPercent, HOUR_MS, isAlcoholAmountOutOfLimits, MINUTE_MS, toStandardDrinks } from "../../lib/units.ts";
 import { chartLabel } from "../../services/accounts.ts";
@@ -11,6 +10,7 @@ import { fail, json } from "../http.ts";
 import type { Api, Ctx, Routes } from "./context.ts";
 import { user } from "./guards.ts";
 import { toItem } from "./views.ts";
+import { servingDrink } from "./products.ts";
 
 const LOG_PAGE = 100;
 /** A session is a run of drinks with pauses under 6 h; this keeps a request from asking for months of samples. */
@@ -51,14 +51,6 @@ export function drinkRoutes({ services }: Api): Routes {
     },
   };
 
-  /** A drink by id: an Alko product, or a user-added barcode product ("e<ean>"), as findDrink in the bot's menu. */
-  function findDrink(id: string): CatalogDrink | undefined {
-    const ean = eanOfCustomDrinkId(id);
-    if (!ean) return services.products.get(id);
-    const custom = services.customProducts.get(ean);
-    return custom ? customCatalogDrink(custom) : undefined;
-  }
-
   async function logDrink(c: Ctx) {
     const data = await c.body();
     if (!data) return fail(400, "bad_request");
@@ -80,16 +72,9 @@ export function drinkRoutes({ services }: Api): Routes {
         return json(toItem(drinks.add(id, preset.mg, preset.name, { at, kcal: preset.kcal })), 201);
       }
       case "product": {
-        const drink = typeof r.productId === "string" ? findDrink(r.productId) : undefined;
-        const serving = drink && typeof r.serving === "string" ? resolveServing(drink, r.serving) : undefined;
-        if (!drink || !serving) return fail(404, "unknown_product");
-        const added = drinks.add(id, serving.mg, servingDescription(drink, serving), {
-          // drinks.product_id is an Alko product number; user-added products have none.
-          at,
-          productId: isAlkoProductId(serving.productId) ? serving.productId : null,
-          kcal: serving.kcal,
-        });
-        return json(toItem(added), 201);
+        const s = typeof r.productId === "string" && typeof r.serving === "string" ? servingDrink(services, r.productId, r.serving) : null;
+        if (!s) return fail(404, "unknown_product");
+        return json(toItem(drinks.add(id, s.alcoholMg, s.description, { at, productId: s.productId, kcal: s.kcal })), 201);
       }
       case "custom": {
         const { cl, percent } = r;

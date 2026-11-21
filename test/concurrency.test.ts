@@ -20,7 +20,7 @@ const config: Config = {
   backup: { everyMinutes: 60 },
   accountLinking: false,
   web: { enabled: false, origin: "", port: 0, distDir: "./web/build" },
-  auth: { passkeys: false },
+  auth: { passkeys: false, local: false },
 };
 
 const command = (id: number, from: number, text: string): Update =>

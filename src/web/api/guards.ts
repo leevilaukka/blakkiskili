@@ -62,6 +62,19 @@ export const user: Guard = (h) =>
     }),
   );
 
+/**
+ * A signed-in person (as `user`), or else, when `visitors` (LOCAL_ACCOUNTS), a signed-out visitor
+ * held to the general limit per address. The handler tells them apart with `c.hasUser`.
+ */
+export const userOrVisitor =
+  (visitors: boolean, limit: Limit = "api"): Guard =>
+  (h) =>
+  (c) => {
+    const token = c.req.cookies.get(c.api.cookies.session);
+    if (token && c.api.services.webSessions.authenticate(token)) return user(h)(c);
+    return visitors ? limitByIp(limit, "visitor:")(h)(c) : fail(401, "unauthorized");
+  };
+
 /** Not an admin: the same answer as for a path that doesn't exist. */
 export const admin: Guard = (h) => user((c) => (c.admin ? h(c) : fail(404, "not_found")));
 

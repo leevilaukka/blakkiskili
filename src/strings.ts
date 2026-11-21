@@ -438,6 +438,8 @@ export const S = {
     account:
       " Verkkosivulla luodulle tunnukselle tallennetaan valitsemasi nimimerkki salattuna Telegram-nimen sijaan. Ilman Telegram-kirjautumista poistovaroitusta ei voi lähettää, joten tällainen tunnus poistetaan ilman varoitusta, kun sitä ei ole käytetty {days} päivään.",
     account_forever: " Verkkosivulla luodulle tunnukselle tallennetaan valitsemasi nimimerkki salattuna Telegram-nimen sijaan.",
+    local:
+      " Sivustoa voi käyttää myös ilman tunnusta. Silloin nimimerkki, paino, pituus, sukupuoli, juomat ja suosikit tallennetaan vain selaimesi tallennustilaan tällä laitteella, eikä niistä lähetetä mitään palvelimelle. Palvelimelle menevät vain tuotehaun hakusanat ja valitun tuotteen numero, joita ei liitetä sinuun. Jos selaimen tiedot tyhjennetään, tiedot häviävät. Kun siirrät tiedot verkkotunnukseen, juomat ja suosikit lähetetään palvelimelle ja poistetaan laitteelta.",
   },
 
   // Added to the privacy text when the website is on.

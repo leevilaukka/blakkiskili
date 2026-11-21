@@ -23,6 +23,11 @@
 
   onMount(() => {
     load();
+    // A local account: nothing to stream; the estimate is worked out here as the clock moves.
+    if (session.local) {
+      const tick = setInterval(load, 15_000);
+      return () => clearInterval(tick);
+    }
     // The server pushes a fresh dashboard whenever something changes (a drink from the bot or
     // another tab) and every 15 s as the estimate falls with the clock. If nothing arrives for a
     // while (a proxy buffering the stream, an old browser), fall back to asking.

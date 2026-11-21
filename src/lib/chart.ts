@@ -16,6 +16,7 @@ export type { ChartData, ChartLine };
 
 const pm = (v: number) => `${v.toFixed(2)}‰`;
 import { HOUR_MS } from "./units.ts";
+import { sha256Hex } from "./sha256.ts";
 
 export interface ChartSeries {
   id: string; // stable per person: decides the colour slot unless colorKey does
@@ -110,7 +111,7 @@ export function assignColors(keys: readonly string[]): Map<string, number> {
   const taken = new Set<number>();
   const out = new Map<string, number>();
   for (const key of [...new Set(keys)].sort()) {
-    let slot = Number.parseInt(new Bun.CryptoHasher("sha256").update(key).digest("hex").slice(0, 8), 16) % size;
+    let slot = Number.parseInt(sha256Hex(key).slice(0, 8), 16) % size;
     while (taken.has(slot)) slot = (slot + 1) % size;
     taken.add(slot);
     out.set(key, slot);

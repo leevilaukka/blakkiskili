@@ -4,6 +4,13 @@
   import type { GroupSummary } from "../../../../shared/api.ts";
   import { api, errorText } from "#lib/api.ts";
   import Icon from "#lib/Icon.svelte";
+  import { setMoving } from "#lib/local/migrate.ts";
+  import { session } from "#lib/session.svelte.ts";
+
+  function startMove() {
+    setMoving(true);
+    goto("/login");
+  }
 
   let groups = $state<GroupSummary[] | null>(null);
   let error = $state("");
@@ -18,7 +25,9 @@
       error = errorText(e);
     }
   }
-  onMount(load);
+  onMount(() => {
+    if (!session.local) void load();
+  });
 
   async function create(e: SubmitEvent) {
     e.preventDefault();
@@ -57,6 +66,17 @@
     <h1>Ryhmät</h1>
     <p class="mt-1.5 mb-0 text-lg text-secondary">Ryhmässä näet muiden promillet samassa kuvaajassa, ja näyttölinkillä ne saa myös esimerkiksi tv:hen.</p>
   </div>
+  {#if session.local}
+    <!-- Groups show people's promilles to each other, so they live on the server. -->
+    <section class="card card-panel">
+      <h2>Ryhmät tarvitsevat tunnuksen</h2>
+      <p class="text-secondary">
+        Käytät Bläkkiskiliä ilman tunnusta, joten tietosi ovat vain tällä laitteella. Ryhmässä muut näkevät promillesi, joten se vaatii tunnuksen.
+        Kun siirrät tietosi verkkoon, juomasi ja suosikkisi tulevat mukana.
+      </p>
+      <button class="btn btn-primary" onclick={startMove}><Icon name="upload" /> Siirrä tiedot verkkoon</button>
+    </section>
+  {:else}
   {#if error}<p class="text-danger" role="alert">{error}</p>{/if}
 
   {#if groups === null}
@@ -102,5 +122,6 @@
       </form>
     </section>
   </div>
+  {/if}
 </div>
 </main>

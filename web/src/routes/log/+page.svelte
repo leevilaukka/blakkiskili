@@ -8,6 +8,7 @@
   import Icon from "#lib/Icon.svelte";
   import ProductCard from "#lib/ProductCard.svelte";
   import TextField from "#lib/TextField.svelte";
+  import { session } from "#lib/session.svelte.ts";
 
   let config = $state<Config | null>(null);
   let products = $state<ProductItem[]>([]);
@@ -279,7 +280,8 @@
     </section>
   {/if}
 
-  {#if config?.barcodes}
+  <!-- Barcodes can add products for everyone and use a shared lookup quota: accounts only. -->
+  {#if config?.barcodes && !session.local}
     <section class="card card-panel mt-4">
       <h2>Viivakoodi</h2>
       <BarcodePanel {busy} {log} />

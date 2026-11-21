@@ -2,7 +2,8 @@
 
 import { roundTo } from "./units.ts";
 
-export const TIME_ZONE = process.env.TZ || "Europe/Helsinki";
+// The website's local accounts run chart.ts (and so this file) in the browser, which has no `process`.
+export const TIME_ZONE = (typeof process !== "undefined" && process.env.TZ) || "Europe/Helsinki";
 
 export function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");

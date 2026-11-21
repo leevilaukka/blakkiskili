@@ -45,7 +45,7 @@ export function createWebApp(opts: WebAppOptions) {
   const now = () => services.deps.now();
   const groupAdmins = opts.groupAdmins ?? new GroupAdmins(services, { botToken: opts.botToken });
   const views = createViews(services, now, (groupId, accountId) => groupAdmins.wasAdmin(groupId, accountId));
-  const auth = opts.auth ?? { passkeys: false };
+  const auth = opts.auth ?? { passkeys: false, local: false };
   const oidc: Partial<Record<OidcPlatform, OidcClient>> = {};
   for (const platform of ["google", "microsoft"] as const) {
     const client = auth[platform];
@@ -66,6 +66,7 @@ export function createWebApp(opts: WebAppOptions) {
     auth: {
       providers,
       oidc,
+      local: auth.local,
       rpId: new URL(opts.origin).hostname,
       flows: {
         oauth: new FlowStore(10 * MINUTE_MS, now),

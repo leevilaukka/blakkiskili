@@ -1,7 +1,18 @@
 import type { Me } from "../../../shared/api.ts";
 
-/** Who is signed in. `ready` turns true once the first /api/me answer is in. */
-export const session = $state<{ me: Me | null; ready: boolean; offline: boolean }>({ me: null, ready: false, offline: false });
+/**
+ * Who is signed in. `ready` turns true once the first /api/me answer is in. `local`: a local
+ * account (no account on the server, data in this browser; #lib/local/), whose calls api.ts
+ * answers in the browser.
+ */
+export const session = $state<{ me: Me | null; ready: boolean; offline: boolean; local: boolean; notice: string }>({
+  me: null,
+  ready: false,
+  offline: false,
+  local: false,
+  /** A one-off message for the top of the page (e.g. data moved online). */
+  notice: "",
+});
 
 // A page opened while signed out (a group link the bot's /web gave in a group chat) is kept for
 // the sign-in page to return to. sessionStorage, so it survives Telegram's sign-in redirect.

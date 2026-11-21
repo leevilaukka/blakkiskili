@@ -24,9 +24,15 @@ import type {
   ProductItem,
   ScreenLinkItem,
   ScreenView,
+  ServingDrink,
   SessionsInfo,
   SignupRequest,
+  LocalImportRequest,
+  LocalImportResult,
 } from "../../../shared/api.ts";
+import { localApi } from "./local/backend.ts";
+import { LocalError } from "./local/core.ts";
+import { session } from "./session.svelte.ts";
 
 export class ApiError extends Error {
   constructor(
@@ -68,7 +74,7 @@ async function postText<T>(path: string, text: string): Promise<T> {
   return (await res.json().catch(() => ({}))) as T;
 }
 
-export const api = {
+const server = {
   config: () => request<Config>("GET", "/api/config"),
   docs: (page: DocPage) => request<{ blocks: DocBlock[] }>("GET", `/api/docs/${page}`),
   favorites: () => request<Favorites>("GET", "/api/favorites"),
@@ -144,7 +150,48 @@ export const api = {
 
   openScreen: (token: string) => request<{ ok: true }>("POST", "/api/screen/open", { token }),
   screen: () => request<ScreenView>("GET", "/api/screen"),
+
+  /** A local account's data joining the signed-in account (#lib/local/migrate.ts). */
+  localImport: (batch: LocalImportRequest) => request<LocalImportResult>("POST", "/api/account/local-import", batch),
 };
+
+// ---------- Local accounts ----------
+
+const local = localApi((id, key) => request<ServingDrink>("GET", `/api/products/${encodeURIComponent(id)}/servings/${encodeURIComponent(key)}`));
+
+/** Calls that go to the server for a local account too: nothing personal in them. */
+const ALWAYS_SERVER = new Set<string>([
+  "config", "docs", "products", "oauthStart", "signupInfo", "signup", "passkeyLoginOptions", "passkeyLogin",
+  "passkeySignupOptions", "signInWithTelegram", "signInWithLink", "openScreen", "screen",
+]);
+
+type Fn = (...args: never[]) => Promise<unknown>;
+
+/**
+ * The API as the pages use it. While a local account is in use, its own calls are answered in the
+ * browser (#lib/local/backend.ts) and the rest, which need an account on the server (groups, screen
+ * links…), fail with "local_only"; errorText says how to move online.
+ */
+function withLocal<T extends Record<string, Fn>>(calls: T): T {
+  const localCalls = local as unknown as Record<string, Fn>;
+  return Object.fromEntries(
+    Object.entries(calls).map(([name, call]) => [
+      name,
+      (...args: never[]) => {
+        if (!session.local || ALWAYS_SERVER.has(name)) return call(...args);
+        const own = localCalls[name];
+        if (!own) return Promise.reject(new ApiError(409, "local_only"));
+        return own(...args).catch((e: unknown) => {
+          if (e instanceof LocalError) throw new ApiError(e.status, e.code);
+          if (e instanceof Error && e.message === "no local account") throw new ApiError(401, "unauthorized");
+          throw e;
+        });
+      },
+    ]),
+  ) as T;
+}
+
+export const api = withLocal(server);
 
 /** Finnish texts for the error codes the API returns. */
 export function errorText(e: unknown): string {
@@ -214,6 +261,8 @@ export function errorText(e: unknown): string {
     unknown_passkey: "Tuntematon pääsyavain. Se on ehkä poistettu tunnuksesta.",
     too_many_passkeys: "Tunnuksella on jo enimmäismäärä pääsyavaimia.",
     passkey_unsupported: "Tämä selain ei tue pääsyavaimia.",
+    local_only: "Tämä tarvitsee verkkotunnuksen. Voit siirtää tietosi verkkoon asetuksista.",
+    local_unavailable: "Tämä selain ei salli tietojen tallentamista laitteelle (esim. yksityinen selaus).",
     too_big: "Tiedosto on liian suuri.",
     network: "Yhteys palvelimeen ei toimi.",
   };

@@ -121,6 +121,20 @@ export class Drinks {
   }
 
   /**
+   * Drinks from elsewhere (a local account of the website moving online). A drink already there
+   * (same time, amount and description) is skipped, so sending the same batch again is harmless.
+   * Returns how many were added.
+   */
+  addMany(userId: string, list: readonly Omit<Drink, "id">[]): number {
+    const insert = this.deps.db.query(
+      "INSERT OR IGNORE INTO drinks (user_id, alcohol_mg, description, created_at, product_id, kcal) VALUES (?, ?, ?, ?, ?, ?)",
+    );
+    const added = this.deps.db.transaction(() => list.reduce((n, d) => n + insert.run(userId, d.alcoholMg, d.description, d.createdAt, d.productId, d.kcal).changes, 0))();
+    if (added) this.bus.emit({ accountId: userId });
+    return added;
+  }
+
+  /**
    * Logs forgotten drinks spread evenly over the last `hours`, oldest first, the same way
    * the original drinkBoozeLate did (first drink `hours` ago, last one now).
    */
