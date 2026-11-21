@@ -12,6 +12,7 @@ At least **two maintainers**, so the bot never depends on one person. Keep every
 | `APP_SECRET` | `.env` | **All data unreachable, for good** | Data in a leaked DB/backup becomes readable. See §6 |
 | `RESTIC_PASSWORD` | `backup.env` | **Backups can't be restored** | Rotate (`restic key add` / `key remove`) |
 | Object storage key | `backup.env` | Create a new one | Delete it in the provider console |
+| `GOOGLE_CLIENT_SECRET`, `MICROSOFT_CLIENT_SECRET` (if used) | `.env` | Create a new secret in the provider's console | Delete it there, create a new one, update `.env`. Only our sign-in can be faked with it, not anyone's Google or Microsoft account |
 | SSH private keys | maintainers' laptops | Use the other maintainer's key | Remove it from `~/.ssh/authorized_keys` |
 
 Turn on **2FA** for:
@@ -133,6 +134,13 @@ The website runs inside the bot's process (`src/web/`) and is off unless `WEB_EN
 5. `git pull && docker compose pull kili && docker compose up -d`. The logs should show `Web: listening on :8081` and the tunnel `Registered tunnel connection`. The cloudflared image is pinned in `docker-compose.yml`; to update it, change the tag, `docker compose up -d tunnel` and check that it registers again.
 6. Check: `https://blakkiskili.party/healthz` says `ok`; `/web` in the bot gives a link that signs you in; `curl -sI https://blakkiskili.party/` shows **one** `content-security-policy` header that contains `default-src 'self'`, `script-src 'self' 'sha256-…'` and `frame-ancestors 'none'` (if it shows only a `frame-ancestors` line, a Cloudflare Transform Rule is overwriting the app's policy: exclude this hostname from zone-wide header rules); `ss -ltn` on the server shows nothing listening on 8081 or 8080.
 
+**More sign-in methods** (optional; each is on only when configured, and the login page, `/api/config`, the routes and the privacy text all follow the configuration). Accounts made with them have no Telegram login until the person adds one in Settings, so they get no inactivity warning (the privacy text says so) and can't use data export or import.
+- **Google**: Google Cloud console → APIs & Services → Credentials → *Create credentials* → OAuth client ID → *Web application*. Authorised redirect URI: `https://blakkiskili.party/api/auth/google/callback`. On the OAuth consent screen ask for no scopes beyond the defaults (`openid` only is requested), then *Publish app*. Put the id and secret in `.env` as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+- **Microsoft**: Microsoft Entra admin center (portal.azure.com) → App registrations → *New registration*. Supported account types: *Accounts in any organizational directory and personal Microsoft accounts*. Redirect URI (Web): `https://blakkiskili.party/api/auth/microsoft/callback`. Then *Certificates & secrets* → new client secret. `.env`: `MICROSOFT_CLIENT_ID` (the Application (client) ID) and `MICROSOFT_CLIENT_SECRET` (the secret's *value*). Secrets expire (at most 2 years): put the date in the calendar, since sign-in with Microsoft stops working that day.
+- **Passkeys**: `PASSKEYS=1`. Nothing to register. Passkeys are bound to the host name in `WEB_ORIGIN`: **changing the domain makes every passkey stop working**, so those people need another login first.
+- Setting only one of a provider's two variables stops the bot at start with an error naming them. To switch a provider off, remove both and restart: its logins stay on their accounts and work again when it's back. Settings warns people whose only logins are switched off, and nobody can remove their last working login.
+- Check after enabling: the login page shows the button; signing in with a new account goes to "Luo tunnus"; `/privacy` names the provider.
+
 **Capacity** (1 vCPU, 1.8 GB, no swap): the bot has 384 MB and the tunnel 128 MB. Each watched group or screen is rendered once per update and shared by all its viewers; streams are capped at 5 per account or screen link and 500 in total. Watch `docker stats` and `free -m` during the first busy event. A container that goes over its limit is killed, so raise `mem_limit` before a big event rather than after.
 
 **Roll back** without touching data: set `WEB_ENABLED=` in `.env` and `docker compose up -d` (the site and `/web` disappear, the bot is unaffected), or just `docker compose stop tunnel`.
@@ -141,6 +149,8 @@ The website runs inside the bot's process (`src/web/`) and is off unless `WEB_EN
 - Sign everybody out (suspected session theft): `docker compose exec kili bun -e 'import {Database} from "bun:sqlite"; console.log(new Database("/app/data/kili.sqlite").run("DELETE FROM web_sessions"))'`
 - Kill every screen link: same, with `DELETE FROM screen_tokens`; kill every invite with `DELETE FROM group_invites`. Individual links can be revoked by members on the group page.
 - A leaked **screen link** shows one group's names and promilles until it expires (at most 7 days) or is revoked. A leaked **session cookie** is a full account takeover for 30 days idle. Both are stored only as hashes, so a database leak alone yields neither.
+- Sign-ins in progress (OAuth state, passkey challenges, sign-up forms) are only in memory: a restart makes people mid-sign-in start over, nothing else.
+- A leaked Google or Microsoft **client secret** lets someone run our sign-in flow as us, but every login still needs the person's own provider account; rotate the secret (§0).
 - Cloudflare sees all website traffic (including IP addresses); the privacy text says so. The server itself keeps no access log and no IP addresses on disk.
 
 ## 8. Moving to a new server

@@ -22,6 +22,7 @@ import { CustomProducts } from "./customproducts.ts";
 import { WebSessions } from "./websessions.ts";
 import { ChangeBus } from "./changebus.ts";
 import { Screens } from "./screens.ts";
+import { Passkeys } from "./passkeys.ts";
 
 export interface Deps {
   db: Database;
@@ -54,7 +55,8 @@ export function createServices(deps: Deps, opts: ServiceOptions = {}) {
   const customProducts = new CustomProducts(deps);
   const webSessions = new WebSessions(deps);
   const screens = new Screens(deps, bus);
-  return { identities, accounts, drinks, favorites, groups, stats, importer, pending, inactivity, announcements, products, barcodes, customProducts, webSessions, screens, bus, deps };
+  const passkeys = new Passkeys(deps, identities);
+  return { passkeys, identities, accounts, drinks, favorites, groups, stats, importer, pending, inactivity, announcements, products, barcodes, customProducts, webSessions, screens, bus, deps };
 }
 
 export type Services = ReturnType<typeof createServices>;

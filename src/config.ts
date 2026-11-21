@@ -21,6 +21,36 @@ export interface Config {
     port: number;
     distDir: string; // the built SvelteKit app (web/build)
   };
+  /**
+   * Website sign-in methods besides Telegram, each on only when configured (see .env.example).
+   * Turning one off later leaves its logins on their accounts; they just can't be used until it's back.
+   */
+  auth: {
+    google?: OAuthClient; // GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET
+    microsoft?: OAuthClient; // MICROSOFT_CLIENT_ID + MICROSOFT_CLIENT_SECRET
+    passkeys: boolean; // PASSKEYS
+  };
+}
+
+export interface OAuthClient {
+  clientId: string;
+  clientSecret: string;
+}
+
+const isOn = (name: string) => ["1", "true", "yes"].includes((process.env[name] ?? "").trim().toLowerCase());
+
+/**
+ * An OAuth client from its two variables: both set, or neither. One without the other is a typo
+ * or a half-finished setup, so the bot refuses to start instead of quietly hiding the button.
+ */
+function oauthClient(prefix: string): OAuthClient | undefined {
+  const clientId = (process.env[`${prefix}_CLIENT_ID`] ?? "").trim();
+  const clientSecret = (process.env[`${prefix}_CLIENT_SECRET`] ?? "").trim();
+  if (!clientId && !clientSecret) return undefined;
+  if (!clientId || !clientSecret) {
+    throw new Error(`${prefix}_CLIENT_ID and ${prefix}_CLIENT_SECRET must be set together (or neither)`);
+  }
+  return { clientId, clientSecret };
 }
 
 function required(name: string): string {
@@ -74,17 +104,22 @@ export function loadConfig(): Config {
       process.env.ALKOMETRIIKKA_URL === undefined
         ? "https://alkometriikka.fi/data.minimal.json"
         : process.env.ALKOMETRIIKKA_URL || undefined,
-    accountLinking: ["1", "true", "yes"].includes((process.env.ACCOUNT_LINKING ?? "").trim().toLowerCase()),
+    accountLinking: isOn("ACCOUNT_LINKING"),
     barcodesUrl: process.env.ALKOMETRIIKKA_API_URL || undefined,
     backup: {
       dir: process.env.BACKUP_DIR || undefined,
       everyMinutes: Math.max(1, intEnv("BACKUP_EVERY_MINUTES", 60)),
     },
     web: {
-      enabled: ["1", "true", "yes"].includes((process.env.WEB_ENABLED ?? "").trim().toLowerCase()),
+      enabled: isOn("WEB_ENABLED"),
       origin: (process.env.WEB_ORIGIN ?? "").trim().replace(/\/+$/, ""),
       port: intEnv("WEB_PORT", 8081),
       distDir: process.env.WEB_DIST || "./web/build",
+    },
+    auth: {
+      google: oauthClient("GOOGLE"),
+      microsoft: oauthClient("MICROSOFT"),
+      passkeys: isOn("PASSKEYS"),
     },
   };
   if (config.web.enabled) {

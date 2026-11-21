@@ -32,7 +32,13 @@ export const E = {
   favorite: "⭐",
 } as const;
 
-export const PLATFORM_NAMES = { telegram: "Telegram", discord: "Discord" } as const;
+export const PLATFORM_NAMES = {
+  telegram: "Telegram",
+  discord: "Discord",
+  google: "Google",
+  microsoft: "Microsoft",
+  passkey: "Pääsyavain",
+} as const;
 
 export const DRINK_RESPONSES = [
   "Bäää.",
@@ -424,9 +430,19 @@ export const S = {
     },
   },
 
+  // The website's sign-in methods in the privacy text, each only when configured (Config.auth).
+  privacy_logins: {
+    methods: { telegram: "Telegramilla", google: "Googlella", microsoft: "Microsoftilla", passkey: "pääsyavaimella" },
+    oidc: " Kun kirjaudut {providers}, palvelu kertoo sivustolle vain tilisi tunnisteen, josta tallennetaan tiiviste (HMAC) kuten Telegram-tunnisteesta. Sähköpostiosoitettasi, nimeäsi tai kuvaasi ei pyydetä eikä tallenneta. {providers_subject} näkee, että kirjauduit Bläkkiskiliin.",
+    passkey: " Pääsyavaimesta tallennetaan julkinen avain, sen tunniste sekä luonti- ja käyttöaika. Yksityinen avain pysyy laitteellasi tai salasanojen hallinnassasi.",
+    account:
+      " Verkkosivulla luodulle tunnukselle tallennetaan valitsemasi nimimerkki salattuna Telegram-nimen sijaan. Ilman Telegram-kirjautumista poistovaroitusta ei voi lähettää, joten tällainen tunnus poistetaan ilman varoitusta, kun sitä ei ole käytetty {days} päivään.",
+    account_forever: " Verkkosivulla luodulle tunnukselle tallennetaan valitsemasi nimimerkki salattuna Telegram-nimen sijaan.",
+  },
+
   // Added to the privacy text when the website is on.
   privacy_web:
-    "\n\n<b>Verkkosivu</b>\nVerkkosivulle kirjaudutaan Telegramilla tai botin /web-linkillä. Kirjautumisesta tallennetaan istunto: satunnainen tunniste tiivistettynä, joka vanhenee 30 päivässä, jos sivustoa ei käytä. IP-osoitteita ei tallenneta levylle. Sivusto toimii Cloudflaren kautta, joka näkee liikenteen (esimerkiksi IP-osoitteesi) ja voi pitää siitä lokia. Sivusto käyttää vain kirjautumiseen tarvittavaa evästettä, ei seurantaa eikä mainoksia. Alkon tuotekuvat ja näyttölinkin Telegram-ryhmän kuva haetaan sivuston palvelimen kautta, joten selaimesi ei ota niitä varten yhteyttä Alkoon tai Telegramiin. Kuvia ei tallenneta levylle. Viivakoodin lukija käyttää kameraa tai kuvaa vain selaimessasi: palvelimelle lähetetään pelkkä viivakoodin numero.\n\nRyhmän jäsenet näkevät toistensa kuvaajanimet, promillearviot ja juotujen annosten määrät. Ryhmästä voi luoda <b>näyttölinkin</b> esimerkiksi tv:tä tai muuta yhteistä näyttöä varten: linkin haltija näkee ryhmän jäsenten nimet ja promillet ilman kirjautumista, kunnes linkki vanhenee (enintään 7 päivässä) tai se perutaan. Linkin voi perua sen luoja, verkossa luodun ryhmän omistaja tai Telegram-ryhmän ylläpitäjä. Jokainen voi valita näkyvänsä näytöillä nimettömänä (ryhmän sivulla tai botin yksityisviestissä komennolla /nimeton). Näyttölinkki näyttää Telegram-ryhmän kuvan, ja ylläpitäjät tunnistetaan kysymällä ne Telegramilta, joten ryhmän Telegram-tunniste tallennetaan salattuna, kun ryhmässä käytetään bottia. Verkossa luodun ryhmän nimi tallennetaan salattuna.",
+    "\n\n<b>Verkkosivu</b>\nVerkkosivulle kirjaudutaan {methods} tai botin /web-linkillä.{logins} Kirjautumisesta tallennetaan istunto: satunnainen tunniste tiivistettynä, joka vanhenee 30 päivässä, jos sivustoa ei käytä. IP-osoitteita ei tallenneta levylle. Sivusto toimii Cloudflaren kautta, joka näkee liikenteen (esimerkiksi IP-osoitteesi) ja voi pitää siitä lokia. Sivusto käyttää vain kirjautumiseen tarvittavaa evästettä, ei seurantaa eikä mainoksia. Alkon tuotekuvat ja näyttölinkin Telegram-ryhmän kuva haetaan sivuston palvelimen kautta, joten selaimesi ei ota niitä varten yhteyttä Alkoon tai Telegramiin. Kuvia ei tallenneta levylle. Viivakoodin lukija käyttää kameraa tai kuvaa vain selaimessasi: palvelimelle lähetetään pelkkä viivakoodin numero.\n\nRyhmän jäsenet näkevät toistensa kuvaajanimet, promillearviot ja juotujen annosten määrät. Ryhmästä voi luoda <b>näyttölinkin</b> esimerkiksi tv:tä tai muuta yhteistä näyttöä varten: linkin haltija näkee ryhmän jäsenten nimet ja promillet ilman kirjautumista, kunnes linkki vanhenee (enintään 7 päivässä) tai se perutaan. Linkin voi perua sen luoja, verkossa luodun ryhmän omistaja tai Telegram-ryhmän ylläpitäjä. Jokainen voi valita näkyvänsä näytöillä nimettömänä (ryhmän sivulla tai botin yksityisviestissä komennolla /nimeton). Näyttölinkki näyttää Telegram-ryhmän kuvan, ja ylläpitäjät tunnistetaan kysymällä ne Telegramilta, joten ryhmän Telegram-tunniste tallennetaan salattuna, kun ryhmässä käytetään bottia. Verkossa luodun ryhmän nimi tallennetaan salattuna.",
 
   terms:
     "<b>Käyttöehdot</b>\n\nKäyttämällä Bläkkiskiliä olet hyväksynyt seuraavat käyttöehdot. Bläkkiskilin päätarkoitus on arvioida alkoholin määrää kehossa. Bläkkiskilin toiminta voi muuttua tai pysähtyä milloin vain. Sinun täytyy olla yli 18 vuotta käyttääksesi Bläkkiskiliä. Bläkkiskilin kehittäjät tai ylläpitäjät eivät ole vastuussa mistään suorasta tai epäsuorasta haitasta, jota palvelun käyttäminen voi aiheuttaa. Bläkkiskili on ilmainen käyttää. Ominaisuuksien, kuten promillejen arvioiminen, takia Bläkkiskili tallentaa käyttäjistä erinäisiä tietoja ja käyttää näitä hyväksi laskennassa. Sinuun suoraan linkitettävät tiedot tiivistetään tai salataan ennen tallentamista. Tietoja ei koskaan anneta tai myydä eteenpäin kolmansille osapuolille. Voit ladata tietosi komennolla /data ja poistaa ne milloin tahansa asetuksista.{retention}\n\nBläkkiskilin tuottamat arviot ovat arvioita, eikä niihin voi missään tapauksessa täysin luottaa. Noudata lakia, kun käytät alkoholia.\n\nNämä käyttöehdot voivat muuttua milloin vain ilman erillistä huomautusta. Uusimmat käyttöehdot voi aina lukea /terms-komennolla.",

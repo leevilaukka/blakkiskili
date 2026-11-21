@@ -18,6 +18,7 @@
   "dependencies": {
     "@grammyjs/runner": "^2.0.3",
     "@resvg/resvg-js": "^2.6.2",
+    "@simplewebauthn/server": "13",
     "grammy": "^1.46.0",
     "zxing-wasm": "^3.1.6"
   },

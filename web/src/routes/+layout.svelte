@@ -10,7 +10,8 @@
 
   let { children } = $props();
 
-  const onLogin = $derived(page.url.pathname === "/login");
+  // Signing in and signing up happen signed out.
+  const onLogin = $derived(page.url.pathname === "/login" || page.url.pathname === "/signup");
   // Event screens are opened by a link and need no account.
   const onScreen = $derived(page.url.pathname === "/screen");
   // The help, terms and privacy texts can be read before signing in.

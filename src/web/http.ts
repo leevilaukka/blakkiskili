@@ -20,13 +20,13 @@ export function photoResponse(photo: PhotoResult, maxAgeS: number): Response {
   });
 }
 
-/** A JSON object body of at most 4 KiB; null for anything else. */
-export async function readJsonBody(req: Request): Promise<Record<string, unknown> | null> {
+/** A JSON object body of at most 4 KiB (or `max` bytes); null for anything else. */
+export async function readJsonBody(req: Request, max = MAX_BODY): Promise<Record<string, unknown> | null> {
   const length = Number(req.headers.get("content-length") ?? 0);
-  if (length > MAX_BODY) return null;
+  if (length > max) return null;
   try {
     const text = await req.text();
-    if (text.length > MAX_BODY) return null;
+    if (text.length > max) return null;
     const parsed = JSON.parse(text);
     return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
   } catch {
@@ -40,6 +40,10 @@ export function cookieJar(secure: boolean, now: () => number) {
   return {
     session: secure ? "__Host-kili" : "kili",
     screen: secure ? "__Host-kili-screen" : "kili-screen",
+    /** Sign-in in progress (api/logins.ts, api/passkeys.ts): keys of authflows.ts entries. */
+    oauth: secure ? "__Host-kili-oauth" : "kili-oauth",
+    passkey: secure ? "__Host-kili-passkey" : "kili-passkey",
+    signup: secure ? "__Host-kili-signup" : "kili-signup",
     /** A Set-Cookie value that lasts until `expiresAt`. */
     set: (name: string, value: string, expiresAt: number) => `${name}=${value}${attributes(Math.max(0, Math.floor((expiresAt - now()) / 1000)))}`,
     clear: (name: string) => `${name}=${attributes(0)}`,

@@ -266,6 +266,22 @@ const MIGRATIONS: string[] = [
     granted_at INTEGER NOT NULL                  -- epoch ms
   ) STRICT;
   `,
+
+  /* 16: passkeys (website sign-in) */ `
+  -- An account's passkeys hang off its one 'passkey' identity (identities.platform), so they are
+  -- a login like any other: sessions point at that identity, and removing it removes them all.
+  -- Only the public key is here; the private key never leaves the person's device.
+  CREATE TABLE passkeys (
+    id           TEXT PRIMARY KEY,               -- the credential id, base64url
+    identity_id  TEXT NOT NULL REFERENCES identities(id) ON DELETE CASCADE,
+    public_key   BLOB NOT NULL,                  -- COSE public key
+    counter      INTEGER NOT NULL,               -- signature counter (0 for most synced passkeys)
+    transports   TEXT,                           -- JSON array the browser reported, a hint for sign-in
+    created_at   INTEGER NOT NULL,               -- epoch ms
+    last_used_at INTEGER                         -- epoch ms
+  ) STRICT;
+  CREATE INDEX passkeys_identity ON passkeys (identity_id);
+  `,
 ];
 
 export function openDatabase(path: string): Database {

@@ -19,3 +19,6 @@ export function dayClock(ms: number, now: number): string {
     days === 0 ? "tänään" : days === 1 ? "huomenna" : days === -1 ? "eilen" : a.toLocaleDateString("fi-FI", { weekday: "short" });
   return `${day} ${clock(ms)}`;
 }
+
+/** 1764000000000 → "24.11.2025" */
+export const date = (ms: number) => new Date(ms).toLocaleDateString("fi-FI");

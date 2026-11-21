@@ -1,7 +1,7 @@
 // Platform logins (identities) and the accounts they belong to.
 //
 // An account (users row) is the person: body data, drinks, groups. An identity is one login on
-// one chat platform, e.g. a Telegram user, pointing at an account. Each account has at least one
+// one platform, e.g. a Telegram user or a Google account (website sign-in), pointing at an account. Each account has at least one
 // identity and at most one per platform. Another platform is linked with a one-time code: the
 // user creates it where they already have the account and sends it with /yhdista on the other
 // platform. Accounts are never merged: an identity that already has an account can't be linked
@@ -11,7 +11,7 @@
 // the inactivity warning DM.
 
 import { randomInt } from "node:crypto";
-import type { Platform } from "../lib/ids.ts";
+import { CHAT_PLATFORMS, type Platform } from "../lib/ids.ts";
 import { MINUTE_MS } from "../lib/units.ts";
 import type { Deps } from "./index.ts";
 
@@ -52,6 +52,9 @@ export type RedeemResult =
     };
 
 export type UnlinkResult = "ok" | "last" | "not_linked";
+
+/** Linking a login to a signed-in account (the website's "add a sign-in method"); see RedeemResult. */
+export type LinkResult = "ok" | "already_linked" | "has_account" | "platform_taken";
 
 /** "abcd efgh", "ABCD-EFGH" → "ABCDEFGH". */
 export function normalizeLinkCode(input: string): string {
@@ -123,6 +126,26 @@ export class Identities {
     })();
   }
 
+  /**
+   * Links the login `ref` to `accountId`, by the same rules as a link code: never a login that
+   * already has an account (accounts aren't merged), and one login per platform.
+   */
+  link(accountId: string, ref: IdentityRef): LinkResult {
+    return this.deps.db.transaction((): LinkResult => {
+      const current = this.accountOf(this.key(ref));
+      if (current === accountId) return "already_linked";
+      if (current) return "has_account";
+      if (this.list(accountId).some((i) => i.platform === ref.platform)) return "platform_taken";
+      this.attach(accountId, ref);
+      return "ok";
+    })();
+  }
+
+  /** The account's login on `platform`, if any. */
+  find(accountId: string, platform: Platform): Identity | null {
+    return this.list(accountId).find((i) => i.platform === platform) ?? null;
+  }
+
   /** A new one-time code for linking another platform; replaces the account's previous code. */
   createLinkCode(accountId: string): { code: string; expiresAt: number } {
     const now = this.deps.now();
@@ -160,7 +183,8 @@ export class Identities {
     })();
   }
 
-  private encryptContact(ref: IdentityRef): string {
-    return this.deps.crypto.encrypt(String(ref.platformUserId));
+  /** Only chat platforms get a contact: a website login (Google, passkey…) can't be messaged. */
+  private encryptContact(ref: IdentityRef): string | null {
+    return CHAT_PLATFORMS.includes(ref.platform) ? this.deps.crypto.encrypt(String(ref.platformUserId)) : null;
   }
 }

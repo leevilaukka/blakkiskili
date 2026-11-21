@@ -9,10 +9,19 @@
 
 import { createCipheriv, createDecipheriv, createHash, createHmac, hkdfSync, randomBytes } from "node:crypto";
 
-/** Chat platforms a kili account can be used from. */
-export const PLATFORMS = ["telegram", "discord"] as const;
+/**
+ * Where a kili account can be signed in from: chat platforms (the bots) and the website's own
+ * sign-in methods (Google, Microsoft, passkeys). Each is one kind of identity.
+ */
+export const PLATFORMS = ["telegram", "discord", "google", "microsoft", "passkey"] as const;
 export type Platform = (typeof PLATFORMS)[number];
 export const isPlatform = (s: string): s is Platform => (PLATFORMS as readonly string[]).includes(s);
+
+/** Platforms with a bot that can message the person; only their identities keep a contact. */
+export const CHAT_PLATFORMS: readonly Platform[] = ["telegram", "discord"];
+/** The website's sign-in methods besides Telegram. */
+export const WEB_PLATFORMS = ["google", "microsoft", "passkey"] as const satisfies readonly Platform[];
+export type WebPlatform = (typeof WEB_PLATFORMS)[number];
 
 export interface Crypto {
   /** Key of one platform login (an identity). Discord ids exceed 2^53, so pass them as strings. */

@@ -5,7 +5,7 @@ import type { Profile } from "../services/accounts.ts";
 import type { ImportResult } from "../services/importer.ts";
 import type { Services } from "../services/index.ts";
 import { fmt, raw } from "../lib/format.ts";
-import { S } from "../strings.ts";
+import { PLATFORM_NAMES, S } from "../strings.ts";
 
 export interface KiliFlavor {
   /**
@@ -51,7 +51,25 @@ export function retentionText(config: Config) {
 
 /** The website paragraph of the privacy text, or nothing when the website is off. */
 export function webPrivacyText(config: Config) {
-  return raw(config.web.enabled ? S.privacy_web : "");
+  if (!config.web.enabled) return raw("");
+  const t = S.privacy_logins;
+  const auth = config.auth ?? { passkeys: false };
+  const oidc = (["google", "microsoft"] as const).filter((p) => auth[p]);
+  const methods = [t.methods.telegram, ...oidc.map((p) => t.methods[p]), ...(auth.passkeys ? [t.methods.passkey] : [])];
+  // "Telegramilla, Googlella" + " tai botin /web-linkillä" in the text itself.
+  let logins = "";
+  if (oidc.length) {
+    logins += fmt(t.oidc, {
+      providers: oidc.map((p) => t.methods[p]).join(" tai "),
+      providers_subject: oidc.map((p) => PLATFORM_NAMES[p]).join(" tai "),
+    });
+  }
+  if (auth.passkeys) logins += t.passkey;
+  if (oidc.length || auth.passkeys) {
+    const days = config.inactivity.deleteAfterDays;
+    logins += days > 0 ? fmt(t.account, { days }) : t.account_forever;
+  }
+  return raw(fmt(S.privacy_web, { methods: methods.join(", "), logins: raw(logins) }));
 }
 
 /** The privacy text (bot help and the website's /privacy page), with the configured retention and contact details. */

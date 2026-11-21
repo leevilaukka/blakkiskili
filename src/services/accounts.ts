@@ -47,6 +47,21 @@ export const isValidHeight = (h: number) =>
   Number.isInteger(h) && h >= LIMITS.height.min && h <= LIMITS.height.max;
 export const isGender = (g: string): g is Gender => g === "mies" || g === "nainen";
 
+/**
+ * A name chosen on the website (accounts without Telegram, whose name the bot would otherwise keep
+ * in step): trimmed, 2–32 characters, no control characters, and not starting with "@", which
+ * group listings use for Telegram usernames, so nobody can pass as someone's Telegram account.
+ * Null when it isn't acceptable.
+ */
+export function webName(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const name = raw.normalize("NFC").replace(/\s+/g, " ").trim();
+  const length = [...name].length;
+  if (length < 2 || length > 32) return null;
+  if (name.startsWith("@") || /[\p{Cc}\p{Cf}]/u.test(name)) return null;
+  return name;
+}
+
 export interface NewProfile {
   name: string;
   fullName?: string;

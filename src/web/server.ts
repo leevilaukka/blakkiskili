@@ -57,6 +57,7 @@ export function startWebServer({ config, services, botUsername, notifyAdmins, me
     notifyAdmins,
     messageAccount,
     docs: docsHtml(config),
+    auth: config.auth,
     live,
   });
   const site = new StaticSite(config.web.distDir);

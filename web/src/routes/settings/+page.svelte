@@ -1,12 +1,15 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { onMount } from "svelte";
-  import type { ChartName, Gender } from "../../../../shared/api.ts";
-  import { api, errorText, responseError } from "#lib/api.ts";
+  import type { ChartName, Gender, LoginPlatform, LoginProvider, LoginsView } from "../../../../shared/api.ts";
+  import { api, ApiError, errorText, responseError } from "#lib/api.ts";
+  import { date } from "#lib/format.ts";
   import Icon from "#lib/Icon.svelte";
+  import { addPasskey, decodeTelegramResult, goToProvider, goToTelegram, LOGIN_NAMES, passkeysSupported } from "#lib/logins.ts";
   import { session } from "#lib/session.svelte.ts";
 
   const me = session.me!;
+  let name = $state(me.name);
   let chartName = $state<ChartName>(me.chartName);
   let weight = $state(String(me.weight));
   let height = $state(String(me.height));
@@ -20,8 +23,88 @@
   let outBusy = $state(false);
   let outError = $state("");
 
+  // Ways to sign in: the account's logins, and the site's methods it could add.
+  let logins = $state<LoginsView | null>(null);
+  let providers = $state<LoginProvider[]>([]);
+  let botId = $state(0);
+  let loginBusy = $state(false);
+  let loginMessage = $state("");
+  let loginError = $state("");
+  const has = (p: LoginPlatform) => !!logins?.logins.some((l) => l.platform === p);
+  const addable = $derived(
+    providers.filter((p) => (p === "passkey" ? passkeysSupported() : !has(p))) as LoginProvider[],
+  );
+  const usableCount = $derived(logins?.logins.filter((l) => l.usable).length ?? 0);
+
+  async function loginAction(action: () => Promise<unknown>, done = "") {
+    loginBusy = true;
+    loginError = "";
+    loginMessage = "";
+    try {
+      const r = await action();
+      if (r === false) return; // cancelled in the browser's dialog
+      logins = await api.logins();
+      loginMessage = done;
+    } catch (err) {
+      loginError = errorText(err);
+    } finally {
+      loginBusy = false;
+    }
+  }
+
+  function addLogin(p: LoginProvider) {
+    if (p === "telegram") return goToTelegram(botId, "/settings");
+    if (p === "passkey") return loginAction(addPasskey, "Pääsyavain lisätty.");
+    loginBusy = true;
+    goToProvider(p, true).catch((err) => {
+      loginError = errorText(err);
+      loginBusy = false;
+    });
+  }
+
+  function removeLogin(p: LoginPlatform) {
+    if (!confirm(`Poistetaanko kirjautumistapa ${LOGIN_NAMES[p]}?`)) return;
+    void loginAction(() => api.removeLogin(p), `${LOGIN_NAMES[p]} poistettu.`);
+  }
+
+  function removePasskey(id: string) {
+    if (!confirm("Poistetaanko pääsyavain? Sillä ei voi enää kirjautua.")) return;
+    void loginAction(() => api.removePasskey(id), "Pääsyavain poistettu.");
+  }
+
+  // Back from adding a login: Google and Microsoft through the server (#linked=… or #error=…),
+  // Telegram's page straight here (#tgAuthResult=…). Off the address bar right away.
+  async function handleFragment() {
+    const params = new URLSearchParams(location.hash.slice(1));
+    if (![...params.keys()].length) return;
+    history.replaceState(null, "", location.pathname);
+    const linked = params.get("linked");
+    const failed = params.get("error");
+    const telegram = params.get("tgAuthResult");
+    if (linked === "google" || linked === "microsoft") loginMessage = `${LOGIN_NAMES[linked]} lisätty. Voit nyt kirjautua myös sillä.`;
+    if (failed) loginError = errorText(new ApiError(0, failed));
+    if (telegram !== null) {
+      let data: unknown;
+      try {
+        data = decodeTelegramResult(telegram);
+      } catch {
+        loginError = errorText(new ApiError(0, "cancelled"));
+        return;
+      }
+      await loginAction(async () => {
+        await api.linkTelegram(data);
+        session.me = await api.me();
+      }, "Telegram lisätty. Botti käyttää nyt samaa tunnusta.");
+    }
+  }
+
   onMount(async () => {
+    void handleFragment();
     sessions = await api.sessions().then((r) => r.count, () => null);
+    const [view, config] = await Promise.all([api.logins().catch(() => null), api.config().catch(() => null)]);
+    logins ??= view;
+    providers = config?.loginProviders ?? [];
+    botId = config?.botId ?? 0;
   });
 
   async function logoutEverywhere() {
@@ -116,7 +199,12 @@
     error = "";
     message = "";
     try {
-      session.me = await api.patchMe({ chartName, weight: Number(weight), height: Number(height), gender });
+      session.me = await api.patchMe({
+        ...(me.telegram ? { chartName } : { name: name.trim() }),
+        weight: Number(weight),
+        height: Number(height),
+        gender,
+      });
       message = "Tallennettu.";
     } catch (err) {
       error = errorText(err);
@@ -136,11 +224,19 @@
   </div>
 
   <form class="card card-panel" onsubmit={save}>
-    <fieldset class="mb-5">
-      <legend class="mb-2 text-xl font-bold">Nimi kuvaajissa</legend>
-      <label class="flex items-center gap-2.5 py-1.25"><input type="radio" bind:group={chartName} value="full" /> Koko nimi (Telegramin etu- ja sukunimi)</label>
-      <label class="flex items-center gap-2.5 py-1.25"><input type="radio" bind:group={chartName} value="username" /> Käyttäjätunnus (@nimi)</label>
-    </fieldset>
+    {#if me.telegram}
+      <fieldset class="mb-5">
+        <legend class="mb-2 text-xl font-bold">Nimi kuvaajissa</legend>
+        <label class="flex items-center gap-2.5 py-1.25"><input type="radio" bind:group={chartName} value="full" /> Koko nimi (Telegramin etu- ja sukunimi)</label>
+        <label class="flex items-center gap-2.5 py-1.25"><input type="radio" bind:group={chartName} value="username" /> Käyttäjätunnus (@nimi)</label>
+      </fieldset>
+    {:else}
+      <label class="mb-5 grid max-w-[22rem] gap-1.25">
+        <span class="text-xl font-bold">Nimimerkki</span>
+        <input type="text" bind:value={name} minlength="2" maxlength="32" autocomplete="nickname" required />
+        <span class="text-sm text-secondary">Näkyy ryhmissä ja kuvaajissa muille.</span>
+      </label>
+    {/if}
 
     <h2 class="mb-2.5">Promillearvion tiedot</h2>
     <div class="mb-5 grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-3">
@@ -164,6 +260,58 @@
   </form>
 
   <section class="card card-panel mt-4">
+    <h2>Kirjautumistavat</h2>
+    <p class="text-secondary">Näillä tavoilla pääset tunnukseesi. Kun tapoja on useampi, pääset sisään, vaikka yksi lakkaisi toimimasta.</p>
+    {#if logins}
+      {#if usableCount === 0}
+        <p class="notice">Mikään tunnuksesi kirjautumistavoista ei ole nyt sivustolla käytössä. Lisää toinen tapa, ettet jää ulos, kun kirjaudut seuraavan kerran.</p>
+      {:else if usableCount === 1 && addable.length}
+        <p class="notice">Sinulla on vain yksi kirjautumistapa. Lisää toinen varalle.</p>
+      {/if}
+      <ul class="my-3 grid gap-2 p-0">
+        {#each logins.logins as l (l.platform)}
+          <li class="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-line px-3 py-2">
+            <strong>{LOGIN_NAMES[l.platform]}</strong>
+            {#if l.current}<span class="text-sm text-secondary">tämä selain</span>{/if}
+            {#if !l.usable}<span class="text-sm text-secondary">ei käytössä sivustolla nyt</span>{/if}
+            <span class="text-sm text-secondary">lisätty {date(l.createdAt)}</span>
+            {#if l.platform !== "passkey" && !l.current && logins.logins.length > 1}
+              <button class="btn btn-ghost btn-sm ml-auto" disabled={loginBusy} onclick={() => removeLogin(l.platform)}><Icon name="trash" /> Poista</button>
+            {/if}
+          </li>
+          {#if l.platform === "passkey"}
+            {#each logins.passkeys as k, i (k.id)}
+              <li class="ml-5 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-line px-3 py-2">
+                <Icon name="key" /> Pääsyavain {i + 1}
+                <span class="text-sm text-secondary">
+                  luotu {date(k.createdAt)}{#if k.lastUsedAt}, käytetty {date(k.lastUsedAt)}{/if}
+                </span>
+                <!-- the last one would take this browser's login with it: the server refuses, so no button -->
+                {#if logins.passkeys.length > 1 || !l.current}
+                  <button class="btn btn-ghost btn-sm ml-auto" disabled={loginBusy} onclick={() => removePasskey(k.id)}><Icon name="trash" /> Poista</button>
+                {/if}
+              </li>
+            {/each}
+          {/if}
+        {/each}
+      </ul>
+      {#if addable.length}
+        <div class="flex flex-wrap gap-2.5">
+          {#each addable as p (p)}
+            <button class="btn" disabled={loginBusy || (p === "telegram" && !botId)} onclick={() => addLogin(p)}>
+              {#if p === "passkey"}<Icon name="key" /> Lisää pääsyavain{:else}<Icon name="plus" /> Lisää {LOGIN_NAMES[p]}{/if}
+            </button>
+          {/each}
+        </div>
+      {/if}
+    {/if}
+    <div aria-live="polite">
+      {#if loginMessage}<p class="mb-0">{loginMessage}</p>{/if}
+      {#if loginError}<p class="mb-0 text-danger" role="alert">{loginError}</p>{/if}
+    </div>
+  </section>
+
+  <section class="card card-panel mt-4">
     <h2>Kirjautumiset</h2>
     <p class="text-secondary">
       {#if sessions !== null}
@@ -183,8 +331,11 @@
       Voit ladata kaikki tallennetut tietosi CSV-tiedostoina (zip), kuten botin /data-komennolla. Samat tiedostot voi tuoda takaisin tai uuteen
       Bläkkiskiliin, ja myös vanhan Bläkkisvuohen /data-tiedostot kelpaavat.
     </p>
+    {#if !me.telegram}
+      <p class="notice">Lataus ja tuonti käyttävät Telegram-tunnistetta, joten ne toimivat, kun tunnukseen on lisätty Telegram (Kirjautumistavat).</p>
+    {/if}
     <div class="flex items-center gap-4">
-      <button class="btn" disabled={exportBusy} onclick={download}><Icon name="download" /> Lataa tietoni</button>
+      <button class="btn" disabled={exportBusy || !me.telegram} onclick={download}><Icon name="download" /> Lataa tietoni</button>
     </div>
 
     <h3 class="mt-6 mb-1.5 text-lg">Tuo tietoja</h3>
@@ -195,12 +346,12 @@
     <label
       class={[
         "btn relative focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-brand-2",
-        importBusy ? "cursor-default opacity-55" : "cursor-pointer",
+        importBusy || !me.telegram ? "cursor-default opacity-55" : "cursor-pointer",
       ]}
     >
       <Icon name="upload" /> Valitse tiedostot
       <!-- The real input stays in the page for keyboards and screen readers, but invisible. -->
-      <input class="absolute inset-0 size-full cursor-[inherit] opacity-0" type="file" accept=".csv,text/csv" multiple disabled={importBusy} onchange={importFiles} />
+      <input class="absolute inset-0 size-full cursor-[inherit] opacity-0" type="file" accept=".csv,text/csv" multiple disabled={importBusy || !me.telegram} onchange={importFiles} />
     </label>
     {#if importResults.length}
       <ul class="mt-3" aria-live="polite">

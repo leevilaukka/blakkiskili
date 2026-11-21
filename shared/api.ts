@@ -33,6 +33,40 @@ export interface Me {
   gender: Gender;
   /** Signed in with a Telegram account listed in ADMIN_IDS: may open /admin. */
   admin: boolean;
+  /**
+   * The account has a Telegram login. Without one the name is set on the website (with one, the
+   * bot keeps it in step with Telegram), and data export and import aren't available.
+   */
+  telegram: boolean;
+}
+
+/** Ways to sign in to the website; the server lists the ones it has configured (Config.loginProviders). */
+export type LoginProvider = "telegram" | "google" | "microsoft" | "passkey";
+/** Every kind of login an account can have: the sign-in methods, plus chat platforms without one. */
+export type LoginPlatform = LoginProvider | "discord";
+
+/** GET /api/auth/logins: the account's logins, for Settings. */
+export interface LoginsView {
+  logins: {
+    platform: LoginPlatform;
+    createdAt: number;
+    /** This browser signed in with it. */
+    current: boolean;
+    /** It can be used to sign in to the website now (its provider is configured). */
+    usable: boolean;
+  }[];
+  passkeys: { id: string; createdAt: number; lastUsedAt: number | null }[];
+}
+
+/** POST /api/auth/signup: a new account for the login that was just used (or the passkey made for it). */
+export interface SignupRequest {
+  name: string;
+  weight: number;
+  height: number;
+  gender: Gender;
+  acceptTerms: true;
+  /** Signing up with a passkey: the browser's answer to /api/auth/passkey/signup/options. */
+  passkey?: unknown;
 }
 
 /** GET /api/auth/sessions: how many browsers are signed in to the account. */
@@ -70,7 +104,7 @@ export interface DrinkLog {
 
 export interface Dashboard {
   now: number;
-  me: Omit<Me, "admin">;
+  me: Omit<Me, "admin" | "telegram">;
   permille: number;
   /** When the estimate reaches zero; null when sober now. */
   soberAt: number | null;
@@ -112,6 +146,8 @@ export interface Config {
   botId: number; // for Telegram's login page (oauth.telegram.org/auth?bot_id=…)
   catalogue: boolean; // product search is available
   barcodes: boolean; // barcode lookups are available (the catalogue or the API Worker)
+  /** Sign-in methods this site has configured, in the order to show them. Telegram is always first. */
+  loginProviders: LoginProvider[];
   presets: PresetItem[];
 }
 

@@ -89,6 +89,14 @@ export class WebSessions {
     return this.deps.crypto.webTokenKey(sessionToken);
   }
 
+  /** The session with this hash, if it exists and hasn't expired. Doesn't slide the expiry. */
+  byHash(tokenHash: string): WebSession | null {
+    const row = this.deps.db
+      .query("SELECT account_id, identity_id FROM web_sessions WHERE token_hash = ? AND expires_at > ?")
+      .get(tokenHash, this.deps.now()) as { account_id: string; identity_id: string | null } | null;
+    return row ? { accountId: row.account_id, identityId: row.identity_id } : null;
+  }
+
   /** Whether the session with this hash exists and hasn't expired. Doesn't slide the expiry. */
   isActive(tokenHash: string): boolean {
     return !!this.deps.db.query("SELECT 1 FROM web_sessions WHERE token_hash = ? AND expires_at > ?").get(tokenHash, this.deps.now());

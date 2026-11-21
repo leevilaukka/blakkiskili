@@ -8,7 +8,7 @@ import { verifyTelegramLogin } from "../telegram.ts";
 import type { Api, Routes } from "./context.ts";
 import { limitByIp, user } from "./guards.ts";
 
-export function authRoutes({ services, opts, cookies, live, now }: Api): Routes {
+export function authRoutes({ services, opts, cookies, live, now, auth }: Api): Routes {
   const signInLimit = limitByIp("signIn");
   const signedIn = (sessionToken: string, expiresAt: number) =>
     json({ ok: true }, 200, { "set-cookie": cookies.set(cookies.session, sessionToken, expiresAt) });
@@ -22,6 +22,7 @@ export function authRoutes({ services, opts, cookies, live, now }: Api): Routes 
           botId: Number(opts.botToken.split(":")[0]), // public: the part of the token before the colon
           catalogue: services.products.ready,
           barcodes: services.barcodes.enabled || services.products.enabled,
+          loginProviders: auth.providers,
           presets: CATALOG.flatMap((c) =>
             c.presets.map((pr) => ({
               id: pr.id,

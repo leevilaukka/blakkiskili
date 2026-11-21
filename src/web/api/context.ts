@@ -2,6 +2,11 @@
 // (one per app).
 
 import type { BunRequest, Server } from "bun";
+import type { Config } from "../../config.ts";
+import type { IdentityRef } from "../../services/identities.ts";
+import type { LoginProvider } from "../../../shared/api.ts";
+import type { FlowStore } from "../authflows.ts";
+import type { OidcClient, OidcPlatform } from "../oidc.ts";
 import type { RateLimiter } from "../../bot/ratelimit.ts";
 import type { Profile } from "../../services/accounts.ts";
 import type { Services } from "../../services/index.ts";
@@ -33,8 +38,32 @@ export interface WebAppOptions {
   messageAccount?: (accountId: string, html: string) => Promise<boolean>;
   /** The help, terms and privacy texts as Telegram HTML (bot/context.ts docsHtml), shown at /help, /terms and /privacy. */
   docs?: Record<string, string>;
+  /** Sign-in methods besides Telegram (Config.auth); none when left out. */
+  auth?: Config["auth"];
+  /** The OpenID Connect providers' token and key endpoints; tests pass a fake. */
+  oidcFetch?: typeof fetch;
   /** Live-update timing; tests shorten it. */
   live?: { tickMs?: number; minGapMs?: number; maxTotal?: number; maxPerOwner?: number };
+}
+
+/** A Google or Microsoft sign-in on its way (see api/logins.ts). `link`: adding it to a signed-in account. */
+export interface OAuthFlow {
+  platform: OidcPlatform;
+  state: string;
+  nonce: string;
+  verifier: string;
+  link: { accountId: string; sessionHash: string } | null;
+}
+
+/** A passkey challenge waiting for the browser's answer (see api/passkeys.ts). */
+export type PasskeyFlow =
+  | { kind: "login"; challenge: string }
+  | { kind: "signup"; challenge: string; handle: string }
+  | { kind: "add"; challenge: string; accountId: string };
+
+/** May create an account for this login: it signed in fine but has no account yet. */
+export interface SignupTicket {
+  ref: IdentityRef;
 }
 
 /** Shared by all handlers. */
@@ -48,11 +77,21 @@ export interface Api {
   photos: ProductPhotos;
   groupPhotos: GroupPhotos;
   groupAdmins: GroupAdmins;
+  auth: {
+    /** Configured sign-in methods, Telegram first (Config.loginProviders). */
+    providers: LoginProvider[];
+    oidc: Partial<Record<OidcPlatform, OidcClient>>;
+    /** Passkeys' relying party id: the site's host name. */
+    rpId: string;
+    flows: { oauth: FlowStore<OAuthFlow>; passkey: FlowStore<PasskeyFlow>; signup: FlowStore<SignupTicket> };
+  };
   /** Signed in with a Telegram login in ADMIN_IDS that still belongs to the account. */
   isAdmin: (s: WebSession) => boolean;
   limits: {
     /** Per client address. */
     signIn: RateLimiter;
+    /** New accounts, per client address. */
+    signUp: RateLimiter;
     /** Per account (or per address for event screens). */
     api: RateLimiter;
     /** A search shows up to 8 thumbnails, so photos get their own, larger budget. */
@@ -115,8 +154,8 @@ export class Ctx {
     return value !== undefined && pattern.test(value) ? value : null;
   }
 
-  /** The JSON object body, or null (see readJsonBody). */
-  body(): Promise<Record<string, unknown> | null> {
-    return (this.#body ??= readJsonBody(this.req));
+  /** The JSON object body, or null (see readJsonBody). `max`: a larger limit than 4 KiB (passkeys). */
+  body(max?: number): Promise<Record<string, unknown> | null> {
+    return (this.#body ??= readJsonBody(this.req, max));
   }
 }
