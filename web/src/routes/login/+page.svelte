@@ -31,7 +31,7 @@
     // An invite link opened while signed out is waiting in sessionStorage (see /join).
     let pending: string | null = null;
     try {
-      pending = sessionStorage.getItem("kili-jam") ? "/jam" : sessionStorage.getItem("kili-invite") ? "/join" : null;
+      pending = sessionStorage.getItem("kili-pikakutsu") ? "/liity" : sessionStorage.getItem("kili-invite") ? "/join" : null;
     } catch {}
     const back = takeReturn();
     goto(pending ?? back ?? "/", { replaceState: true });

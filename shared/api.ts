@@ -331,7 +331,7 @@ export interface GroupView {
   screens: ScreenLinkItem[];
 }
 
-/** A jam as members see it: its link is /jam#j=<code>. */
+/** A jam ("pikakutsu" on the site) as members see it: its link is /liity#k=<code>. */
 export interface JamInfo {
   code: string;
   expiresAt: number;

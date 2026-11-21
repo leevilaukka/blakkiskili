@@ -266,7 +266,7 @@ export function errorText(e: unknown): string {
     unknown_passkey: "Tuntematon pääsyavain. Se on ehkä poistettu tunnuksesta.",
     too_many_passkeys: "Tunnuksella on jo enimmäismäärä pääsyavaimia.",
     passkey_unsupported: "Tämä selain ei tue pääsyavaimia.",
-    invalid_jam: "Jami on päättynyt tai linkki on väärä. Pyydä uusi linkki.",
+    invalid_jam: "Pikakutsu on päättynyt tai linkki on väärä. Pyydä uusi linkki.",
     local_only: "Tämä tarvitsee verkkotunnuksen. Voit siirtää tietosi verkkoon asetuksista.",
     local_unavailable: "Tämä selain ei salli tietojen tallentamista laitteelle (esim. yksityinen selaus).",
     too_big: "Tiedosto on liian suuri.",

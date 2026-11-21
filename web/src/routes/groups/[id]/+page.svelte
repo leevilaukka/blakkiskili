@@ -101,13 +101,13 @@
     { label: "Viikon", hours: () => 7 * 24 },
   ];
   let jamLength = $state(0);
-  const jamUrl = $derived(view?.jam ? `${origin()}/jam#j=${view.jam.code}` : "");
+  const jamUrl = $derived(view?.jam ? `${origin()}/liity#k=${view.jam.code}` : "");
   const jamText = $derived(view ? `Liity ryhmään ${view.group.name} Bläkkiskilissä: ${jamUrl}` : "");
   const canShare = typeof navigator !== "undefined" && "share" in navigator;
 
   const startJam = () => run(async () => (view = await api.startJam(id, JAM_LENGTHS[jamLength]!.hours())));
   const endJam = () => {
-    if (!confirm("Lopetetaanko jami? Linkillä ei voi enää liittyä. Jo liittyneet pysyvät ryhmässä.")) return;
+    if (!confirm("Perutaanko pikakutsu? Linkillä ei voi enää liittyä. Jo liittyneet pysyvät ryhmässä.")) return;
     void run(async () => (view = await api.endJam(id)));
   };
   async function shareJam() {
@@ -217,24 +217,24 @@
       <div class="grid min-w-0 gap-4">
         {#if view.group.kind === "web"}
           <section class="card card-panel">
-            <h2 class="flex items-center gap-2"><Icon name="link" /> Jami</h2>
+            <h2 class="flex items-center gap-2"><Icon name="link" /> Pikakutsu</h2>
             {#if view.jam}
               <p class="text-secondary">
-                Linkillä tai QR-koodilla pääsee ryhmään, myös ilman tunnusta. {view.jam.startedBy} aloitti jamin, ja se on voimassa {dayClock(view.jam.expiresAt, view.now)} asti.
+                Linkillä tai QR-koodilla pääsee ryhmään (tunnuksen voi luoda samalla). {view.jam.startedBy} loi kutsun, ja se on voimassa {dayClock(view.jam.expiresAt, view.now)} asti.
               </p>
-              <div class="mx-auto my-4 max-w-[15rem]"><QrCode text={jamUrl} label="QR-koodi jamiin liittymiseen" /></div>
+              <div class="mx-auto my-4 max-w-[15rem]"><QrCode text={jamUrl} label="QR-koodi ryhmään liittymiseen" /></div>
               <div class="flex gap-2">
-                <input type="text" readonly value={jamUrl} onfocus={(e) => e.currentTarget.select()} aria-label="Jamilinkki" />
+                <input type="text" readonly value={jamUrl} onfocus={(e) => e.currentTarget.select()} aria-label="Kutsulinkki" />
                 <button class="btn" onclick={() => copy(jamUrl)}><Icon name={copied ? "check" : "copy"} /> {copied ? "Kopioitu" : "Kopioi"}</button>
               </div>
               <div class="mt-3 flex flex-wrap gap-2">
                 {#if canShare}<button class="btn btn-primary" onclick={shareJam}><Icon name="send" /> Jaa</button>{/if}
                 <a class="btn" href="https://wa.me/?text={encodeURIComponent(jamText)}" target="_blank" rel="noopener">Jaa WhatsAppiin</a>
-                {#if view.jam.canEnd}<button class="btn btn-ghost ml-auto" disabled={busy} onclick={endJam}><Icon name="x" /> Lopeta jami</button>{/if}
+                {#if view.jam.canEnd}<button class="btn btn-ghost ml-auto" disabled={busy} onclick={endJam}><Icon name="x" /> Peru kutsu</button>{/if}
               </div>
             {:else}
               <p class="text-secondary">
-                Aloita jami, niin saat linkin ja QR-koodin, joilla kaverit pääsevät ryhmään yhdellä napautuksella, myös ilman tunnusta. Jami päättyy itsestään, ja liittyneet pysyvät ryhmässä.
+                Luo pikakutsu, niin saat linkin ja QR-koodin, joilla kaverit pääsevät ryhmään parilla napautuksella (tunnuksen voi luoda samalla). Kutsu päättyy itsestään, ja liittyneet pysyvät ryhmässä.
               </p>
               <div class="mt-3 flex flex-wrap items-end gap-3">
                 <label class="grid gap-1.25">Voimassa
@@ -242,7 +242,7 @@
                     {#each JAM_LENGTHS as l, i (l.label)}<option value={i}>{l.label}</option>{/each}
                   </select>
                 </label>
-                <button class="btn btn-primary" disabled={busy} onclick={startJam}><Icon name="plus" /> Aloita jami</button>
+                <button class="btn btn-primary" disabled={busy} onclick={startJam}><Icon name="plus" /> Luo pikakutsu</button>
               </div>
             {/if}
           </section>
