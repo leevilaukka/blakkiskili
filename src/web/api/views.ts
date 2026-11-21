@@ -13,7 +13,7 @@ import type { ScreenAccess } from "../../services/screens.ts";
 import type { Dashboard, DrinkItem, GroupSummary, GroupView, JamInfo, Me, ProductItem, ScreenLinkItem, ScreenView } from "../../../shared/api.ts";
 import { buildBoard, memberRef, type Board } from "../boards.ts";
 
-export const toBody = (p: Profile): Omit<Me, "admin" | "telegram" | "guest"> => ({
+export const toBody = (p: Profile): Omit<Me, "admin" | "telegram"> => ({
   name: p.name,
   chartName: p.chartName,
   chartLabel: chartLabel(p),
@@ -22,7 +22,7 @@ export const toBody = (p: Profile): Omit<Me, "admin" | "telegram" | "guest"> => 
   gender: p.gender,
 });
 
-export const toMe = (p: Profile, admin: boolean, telegram: boolean, guest = false): Me => ({ ...toBody(p), admin, telegram, guest });
+export const toMe = (p: Profile, admin: boolean, telegram: boolean): Me => ({ ...toBody(p), admin, telegram });
 
 export const toItem = (d: Drink): DrinkItem => ({
   id: d.id,

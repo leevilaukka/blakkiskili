@@ -86,7 +86,7 @@ const order = (a: StoredDrink, b: StoredDrink) => a.createdAt - b.createdAt || a
 
 export function me(data: LocalData): Me {
   const { name, weight, height, gender } = data.profile;
-  return { name, chartName: "username", chartLabel: name, weight, height, gender, admin: false, telegram: false, guest: false };
+  return { name, chartName: "username", chartLabel: name, weight, height, gender, admin: false, telegram: false };
 }
 
 const since = (data: LocalData, t: number) => data.drinks.filter((d) => d.createdAt > t);
@@ -112,7 +112,7 @@ export function dashboard(data: LocalData, now: number): Dashboard {
   const recent = since(data, now - EBAC_WINDOW_MS);
   const ebac = calculateEbac(data.profile, recent, now);
   const s = session(data, now);
-  const { admin: _a, telegram: _t, guest: _g, ...body } = me(data);
+  const { admin: _a, telegram: _t, ...body } = me(data);
   return {
     now,
     me: body,

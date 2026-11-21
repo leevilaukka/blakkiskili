@@ -6,8 +6,7 @@ import { fail, json } from "../http.ts";
 import { memberRef } from "../boards.ts";
 import type { Api, Ctx, Handler, Routes } from "./context.ts";
 import type { Services } from "../../services/index.ts";
-import { limitByIp, user, userOrVisitor } from "./guards.ts";
-import { readSignup } from "./logins.ts";
+import { user, userOrVisitor } from "./guards.ts";
 import { chartLabel } from "../../services/accounts.ts";
 import { HOUR_MS } from "../../lib/units.ts";
 import type { JamPreview } from "../../../shared/api.ts";
@@ -20,7 +19,7 @@ interface Group {
 }
 type GroupHandler = (c: Ctx, g: Group) => Response | Promise<Response>;
 
-export function groupRoutes({ services, views, live, groupAdmins, cookies }: Api): Routes {
+export function groupRoutes({ services, views, live, groupAdmins }: Api): Routes {
   const { groups, screens } = services;
 
   /** A signed-in member of :group. Others get the same answer as for a group that doesn't exist. */
@@ -77,30 +76,6 @@ export function groupRoutes({ services, views, live, groupAdmins, cookies }: Api
         const code = jamCode(await c.body());
         if (!code) return fail(400, "bad_request");
         return joined(groups.joinJam(code, c.user.id));
-      }),
-    },
-
-    // Joining without an account: a guest account (no login; this browser's session is the only way
-    // in until a login is added in Settings), created only if the jam and a free place are there.
-    "/api/jam/guest": {
-      POST: limitByIp("guest")(async (c) => {
-        const data = await c.body();
-        const code = jamCode(data);
-        if (!code) return fail(400, "bad_request");
-        const checked = readSignup(data);
-        if ("error" in checked) return fail(checked.error === "bad_request" ? 400 : 422, checked.error);
-        type Made = { error: "invalid_jam" | "group_full" } | { accountId: string; groupId: string };
-        const result = services.deps.db.transaction((): Made => {
-          const jam = groups.jamByCode(code);
-          if (!jam) return { error: "invalid_jam" };
-          if (!groups.hasRoom(jam.groupId)) return { error: "group_full" };
-          const guest = services.accounts.createGuest(checked.profile);
-          groups.joinJam(code, guest.id);
-          return { accountId: guest.id, groupId: jam.groupId };
-        })();
-        if ("error" in result) return fail(result.error === "invalid_jam" ? 404 : 409, result.error);
-        const { sessionToken, expiresAt } = services.webSessions.createSession(result.accountId, null);
-        return json({ id: result.groupId }, 201, { "set-cookie": cookies.set(cookies.session, sessionToken, expiresAt) });
       }),
     },
 

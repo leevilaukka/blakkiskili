@@ -1,11 +1,10 @@
-// Jams: a web group's join link of the evening, shareable by any member, with a preview and a
-// one-step guest join for people without an account.
+// Jams: a web group's join link of the evening, shareable by any member, with a preview. Joining
+// always needs an account.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { DAY_MS, HOUR_MS } from "../src/lib/units.ts";
 import { JAM_MAX_MS, MAX_WEB_GROUP_MEMBERS } from "../src/services/groups.ts";
 import type { GroupView, JamPreview } from "../shared/api.ts";
-import { Barcodes } from "../src/services/barcodes.ts";
 import { serveTestApp, setup, tg } from "./helpers.ts";
 
 const ORIGIN = "https://kili.test";
@@ -14,12 +13,8 @@ afterEach(() => {
   for (const a of apps.splice(0)) a.close();
 });
 
-const GUEST = { name: "Vieras", weight: 70, height: 170, gender: "nainen", acceptTerms: true };
-
 function world() {
-  // The API Worker doesn't know any barcode: a new product could be added (by a real account).
-  const barcodes = new Barcodes({ url: "https://api.test", fetch: (async () => new Response("", { status: 404 })) as unknown as typeof fetch });
-  const w = setup(undefined, [], undefined, barcodes);
+  const w = setup();
   const user = (id: number, name: string) => w.services.accounts.register(tg(id), { name, weight: 75, height: 178, gender: "mies" }).profile;
   const alice = user(1, "alice");
   const bob = user(2, "bob");
@@ -82,56 +77,30 @@ describe("jams", () => {
     expect((await w.call("POST", "/api/jam/join", { body: { code }, cookie: w.cookieOf(w.carol) })).status).toBe(409);
   });
 
-  test("a guest joins in one step, and their account has no login", async () => {
-    const w = world();
-    const code = (await w.start(w.alice)).jam!.code;
-    expect((await w.call("POST", "/api/jam/guest", { body: { ...GUEST, code, acceptTerms: false } })).status).toBe(422);
-    expect((await w.call("POST", "/api/jam/guest", { body: { ...GUEST, code, name: "@alice" } })).status).toBe(422);
-    const res = await w.call("POST", "/api/jam/guest", { body: { ...GUEST, code } });
-    expect(res.status).toBe(201);
-    const cookie = res.headers.get("set-cookie")!.split(";")[0]!;
-    const me = (await (await w.call("GET", "/api/me", { cookie })).json()) as { name: string; telegram: boolean };
-    expect(me).toMatchObject({ name: "Vieras", telegram: false });
-    const view = (await (await w.call("GET", `/api/groups/${w.group.id}`, { cookie })).json()) as GroupView;
-    expect(view.members.map((m) => m.name).sort()).toEqual(["Vieras", "alice", "bob"]);
-    const guestId = w.services.groups.members(w.group.id).find((m) => m.name === "Vieras")!.userId;
-    expect(w.services.accounts.isGuest(guestId)).toBe(true);
-    expect(((await (await w.call("GET", "/api/auth/logins", { cookie })).json()) as { logins: unknown[] }).logins).toEqual([]);
-    // Guests can't add products everyone sees.
-    const product = { kind: "olut", name: "X", sizeL: 0.33, abv: 4.7 };
-    const put = await w.call("PUT", "/api/barcodes/6410405082657/product", { cookie, body: product });
-    expect(put.status).toBe(403);
-    expect(await put.json()).toEqual({ error: "guest_account" });
-    expect((await w.call("PUT", "/api/barcodes/6410405082657/product", { cookie: w.cookieOf(w.alice), body: product })).status).toBe(201);
-  });
-
-  test("ended, expired or full: no join and no guest account", async () => {
+  test("ended, expired or full: no joining; members who joined stay; no guest joining at all", async () => {
     const w = world();
     const code = (await w.start(w.bob)).jam!.code;
-    // Only the starter or the owner ends it.
-    const view = (await (await w.call("GET", `/api/groups/${w.group.id}`, { cookie: w.cookieOf(w.alice) })).json()) as GroupView;
-    expect(view.jam?.canEnd).toBe(true);
     await w.call("POST", "/api/jam/join", { body: { code }, cookie: w.cookieOf(w.carol) });
+    // Only the starter or the owner ends it.
     expect((await w.call("DELETE", `/api/groups/${w.group.id}/jam`, { cookie: w.cookieOf(w.carol) })).status).toBe(403);
     expect((await w.call("DELETE", `/api/groups/${w.group.id}/jam`, { cookie: w.cookieOf(w.alice) })).status).toBe(200);
-    expect((await w.call("POST", "/api/jam/guest", { body: { ...GUEST, code } })).status).toBe(404);
-    // Members who joined through it stay.
     expect(w.services.groups.isMemberOf(w.carol.id, w.group.id)).toBe(true);
+    const dave = w.services.accounts.register(tg(4), { name: "dave", weight: 80, height: 180, gender: "mies" }).profile;
+    expect((await w.call("POST", "/api/jam/join", { body: { code }, cookie: w.cookieOf(dave) })).status).toBe(404);
 
     const code2 = (await w.start(w.alice, 1)).jam!.code;
     w.clock.now += 2 * HOUR_MS;
     expect((await w.call("POST", "/api/jam/preview", { body: { code: code2 } })).status).toBe(404);
-    const users = (w.db.query("SELECT count(*) AS n FROM users").get() as { n: number }).n;
-    expect((await w.call("POST", "/api/jam/guest", { body: { ...GUEST, code: code2 } })).status).toBe(404);
+    expect((await w.call("POST", "/api/jam/join", { body: { code: code2 }, cookie: w.cookieOf(dave) })).status).toBe(404);
 
     const code3 = (await w.start(w.alice, 1)).jam!.code;
     for (let i = (w.db.query("SELECT count(*) AS n FROM group_members WHERE group_id = ?").get(w.group.id) as { n: number }).n; i < MAX_WEB_GROUP_MEMBERS; i++) {
-      w.services.groups.joinJam(code3, w.services.accounts.createGuest({ name: `g${i}`, weight: 70, height: 170, gender: "mies" }).id);
+      w.services.groups.joinJam(code3, w.services.accounts.register(tg(100 + i), { name: `m${i}`, weight: 70, height: 170, gender: "mies" }).profile.id);
     }
-    const before = (w.db.query("SELECT count(*) AS n FROM users").get() as { n: number }).n;
-    expect((await w.call("POST", "/api/jam/guest", { body: { ...GUEST, code: code3 } })).status).toBe(409);
-    expect((w.db.query("SELECT count(*) AS n FROM users").get() as { n: number }).n).toBe(before);
-    expect(users).toBeGreaterThan(0);
+    expect((await w.call("POST", "/api/jam/join", { body: { code: code3 }, cookie: w.cookieOf(dave) })).status).toBe(409);
+
+    // Joining without an account doesn't exist: groups always need one.
+    expect((await w.call("POST", "/api/jam/guest", { body: { code: code3, name: "x", weight: 70, height: 170, gender: "mies", acceptTerms: true } })).status).toBe(404);
   });
 
   test("the starter leaving ends their jam; prune clears expired ones", async () => {
@@ -145,12 +114,4 @@ describe("jams", () => {
     expect((w.db.query("SELECT count(*) AS n FROM group_jams").get() as { n: number }).n).toBe(0);
   });
 
-  test("guests are rate limited per address, generously (a party shares Wi-Fi)", async () => {
-    const w = world();
-    const code = (await w.start(w.alice, 1)).jam!.code;
-    const statuses: number[] = [];
-    for (let i = 0; i < 42; i++) statuses.push((await w.call("POST", "/api/jam/guest", { body: { ...GUEST, name: `Vieras ${i}`, code }, ip: "5.5.5.5" })).status);
-    expect(statuses.slice(0, 40).every((s) => s === 201)).toBe(true);
-    expect(statuses.at(-1)).toBe(429);
-  });
 });

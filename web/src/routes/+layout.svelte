@@ -65,8 +65,6 @@
 
   async function logout() {
     if (session.local) return;
-    // A guest has no other way back in.
-    if (session.me?.guest && !confirm("Liityit vieraana: kun kirjaudut ulos, et pääse enää tähän tunnukseen. Lisää ensin kirjautumistapa asetuksista (Kirjautumistavat). Kirjaudutaanko silti ulos?")) return;
     await api.logout().catch(() => {});
     session.me = null;
     await goto("/login");

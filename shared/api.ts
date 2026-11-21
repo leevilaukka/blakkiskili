@@ -38,8 +38,6 @@ export interface Me {
    * bot keeps it in step with Telegram), and data export and import aren't available.
    */
   telegram: boolean;
-  /** Joined through a jam without signing in: no login, only this browser's session reaches it. */
-  guest: boolean;
 }
 
 /** Ways to sign in to the website; the server lists the ones it has configured (Config.loginProviders). */
@@ -136,7 +134,7 @@ export interface DrinkLog {
 
 export interface Dashboard {
   now: number;
-  me: Omit<Me, "admin" | "telegram" | "guest">;
+  me: Omit<Me, "admin" | "telegram">;
   permille: number;
   /** When the estimate reaches zero; null when sober now. */
   soberAt: number | null;
@@ -355,8 +353,6 @@ export interface JamPreview {
   groupId: string | null;
 }
 
-/** POST /api/jam/guest: joining without an account; makes a guest account (see Accounts.createGuest). */
-export type JamGuestRequest = Omit<SignupRequest, "passkey"> & { code: string };
 
 /** What an event screen shows: no controls, and hidden members are anonymised. */
 export interface ScreenView {

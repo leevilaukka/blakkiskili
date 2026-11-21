@@ -85,8 +85,6 @@ export function barcodeRoutes({ services, opts, limits }: Api): Routes {
       if (known === "unavailable") return fail(503, "barcode_unavailable");
       if (known === "yes") return fail(409, "in_catalogue");
     }
-    // Products are shared with everyone: not from guests (jam accounts with no login).
-    if (!customProducts.get(ean) && services.accounts.isGuest(c.user.id)) return fail(403, "guest_account");
     const r = customProducts.save({ ean, kind, name, sizeL, abv, kcal100 }, c.user.id, c.admin);
     if (!r.ok) {
       if (r.reason === "not_allowed") return fail(403, "not_allowed");

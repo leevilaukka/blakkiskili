@@ -10,7 +10,7 @@ export function meRoutes({ services, views, live }: Api): Routes {
   const hasTelegram = (accountId: string) => services.identities.find(accountId, "telegram") !== null;
   return {
     "/api/me": {
-      GET: user((c) => json(toMe(c.user, c.admin, hasTelegram(c.user.id), services.accounts.isGuest(c.user.id)))),
+      GET: user((c) => json(toMe(c.user, c.admin, hasTelegram(c.user.id)))),
 
       PATCH: user(async (c) => {
         const data = await c.body();
@@ -34,7 +34,7 @@ export function meRoutes({ services, views, live }: Api): Routes {
           if (height !== undefined) services.accounts.updateHeight(id, height as number);
           if (gender !== undefined) services.accounts.updateGender(id, gender as "mies" | "nainen");
         })();
-        return json(toMe(services.accounts.get(id)!, c.admin, telegram, services.accounts.isGuest(id)));
+        return json(toMe(services.accounts.get(id)!, c.admin, telegram));
       }),
     },
 
