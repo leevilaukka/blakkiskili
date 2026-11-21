@@ -29,12 +29,12 @@
       session.notice = `Tietojen siirto ei onnistunut: ${errorText(e)} Yritä uudelleen asetuksista.`;
     }
     // An invite link opened while signed out is waiting in sessionStorage (see /join).
-    let pendingInvite = false;
+    let pending: string | null = null;
     try {
-      pendingInvite = !!sessionStorage.getItem("kili-invite");
+      pending = sessionStorage.getItem("kili-jam") ? "/jam" : sessionStorage.getItem("kili-invite") ? "/join" : null;
     } catch {}
     const back = takeReturn();
-    goto(pendingInvite ? "/join" : (back ?? "/"), { replaceState: true });
+    goto(pending ?? back ?? "/", { replaceState: true });
   }
 
   async function withLink(token: string) {

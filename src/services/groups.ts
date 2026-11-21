@@ -20,6 +20,19 @@ export const MAX_WEB_GROUPS_PER_OWNER = 10;
 export const MAX_WEB_GROUP_MEMBERS = 100;
 export const GROUP_NAME_MAX = 40;
 export const INVITE_TTL_MS = 7 * DAY_MS;
+/** How long a jam may last: from half an hour (a bar stop) to a week (a festival). */
+export const JAM_MIN_MS = 30 * 60 * 1000;
+export const JAM_MAX_MS = 7 * DAY_MS;
+
+export interface Jam {
+  groupId: string;
+  code: string;
+  startedBy: string | null;
+  startedAt: number;
+  expiresAt: number;
+}
+
+export type JoinResult = { ok: true; groupId: string } | { ok: false; reason: "invalid" | "already_member" | "full" };
 
 export type GroupKind = "telegram" | "web";
 
@@ -107,6 +120,7 @@ export class Groups {
     const groupId = this.deps.crypto.groupKey(chatId);
     this.deps.db.query("DELETE FROM group_members WHERE user_id = ? AND group_id = ?").run(userId, groupId);
     this.revokeScreensOf(userId, groupId);
+    this.endJamsOf(userId, groupId);
     // Also forget an imported membership so the user isn't re-added automatically.
     this.deps.db
       .query("DELETE FROM legacy_group_memberships WHERE user_id = ? AND legacy_group_id = ?")
@@ -219,6 +233,7 @@ export class Groups {
     const left = this.deps.db.query("DELETE FROM group_members WHERE user_id = ? AND group_id = ?").run(accountId, groupId).changes > 0;
     if (!left) return false;
     this.revokeScreensOf(accountId, groupId);
+    this.endJamsOf(accountId, groupId);
     this.deps.db.query("DELETE FROM groups WHERE id = ? AND kind = 'web' AND NOT EXISTS (SELECT 1 FROM group_members WHERE group_id = ?1)").run(groupId);
     this.bus.emit({ accountId, groupId });
     return true;
@@ -317,23 +332,87 @@ export class Groups {
     return row?.expires_at ?? null;
   }
 
-  redeemInvite(code: string, accountId: string): { ok: true; groupId: string } | { ok: false; reason: "invalid" | "already_member" | "full" } {
+  redeemInvite(code: string, accountId: string): JoinResult {
     const row = this.deps.db
       .query("SELECT group_id, expires_at FROM group_invites WHERE code_hash = ?")
       .get(this.deps.crypto.webTokenKey(code)) as { group_id: string; expires_at: number } | null;
     if (!row || row.expires_at <= this.deps.now()) return { ok: false, reason: "invalid" };
-    if (this.isMemberOf(accountId, row.group_id)) return { ok: false, reason: "already_member" };
-    const count = this.deps.db.query("SELECT count(*) AS n FROM group_members WHERE group_id = ?").get(row.group_id) as { n: number };
-    if (count.n >= MAX_WEB_GROUP_MEMBERS) return { ok: false, reason: "full" };
-    this.deps.db.query("INSERT INTO group_members (user_id, group_id, joined_at) VALUES (?, ?, ?)").run(accountId, row.group_id, this.deps.now());
-    this.bus.emit({ accountId, groupId: row.group_id });
-    return { ok: true, groupId: row.group_id };
+    return this.addMember(accountId, row.group_id);
+  }
+
+  /** Whether the web group has room for one more. */
+  hasRoom(groupId: string): boolean {
+    const count = this.deps.db.query("SELECT count(*) AS n FROM group_members WHERE group_id = ?").get(groupId) as { n: number };
+    return count.n < MAX_WEB_GROUP_MEMBERS;
+  }
+
+  private addMember(accountId: string, groupId: string): JoinResult {
+    if (this.isMemberOf(accountId, groupId)) return { ok: false, reason: "already_member" };
+    if (!this.hasRoom(groupId)) return { ok: false, reason: "full" };
+    this.deps.db.query("INSERT INTO group_members (user_id, group_id, joined_at) VALUES (?, ?, ?)").run(accountId, groupId, this.deps.now());
+    this.bus.emit({ accountId, groupId });
+    return { ok: true, groupId };
+  }
+
+  // ---------- jams (web groups) ----------
+
+  /**
+   * Starts the group's jam, lasting `durationMs` (held to JAM_MIN_MS…JAM_MAX_MS). If one is
+   * already going, that one is returned unchanged: two members tapping "start" share one link.
+   */
+  startJam(groupId: string, startedBy: string, durationMs: number): Jam {
+    return this.deps.db.transaction(() => {
+      const current = this.jam(groupId);
+      if (current) return current;
+      const now = this.deps.now();
+      const code = randomBytes(16).toString("base64url");
+      const expiresAt = now + Math.min(JAM_MAX_MS, Math.max(JAM_MIN_MS, Math.round(durationMs)));
+      this.deps.db.query("DELETE FROM group_jams WHERE group_id = ?").run(groupId);
+      this.deps.db
+        .query("INSERT INTO group_jams (group_id, code_hash, code_enc, started_by, started_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)")
+        .run(groupId, this.deps.crypto.webTokenKey(code), this.deps.crypto.encrypt(code), startedBy, now, expiresAt);
+      return { groupId, code, startedBy, startedAt: now, expiresAt };
+    })();
+  }
+
+  /** The group's jam while it lasts. */
+  jam(groupId: string): Jam | null {
+    const row = this.deps.db
+      .query("SELECT code_enc, started_by, started_at, expires_at FROM group_jams WHERE group_id = ? AND expires_at > ?")
+      .get(groupId, this.deps.now()) as { code_enc: string; started_by: string | null; started_at: number; expires_at: number } | null;
+    if (!row) return null;
+    return { groupId, code: this.deps.crypto.decrypt(row.code_enc), startedBy: row.started_by, startedAt: row.started_at, expiresAt: row.expires_at };
+  }
+
+  /** The jam a link's code belongs to, while it lasts (no code needs decrypting). */
+  jamByCode(code: string): Omit<Jam, "code"> | null {
+    const row = this.deps.db
+      .query("SELECT group_id, started_by, started_at, expires_at FROM group_jams WHERE code_hash = ? AND expires_at > ?")
+      .get(this.deps.crypto.webTokenKey(code), this.deps.now()) as { group_id: string; started_by: string | null; started_at: number; expires_at: number } | null;
+    return row ? { groupId: row.group_id, startedBy: row.started_by, startedAt: row.started_at, expiresAt: row.expires_at } : null;
+  }
+
+  endJam(groupId: string): boolean {
+    return this.deps.db.query("DELETE FROM group_jams WHERE group_id = ?").run(groupId).changes > 0;
+  }
+
+  /** Joins through a jam link. */
+  joinJam(code: string, accountId: string): JoinResult {
+    const jam = this.jamByCode(code);
+    return jam ? this.addMember(accountId, jam.groupId) : { ok: false, reason: "invalid" };
+  }
+
+  /** A member leaving ends the jam they started: its link is a credential they hold, like a screen link. */
+  private endJamsOf(accountId: string, groupId: string) {
+    this.deps.db.query("DELETE FROM group_jams WHERE group_id = ? AND started_by = ?").run(groupId, accountId);
   }
 
   /** Deletes expired invites and web groups nobody belongs to any more. */
   prune(): number {
     const now = this.deps.now();
-    const a = this.deps.db.query("DELETE FROM group_invites WHERE expires_at <= ?").run(now).changes;
+    const a =
+      this.deps.db.query("DELETE FROM group_invites WHERE expires_at <= ?").run(now).changes +
+      this.deps.db.query("DELETE FROM group_jams WHERE expires_at <= ?").run(now).changes;
     const b = this.deps.db
       .query("DELETE FROM groups WHERE kind = 'web' AND NOT EXISTS (SELECT 1 FROM group_members WHERE group_id = groups.id)")
       .run().changes;

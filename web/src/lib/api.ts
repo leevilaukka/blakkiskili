@@ -20,6 +20,8 @@ import type {
   LogDrinkRequest,
   LoginPlatform,
   LoginsView,
+  JamGuestRequest,
+  JamPreview,
   Me,
   ProductItem,
   ScreenLinkItem,
@@ -139,6 +141,11 @@ const server = {
   leaveGroup: (id: string) => request<{ ok: true }>("POST", `/api/groups/${id}/leave`, {}),
   deleteGroup: (id: string) => request<{ ok: true }>("DELETE", `/api/groups/${id}`),
   removeMember: (id: string, ref: string) => request<{ ok: true }>("DELETE", `/api/groups/${id}/members/${ref}`),
+  startJam: (id: string, hours: number) => request<GroupView>("POST", `/api/groups/${id}/jam`, { hours }),
+  endJam: (id: string) => request<GroupView>("DELETE", `/api/groups/${id}/jam`),
+  jamPreview: (code: string) => request<JamPreview>("POST", "/api/jam/preview", { code }),
+  jamJoin: (code: string) => request<{ id: string }>("POST", "/api/jam/join", { code }),
+  jamGuest: (req: JamGuestRequest) => request<{ id: string }>("POST", "/api/jam/guest", req),
   createInvite: (id: string) => request<{ code: string; expiresAt: number }>("POST", `/api/groups/${id}/invite`, {}),
   revokeInvite: (id: string) => request<{ ok: true }>("DELETE", `/api/groups/${id}/invite`),
   createGroupScreen: (id: string, hours: number) => request<{ token: string; expiresAt: number }>("POST", `/api/groups/${id}/screens`, { hours }),
@@ -162,7 +169,7 @@ const local = localApi((id, key) => request<ServingDrink>("GET", `/api/products/
 /** Calls that go to the server for a local account too: nothing personal in them. */
 const ALWAYS_SERVER = new Set<string>([
   "config", "docs", "products", "oauthStart", "signupInfo", "signup", "passkeyLoginOptions", "passkeyLogin",
-  "passkeySignupOptions", "signInWithTelegram", "signInWithLink", "openScreen", "screen",
+  "passkeySignupOptions", "signInWithTelegram", "signInWithLink", "openScreen", "screen", "jamPreview", "jamGuest",
 ]);
 
 type Fn = (...args: never[]) => Promise<unknown>;
@@ -261,6 +268,8 @@ export function errorText(e: unknown): string {
     unknown_passkey: "Tuntematon pääsyavain. Se on ehkä poistettu tunnuksesta.",
     too_many_passkeys: "Tunnuksella on jo enimmäismäärä pääsyavaimia.",
     passkey_unsupported: "Tämä selain ei tue pääsyavaimia.",
+    invalid_jam: "Jami on päättynyt tai linkki on väärä. Pyydä uusi linkki.",
+    guest_account: "Vierastunnuksella ei voi lisätä tuotteita. Lisää tunnukseen kirjautumistapa asetuksista.",
     local_only: "Tämä tarvitsee verkkotunnuksen. Voit siirtää tietosi verkkoon asetuksista.",
     local_unavailable: "Tämä selain ei salli tietojen tallentamista laitteelle (esim. yksityinen selaus).",
     too_big: "Tiedosto on liian suuri.",

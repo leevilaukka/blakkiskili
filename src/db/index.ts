@@ -282,6 +282,20 @@ const MIGRATIONS: string[] = [
   ) STRICT;
   CREATE INDEX passkeys_identity ON passkeys (identity_id);
   `,
+
+  /* 17: jams (shareable join links of web groups) */ `
+  -- A jam is a web group's join link for an evening: any member starts it, everyone in the group
+  -- can show its link and QR code again (so the code is kept encrypted as well as hashed), and it
+  -- ends when it expires or the starter or owner ends it. Members who joined stay. One per group.
+  CREATE TABLE group_jams (
+    group_id   TEXT PRIMARY KEY REFERENCES groups(id) ON DELETE CASCADE,
+    code_hash  TEXT NOT NULL UNIQUE,             -- Crypto.webTokenKey
+    code_enc   TEXT NOT NULL,                    -- AES-GCM, for showing the link to members
+    started_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    started_at INTEGER NOT NULL,                 -- epoch ms
+    expires_at INTEGER NOT NULL                  -- epoch ms
+  ) STRICT;
+  `,
 ];
 
 export function openDatabase(path: string): Database {

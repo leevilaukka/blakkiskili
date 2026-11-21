@@ -124,6 +124,20 @@ export class Accounts {
     })();
   }
 
+  /**
+   * A guest: an account with no login at all, made when someone joins a group through a jam link
+   * without signing in (src/web/api/groups.ts). Only the browser session that made it reaches it,
+   * until the person adds a login in Settings; otherwise inactivity deletes it like any account.
+   */
+  createGuest(p: NewProfile): Profile {
+    return this.upsert(randomBytes(16).toString("hex"), p).profile;
+  }
+
+  /** A guest account (see createGuest): one without any login. */
+  isGuest(accountId: string): boolean {
+    return this.identities.list(accountId).length === 0;
+  }
+
   /** Creates the account, or updates body data of an existing one, by account id. Accepts terms. */
   upsert(userId: string, p: NewProfile): { created: boolean; profile: Profile } {
     const now = this.deps.now();

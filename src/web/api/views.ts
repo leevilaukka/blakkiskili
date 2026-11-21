@@ -10,10 +10,10 @@ import { EBAC_WINDOW_MS, type Drink } from "../../services/drinks.ts";
 import type { GroupInfo, Member } from "../../services/groups.ts";
 import type { Services } from "../../services/index.ts";
 import type { ScreenAccess } from "../../services/screens.ts";
-import type { Dashboard, DrinkItem, GroupSummary, GroupView, Me, ProductItem, ScreenLinkItem, ScreenView } from "../../../shared/api.ts";
+import type { Dashboard, DrinkItem, GroupSummary, GroupView, JamInfo, Me, ProductItem, ScreenLinkItem, ScreenView } from "../../../shared/api.ts";
 import { buildBoard, memberRef, type Board } from "../boards.ts";
 
-export const toBody = (p: Profile): Omit<Me, "admin" | "telegram"> => ({
+export const toBody = (p: Profile): Omit<Me, "admin" | "telegram" | "guest"> => ({
   name: p.name,
   chartName: p.chartName,
   chartLabel: chartLabel(p),
@@ -22,7 +22,7 @@ export const toBody = (p: Profile): Omit<Me, "admin" | "telegram"> => ({
   gender: p.gender,
 });
 
-export const toMe = (p: Profile, admin: boolean, telegram: boolean): Me => ({ ...toBody(p), admin, telegram });
+export const toMe = (p: Profile, admin: boolean, telegram: boolean, guest = false): Me => ({ ...toBody(p), admin, telegram, guest });
 
 export const toItem = (d: Drink): DrinkItem => ({
   id: d.id,
@@ -117,11 +117,24 @@ export function createViews(services: Services, now: () => number, isTelegramAdm
       chart: b.chart,
       members: b.rows.map((r) => ({ ...r, isMe: r.ref === me })),
       inviteExpiresAt: isOwner ? services.groups.hasInvite(groupId) : null,
+      jam: jamInfo(groupId, p.id, isOwner),
       isTelegramAdmin: info.kind === "telegram" && isTelegramAdmin(groupId, p.id),
       screens: screenItems(services.screens.list({ groupId }), p, (accountId) => {
         const ref = memberRef(services, groupId, accountId);
         return b.rows.find((r) => r.ref === ref)?.name ?? null;
       }),
+    };
+  }
+
+  function jamInfo(groupId: string, accountId: string, isOwner: boolean): JamInfo | null {
+    const jam = services.groups.jam(groupId);
+    if (!jam) return null;
+    const starter = jam.startedBy ? services.accounts.get(jam.startedBy) : null;
+    return {
+      code: jam.code,
+      expiresAt: jam.expiresAt,
+      startedBy: starter ? chartLabel(starter) : "Entinen jäsen",
+      canEnd: isOwner || jam.startedBy === accountId,
     };
   }
 

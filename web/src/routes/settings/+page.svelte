@@ -332,7 +332,9 @@
     <h2>Kirjautumistavat</h2>
     <p class="text-secondary">Näillä tavoilla pääset tunnukseesi. Kun tapoja on useampi, pääset sisään, vaikka yksi lakkaisi toimimasta.</p>
     {#if logins}
-      {#if usableCount === 0}
+      {#if logins.logins.length === 0}
+        <p class="notice">Liityit vieraana, joten tunnukseesi pääsee vain tällä selaimella. Lisää kirjautumistapa, ettet menetä sitä, jos selaimen tiedot tyhjenevät tai kirjaudut ulos.</p>
+      {:else if usableCount === 0}
         <p class="notice">Mikään tunnuksesi kirjautumistavoista ei ole nyt sivustolla käytössä. Lisää toinen tapa, ettet jää ulos, kun kirjaudut seuraavan kerran.</p>
       {:else if usableCount === 1 && addable.length}
         <p class="notice">Sinulla on vain yksi kirjautumistapa. Lisää toinen varalle.</p>

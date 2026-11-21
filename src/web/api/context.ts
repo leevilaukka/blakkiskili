@@ -94,6 +94,8 @@ export interface Api {
     signIn: RateLimiter;
     /** New accounts, per client address. */
     signUp: RateLimiter;
+    /** Guests joining through jam links, per address: a whole party may share one Wi-Fi address. */
+    guest: RateLimiter;
     /** Per account (or per address for event screens). */
     api: RateLimiter;
     /** A search shows up to 8 thumbnails, so photos get their own, larger budget. */

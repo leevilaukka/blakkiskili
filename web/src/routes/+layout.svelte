@@ -13,7 +13,7 @@
   let { children } = $props();
 
   // Signing in and signing up happen signed out.
-  const onLogin = $derived(page.url.pathname === "/login" || page.url.pathname === "/signup");
+  const onLogin = $derived(["/login", "/signup", "/jam"].includes(page.url.pathname));
   // Event screens are opened by a link and need no account.
   const onScreen = $derived(page.url.pathname === "/screen");
   // The help, terms and privacy texts can be read before signing in.
@@ -65,6 +65,8 @@
 
   async function logout() {
     if (session.local) return;
+    // A guest has no other way back in.
+    if (session.me?.guest && !confirm("Liityit vieraana: kun kirjaudut ulos, et pääse enää tähän tunnukseen. Lisää ensin kirjautumistapa asetuksista (Kirjautumistavat). Kirjaudutaanko silti ulos?")) return;
     await api.logout().catch(() => {});
     session.me = null;
     await goto("/login");

@@ -7,6 +7,7 @@
   import { canCast, castEnabled, castFailed, castScreen, castUnsupported } from "#lib/cast.ts";
   import Chart from "#lib/Chart.svelte";
   import Icon from "#lib/Icon.svelte";
+  import QrCode from "#lib/QrCode.svelte";
   import { clock, dayClock, decimal1, permille } from "#lib/format.ts";
   import { session } from "#lib/session.svelte.ts";
 
@@ -85,18 +86,35 @@
     }
   }
 
-  const makeInvite = () =>
-    run(async () => {
-      const r = await api.createInvite(id);
-      fresh = { kind: "invite", url: `${origin()}/join#c=${r.code}` };
-      view = await api.group(id);
-    });
-  const revokeInvite = () =>
-    run(async () => {
-      await api.revokeInvite(id);
-      fresh = null;
-      view = await api.group(id);
-    });
+  // ---------- Jam: the evening's join link ----------
+  /** Hours from now until 6 in the morning (the next one, at least an hour away). */
+  function untilMorning(): number {
+    const d = new Date();
+    const morning = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 6);
+    if (morning.getTime() - d.getTime() < 60 * 60 * 1000) morning.setDate(morning.getDate() + 1);
+    return (morning.getTime() - d.getTime()) / 3_600_000;
+  }
+  const JAM_LENGTHS = [
+    { label: "Aamuun asti", hours: () => untilMorning() },
+    { label: "3 tuntia", hours: () => 3 },
+    { label: "Vuorokauden", hours: () => 24 },
+    { label: "Viikon", hours: () => 7 * 24 },
+  ];
+  let jamLength = $state(0);
+  const jamUrl = $derived(view?.jam ? `${origin()}/jam#j=${view.jam.code}` : "");
+  const jamText = $derived(view ? `Liity ryhmään ${view.group.name} Bläkkiskilissä: ${jamUrl}` : "");
+  const canShare = typeof navigator !== "undefined" && "share" in navigator;
+
+  const startJam = () => run(async () => (view = await api.startJam(id, JAM_LENGTHS[jamLength]!.hours())));
+  const endJam = () => {
+    if (!confirm("Lopetetaanko jami? Linkillä ei voi enää liittyä. Jo liittyneet pysyvät ryhmässä.")) return;
+    void run(async () => (view = await api.endJam(id)));
+  };
+  async function shareJam() {
+    try {
+      await navigator.share({ title: view?.group.name, text: jamText.replace(`: ${jamUrl}`, ""), url: jamUrl });
+    } catch {} // cancelled
+  }
   const makeScreen = () =>
     run(async () => {
       const r = await api.createGroupScreen(id, Number(hours));
@@ -197,6 +215,39 @@
       </div>
 
       <div class="grid min-w-0 gap-4">
+        {#if view.group.kind === "web"}
+          <section class="card card-panel">
+            <h2 class="flex items-center gap-2"><Icon name="link" /> Jami</h2>
+            {#if view.jam}
+              <p class="text-secondary">
+                Linkillä tai QR-koodilla pääsee ryhmään, myös ilman tunnusta. {view.jam.startedBy} aloitti jamin, ja se on voimassa {dayClock(view.jam.expiresAt, view.now)} asti.
+              </p>
+              <div class="mx-auto my-4 max-w-[15rem]"><QrCode text={jamUrl} label="QR-koodi jamiin liittymiseen" /></div>
+              <div class="flex gap-2">
+                <input type="text" readonly value={jamUrl} onfocus={(e) => e.currentTarget.select()} aria-label="Jamilinkki" />
+                <button class="btn" onclick={() => copy(jamUrl)}><Icon name={copied ? "check" : "copy"} /> {copied ? "Kopioitu" : "Kopioi"}</button>
+              </div>
+              <div class="mt-3 flex flex-wrap gap-2">
+                {#if canShare}<button class="btn btn-primary" onclick={shareJam}><Icon name="send" /> Jaa</button>{/if}
+                <a class="btn" href="https://wa.me/?text={encodeURIComponent(jamText)}" target="_blank" rel="noopener">Jaa WhatsAppiin</a>
+                {#if view.jam.canEnd}<button class="btn btn-ghost ml-auto" disabled={busy} onclick={endJam}><Icon name="x" /> Lopeta jami</button>{/if}
+              </div>
+            {:else}
+              <p class="text-secondary">
+                Aloita jami, niin saat linkin ja QR-koodin, joilla kaverit pääsevät ryhmään yhdellä napautuksella, myös ilman tunnusta. Jami päättyy itsestään, ja liittyneet pysyvät ryhmässä.
+              </p>
+              <div class="mt-3 flex flex-wrap items-end gap-3">
+                <label class="grid gap-1.25">Voimassa
+                  <select bind:value={jamLength}>
+                    {#each JAM_LENGTHS as l, i (l.label)}<option value={i}>{l.label}</option>{/each}
+                  </select>
+                </label>
+                <button class="btn btn-primary" disabled={busy} onclick={startJam}><Icon name="plus" /> Aloita jami</button>
+              </div>
+            {/if}
+          </section>
+        {/if}
+
         <section class="card card-panel">
           <h2 class="flex items-center gap-2"><Icon name="monitor" /> Näytä ruudulla</h2>
           <p class="text-secondary">
@@ -244,22 +295,10 @@
           </label>
         </section>
 
+
         {#if view.group.kind === "web" && view.group.isOwner}
           <section class="card card-panel">
-            <h2 class="flex items-center gap-2"><Icon name="link" /> Kutsu</h2>
-            <p class="text-secondary">
-              Kutsulinkillä pääsee ryhmään.
-              {#if view.inviteExpiresAt}Nykyinen kutsu on voimassa {dayClock(view.inviteExpiresAt, view.now)} asti.{/if}
-              Uusi linkki korvaa vanhan.
-            </p>
-            <div class="mt-3 flex flex-wrap items-end gap-3">
-              <button class="btn btn-primary" disabled={busy} onclick={makeInvite}><Icon name="plus" /> Luo kutsulinkki</button>
-              {#if view.inviteExpiresAt}<button class="btn" disabled={busy} onclick={revokeInvite}>Peru kutsu</button>{/if}
-            </div>
-            {#if fresh?.kind === "invite"}
-              {@render freshLink("Linkki näkyy vain nyt:", "Kutsulinkki", fresh.url)}
-            {/if}
-            <form class="mt-4 grid gap-1.25" onsubmit={saveName}>
+            <form class="grid gap-1.25" onsubmit={saveName}>
               <label for="rn">Ryhmän nimi</label>
               <div class="flex gap-2">
                 <input id="rn" type="text" bind:value={rename} maxlength="40" required />

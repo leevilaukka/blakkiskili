@@ -79,6 +79,7 @@ export function createWebApp(opts: WebAppOptions) {
     limits: {
       signIn: new RateLimiter(10, 60_000, now),
       signUp: new RateLimiter(5, 60 * 60_000, now),
+      guest: new RateLimiter(40, 60 * 60_000, now),
       api: new RateLimiter(120, 60_000, now),
       photo: new RateLimiter(600, 60_000, now),
       barcode: new RateLimiter(30, 60_000, now),

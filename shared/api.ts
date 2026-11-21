@@ -38,6 +38,8 @@ export interface Me {
    * bot keeps it in step with Telegram), and data export and import aren't available.
    */
   telegram: boolean;
+  /** Joined through a jam without signing in: no login, only this browser's session reaches it. */
+  guest: boolean;
 }
 
 /** Ways to sign in to the website; the server lists the ones it has configured (Config.loginProviders). */
@@ -134,7 +136,7 @@ export interface DrinkLog {
 
 export interface Dashboard {
   now: number;
-  me: Omit<Me, "admin" | "telegram">;
+  me: Omit<Me, "admin" | "telegram" | "guest">;
   permille: number;
   /** When the estimate reaches zero; null when sober now. */
   soberAt: number | null;
@@ -324,10 +326,37 @@ export interface GroupView {
   members: BoardRow[];
   /** When the live invite link expires; null when there is none. Only the owner sees this. */
   inviteExpiresAt: number | null;
+  /** The group's jam (join link of the evening) while it lasts; web groups only. */
+  jam: JamInfo | null;
   /** An admin of the Telegram group: may stop any of its screen links, as a web group's owner may. */
   isTelegramAdmin: boolean;
   screens: ScreenLinkItem[];
 }
+
+/** A jam as members see it: its link is /jam#j=<code>. */
+export interface JamInfo {
+  code: string;
+  expiresAt: number;
+  startedBy: string;
+  /** The one who started it, or the group's owner. */
+  canEnd: boolean;
+}
+
+/** POST /api/jam/preview: what a jam link shows before joining. */
+export interface JamPreview {
+  groupName: string;
+  /** Who started the jam ("Ryhmän jäsen" if they appear anonymously on screens). */
+  startedBy: string;
+  memberCount: number;
+  expiresAt: number;
+  /** The signed-in visitor is in the group already. */
+  member: boolean;
+  /** The group, only for a member (to go to its page). */
+  groupId: string | null;
+}
+
+/** POST /api/jam/guest: joining without an account; makes a guest account (see Accounts.createGuest). */
+export type JamGuestRequest = Omit<SignupRequest, "passkey"> & { code: string };
 
 /** What an event screen shows: no controls, and hidden members are anonymised. */
 export interface ScreenView {
