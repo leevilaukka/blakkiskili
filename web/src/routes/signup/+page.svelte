@@ -5,7 +5,7 @@
   import type { Gender, LoginPlatform } from "../../../../shared/api.ts";
   import { api, ApiError, errorText } from "#lib/api.ts";
   import Icon from "#lib/Icon.svelte";
-  import { createSignupPasskey, LOGIN_NAMES, passkeysSupported } from "#lib/logins.ts";
+  import { createSignupPasskey, goToTelegram, LOGIN_NAMES, passkeysSupported } from "#lib/logins.ts";
   import { session, takeReturn } from "#lib/session.svelte.ts";
 
   // Two ways here: back from Google or Microsoft with a login that has no account yet (the server
@@ -15,6 +15,7 @@
   let method = $state<LoginPlatform | null>(null);
   let loading = $state(true);
   let missing = $state(false);
+  let botId = $state(0);
 
   let name = $state("");
   let weight = $state("");
@@ -27,8 +28,9 @@
   onMount(async () => {
     if (session.me) return goto("/", { replaceState: true });
     try {
+      const config = await api.config();
+      botId = config.botId;
       if (withPasskey) {
-        const config = await api.config();
         if (!config.loginProviders.includes("passkey") || !passkeysSupported()) missing = true;
         else method = "passkey";
       } else {
@@ -96,6 +98,16 @@
         {/if}
         Painon, pituuden ja sukupuolen perusteella arvioidaan promillet.
       </p>
+
+      <!-- Accounts are never merged: someone who already uses the bot should add this login to that
+           account in Settings, not make a second one. The waiting sign-up simply expires. -->
+      <div class="notice mt-4">
+        <div>
+        <p class="mt-0"><strong>Onko sinulla jo tunnus Telegram-botissa?</strong> Älä luo uutta: tunnuksia ei voi yhdistää jälkikäteen.
+          Kirjaudu Telegramilla ja lisää {method === "passkey" || !method ? "pääsyavain" : LOGIN_NAMES[method]} asetuksista (Kirjautumistavat), niin käytät samaa tunnusta molemmilla.</p>
+        <button class="btn" type="button" disabled={!botId || busy} onclick={() => goToTelegram(botId, "/login")}>Kirjaudu Telegramilla</button>
+        </div>
+      </div>
 
       <form class="card card-panel mt-4 grid gap-4" onsubmit={submit}>
         <label class="grid gap-1.25">Nimimerkki
